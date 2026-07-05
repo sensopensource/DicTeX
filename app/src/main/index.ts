@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain } from "electron";
+import { app, BrowserWindow, clipboard, globalShortcut, ipcMain } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
@@ -8,8 +8,14 @@ import { fileURLToPath } from "node:url";
 type TranscriptionResult = {
   transcript: string;
   copiedToClipboard: boolean;
+  pastedToActiveApp: boolean;
   sessionId: string;
   segmentId: string;
+};
+
+type TranscriptionOptions = {
+  autoPaste?: boolean;
+  trigger?: "manual" | "global_hotkey";
 };
 
 type EngineTranscriptionResult = {
@@ -31,11 +37,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..", "..", "..");
 const enginePath = path.join(repoRoot, "engine", "transcribe.py");
 const sessionId = `session_${new Date().toISOString().replace(/\D/g, "")}`;
+const globalHotkey = "Super+Alt+Space";
 
+let mainWindow: BrowserWindow | null = null;
+let globalHotkeyRegistered = false;
 let segmentCounter = 0;
 
-function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+function createWindow(): BrowserWindow {
+  mainWindow = new BrowserWindow({
     width: 920,
     height: 680,
     minWidth: 760,
@@ -55,6 +64,37 @@ function createWindow(): void {
   } else {
     void mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
+
+  mainWindow.webContents.on("did-finish-load", () => {
+    sendHotkeyStatus();
+  });
+
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+
+  return mainWindow;
+}
+
+function sendHotkeyStatus(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send("dictation:hotkey-status", {
+    accelerator: "Win+Alt+Space",
+    registered: globalHotkeyRegistered,
+  });
+}
+
+function registerGlobalHotkey(): void {
+  globalHotkeyRegistered = globalShortcut.register(globalHotkey, () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("dictation:toggle");
+    }
+  });
+
+  sendHotkeyStatus();
 }
 
 function getPythonInvocation(): PythonInvocation {
@@ -118,7 +158,9 @@ function toPortableRef(basePath: string, targetPath: string): string {
 async function appendEvent(event: Record<string, JsonValue>): Promise<void> {
   const dataRoot = getDataRoot();
   await mkdir(dataRoot, { recursive: true });
-  await appendFile(path.join(dataRoot, "events.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
+  await appendFile(path.join(dataRoot, "events.jsonl"), `${JSON.stringify(event)}\n`, {
+    encoding: "utf8",
+  });
 }
 
 function transcribeWithPython(audioPath: string): Promise<EngineTranscriptionResult> {
@@ -179,9 +221,43 @@ function transcribeWithPython(audioPath: string): Promise<EngineTranscriptionRes
   });
 }
 
+function pasteClipboardIntoActiveApp(): Promise<boolean> {
+  if (process.platform !== "win32") {
+    return Promise.resolve(false);
+  }
+
+  return new Promise((resolve) => {
+    const child = spawn(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-STA",
+        "-Command",
+        "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')",
+      ],
+      {
+        windowsHide: true,
+      },
+    );
+
+    child.on("error", () => {
+      resolve(false);
+    });
+
+    child.on("close", (code) => {
+      resolve(code === 0);
+    });
+  });
+}
+
 ipcMain.handle(
   "dictation:transcribe",
-  async (_event, audioBytes: Uint8Array, mimeType: string): Promise<TranscriptionResult> => {
+  async (
+    _event,
+    audioBytes: Uint8Array,
+    mimeType: string,
+    options: TranscriptionOptions = {},
+  ): Promise<TranscriptionResult> => {
     const createdAt = new Date().toISOString();
     const segmentId = getNextSegmentId();
     const extension = getAudioExtension(mimeType);
@@ -223,10 +299,15 @@ ipcMain.handle(
     });
 
     clipboard.writeText(sttResult.transcript);
+    const pastedToActiveApp =
+      options.autoPaste === true && sttResult.transcript.trim().length > 0
+        ? await pasteClipboardIntoActiveApp()
+        : false;
 
     return {
       transcript: sttResult.transcript,
       copiedToClipboard: true,
+      pastedToActiveApp,
       sessionId,
       segmentId,
     };
@@ -235,12 +316,18 @@ ipcMain.handle(
 
 app.whenReady().then(() => {
   createWindow();
+  registerGlobalHotkey();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
+      sendHotkeyStatus();
     }
   });
+});
+
+app.on("will-quit", () => {
+  globalShortcut.unregisterAll();
 });
 
 app.on("window-all-closed", () => {
