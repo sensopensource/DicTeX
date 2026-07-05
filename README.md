@@ -101,7 +101,8 @@ Dicter des maths, corriger vite, ameliorer le systeme avec chaque correction.
 - [Correction Loop](docs/correction-loop.md)
 - [Open Source Landscape](docs/open-source-landscape.md)
 - [Development](docs/development.md)
+- [Product Decisions](docs/product-decisions.md)
 
 ## Status
 
-Early product definition. No usable implementation yet.
+Early MVP. The app currently supports local faster-whisper transcription, local STT event logging, and global Windows hotkey dictation on the active development branch.
