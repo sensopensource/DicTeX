@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from "electron";
 type TranscriptionResponse = {
   transcript: string;
   copiedToClipboard: boolean;
+  sessionId: string;
+  segmentId: string;
 };
 
 contextBridge.exposeInMainWorld("dictex", {

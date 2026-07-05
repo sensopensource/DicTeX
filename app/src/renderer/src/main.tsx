@@ -6,7 +6,7 @@ type DictationApi = {
   transcribeAudio: (
     audioBytes: Uint8Array,
     mimeType: string,
-  ) => Promise<{ transcript: string; copiedToClipboard: boolean }>;
+  ) => Promise<{ transcript: string; copiedToClipboard: boolean; sessionId: string; segmentId: string }>;
 };
 
 declare global {
