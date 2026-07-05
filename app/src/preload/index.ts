@@ -7,6 +7,11 @@ type TranscriptionResponse = {
   pastedToActiveApp: boolean;
   sessionId: string;
   segmentId: string;
+  sttEngine: string;
+  sttModel: string;
+  sttLanguage: string;
+  audioDurationSeconds: number | null;
+  transcriptionDurationMs: number;
 };
 
 type TranscriptionOptions = {
@@ -17,6 +22,14 @@ type TranscriptionOptions = {
 type HotkeyStatus = {
   accelerator: string;
   registered: boolean;
+};
+
+type SttConfig = {
+  engine: string;
+  model: string;
+  language: string;
+  device: string;
+  computeType: string;
 };
 
 contextBridge.exposeInMainWorld("dictex", {
@@ -40,4 +53,7 @@ contextBridge.exposeInMainWorld("dictex", {
       ipcRenderer.removeListener("dictation:hotkey-status", listener);
     };
   },
+  openDataFolder: () => ipcRenderer.invoke("diagnostics:open-data-folder") as Promise<boolean>,
+  openEventsLog: () => ipcRenderer.invoke("diagnostics:open-events-log") as Promise<boolean>,
+  getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
 });
