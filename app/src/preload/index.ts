@@ -7,6 +7,11 @@ type TranscriptionResponse = {
   pastedToActiveApp: boolean;
   sessionId: string;
   segmentId: string;
+  sttEngine: string;
+  sttModel: string;
+  sttLanguage: string;
+  audioDurationSeconds: number | null;
+  transcriptionDurationMs: number;
 };
 
 type TranscriptionOptions = {
@@ -19,9 +24,18 @@ type HotkeyStatus = {
   registered: boolean;
 };
 
+type SttConfig = {
+  sttEngine: string;
+  sttModel: string;
+  sttLanguage: string;
+};
+
 contextBridge.exposeInMainWorld("dictex", {
   transcribeAudio: (audioBytes: Uint8Array, mimeType: string, options: TranscriptionOptions = {}) =>
     ipcRenderer.invoke("dictation:transcribe", audioBytes, mimeType, options) as Promise<TranscriptionResponse>,
+  getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
+  openDataFolder: () => ipcRenderer.invoke("diagnostics:open-data-folder") as Promise<boolean>,
+  openEventsLog: () => ipcRenderer.invoke("diagnostics:open-events-log") as Promise<boolean>,
   onDictationToggle: (callback: () => void) => {
     const listener = () => {
       callback();

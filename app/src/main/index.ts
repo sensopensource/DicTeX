@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, globalShortcut, ipcMain } from "electron";
+import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
@@ -11,6 +11,11 @@ type TranscriptionResult = {
   pastedToActiveApp: boolean;
   sessionId: string;
   segmentId: string;
+  sttEngine: string;
+  sttModel: string;
+  sttLanguage: string;
+  audioDurationSeconds: number | null;
+  transcriptionDurationMs: number;
 };
 
 type TranscriptionOptions = {
@@ -33,6 +38,9 @@ type PythonInvocation = {
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
+const defaultSttEngine = "faster-whisper";
+const defaultSttModel = "base";
+const defaultSttLanguage = "fr";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..", "..", "..");
 const enginePath = path.join(repoRoot, "engine", "transcribe.py");
@@ -132,6 +140,14 @@ function getPythonInvocation(): PythonInvocation {
 
 function getDataRoot(): string {
   return path.join(app.getPath("userData"), "data");
+}
+
+function getConfiguredSttDiagnostics(): Pick<EngineTranscriptionResult, "sttEngine" | "sttModel" | "sttLanguage"> {
+  return {
+    sttEngine: defaultSttEngine,
+    sttModel: process.env.DICTEX_STT_MODEL || defaultSttModel,
+    sttLanguage: process.env.DICTEX_STT_LANGUAGE || defaultSttLanguage,
+  };
 }
 
 function getAudioExtension(mimeType: string): string {
@@ -310,9 +326,36 @@ ipcMain.handle(
       pastedToActiveApp,
       sessionId,
       segmentId,
+      sttEngine: sttResult.sttEngine,
+      sttModel: sttResult.sttModel,
+      sttLanguage: sttResult.sttLanguage,
+      audioDurationSeconds: sttResult.audioDurationSeconds,
+      transcriptionDurationMs,
     };
   },
 );
+
+ipcMain.handle("diagnostics:get-stt-config", (): Pick<EngineTranscriptionResult, "sttEngine" | "sttModel" | "sttLanguage"> => {
+  return getConfiguredSttDiagnostics();
+});
+
+ipcMain.handle("diagnostics:open-data-folder", async (): Promise<boolean> => {
+  const dataRoot = getDataRoot();
+  await mkdir(dataRoot, { recursive: true });
+  const error = await shell.openPath(dataRoot);
+  return error.length === 0;
+});
+
+ipcMain.handle("diagnostics:open-events-log", async (): Promise<boolean> => {
+  const dataRoot = getDataRoot();
+  await mkdir(dataRoot, { recursive: true });
+  const eventsPath = path.join(dataRoot, "events.jsonl");
+  if (!existsSync(eventsPath)) {
+    await writeFile(eventsPath, "", { encoding: "utf8" });
+  }
+  const error = await shell.openPath(eventsPath);
+  return error.length === 0;
+});
 
 app.whenReady().then(() => {
   createWindow();
