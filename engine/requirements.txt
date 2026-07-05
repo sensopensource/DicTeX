@@ -1,3 +1,2 @@
-# The first implementation uses a fake transcript to validate the desktop loop.
-# faster-whisper will be added after the Electron -> Python boundary is stable.
-
+faster-whisper==1.2.1
+truststore==0.10.4

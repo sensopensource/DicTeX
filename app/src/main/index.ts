@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, ipcMain } from "electron";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,14 @@ type TranscriptionResult = {
   copiedToClipboard: boolean;
   sessionId: string;
   segmentId: string;
+};
+
+type EngineTranscriptionResult = {
+  transcript: string;
+  sttEngine: string;
+  sttModel: string;
+  sttLanguage: string;
+  audioDurationSeconds: number | null;
 };
 
 type PythonInvocation = {
@@ -52,6 +61,18 @@ function getPythonInvocation(): PythonInvocation {
   if (process.env.DICTEX_PYTHON) {
     return {
       command: process.env.DICTEX_PYTHON,
+      argsPrefix: [],
+    };
+  }
+
+  const venvPython =
+    process.platform === "win32"
+      ? path.join(repoRoot, ".venv", "Scripts", "python.exe")
+      : path.join(repoRoot, ".venv", "bin", "python");
+
+  if (existsSync(venvPython)) {
+    return {
+      command: venvPython,
       argsPrefix: [],
     };
   }
@@ -100,11 +121,16 @@ async function appendEvent(event: Record<string, JsonValue>): Promise<void> {
   await appendFile(path.join(dataRoot, "events.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
 }
 
-function transcribeWithPython(audioPath: string): Promise<string> {
+function transcribeWithPython(audioPath: string): Promise<EngineTranscriptionResult> {
   return new Promise((resolve, reject) => {
     const python = getPythonInvocation();
     const child = spawn(python.command, [...python.argsPrefix, enginePath, audioPath], {
       cwd: repoRoot,
+      env: {
+        ...process.env,
+        HF_HUB_DISABLE_SYMLINKS_WARNING: "1",
+        PYTHONIOENCODING: "utf-8",
+      },
       windowsHide: true,
     });
 
@@ -128,12 +154,24 @@ function transcribeWithPython(audioPath: string): Promise<string> {
       }
 
       try {
-        const parsed = JSON.parse(stdout) as { transcript?: unknown };
+        const parsed = JSON.parse(stdout) as {
+          transcript?: unknown;
+          stt_engine?: unknown;
+          stt_model?: unknown;
+          stt_language?: unknown;
+          stt_duration?: unknown;
+        };
         if (typeof parsed.transcript !== "string") {
           reject(new Error("Transcription process returned no transcript"));
           return;
         }
-        resolve(parsed.transcript);
+        resolve({
+          transcript: parsed.transcript,
+          sttEngine: typeof parsed.stt_engine === "string" ? parsed.stt_engine : "unknown",
+          sttModel: typeof parsed.stt_model === "string" ? parsed.stt_model : "unknown",
+          sttLanguage: typeof parsed.stt_language === "string" ? parsed.stt_language : "unknown",
+          audioDurationSeconds: typeof parsed.stt_duration === "number" ? parsed.stt_duration : null,
+        });
       } catch (error) {
         reject(error);
       }
@@ -166,7 +204,7 @@ ipcMain.handle(
     });
 
     const transcriptionStartedAt = Date.now();
-    const transcript = await transcribeWithPython(audioPath);
+    const sttResult = await transcribeWithPython(audioPath);
     const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
 
     await appendEvent({
@@ -175,18 +213,19 @@ ipcMain.handle(
       segment_id: segmentId,
       created_at: new Date().toISOString(),
       audio_ref: audioRef,
-      stt_engine: "dictex-local-engine",
-      stt_model: "fake-transcriber-v0",
-      stt_language: "fr",
-      stt_output: transcript,
+      stt_engine: sttResult.sttEngine,
+      stt_model: sttResult.sttModel,
+      stt_language: sttResult.sttLanguage,
+      stt_output: sttResult.transcript,
       corrected_transcript: null,
+      audio_duration_seconds: sttResult.audioDurationSeconds,
       transcription_duration_ms: transcriptionDurationMs,
     });
 
-    clipboard.writeText(transcript);
+    clipboard.writeText(sttResult.transcript);
 
     return {
-      transcript,
+      transcript: sttResult.transcript,
       copiedToClipboard: true,
       sessionId,
       segmentId,

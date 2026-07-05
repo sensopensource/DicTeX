@@ -9,6 +9,11 @@ Desktop.ini
 # Logs
 *.log
 
+# Python
+.venv/
+__pycache__/
+*.pyc
+
 # Node / Electron
 node_modules/
 app/node_modules/

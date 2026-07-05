@@ -19,6 +19,12 @@ This makes Node/npm use the Windows certificate store instead of disabling SSL v
 
 Do not use `strict-ssl=false` for this project.
 
+The same certificate issue can affect pip. Use:
+
+```powershell
+python -m pip install --use-feature=truststore -r engine\requirements.txt
+```
+
 Windows helper:
 
 ```powershell
@@ -36,6 +42,8 @@ scripts/npm.sh <npm arguments>
 Windows:
 
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --use-feature=truststore -r engine\requirements.txt
 cd app
 ..\scripts\npm.cmd install
 ```
@@ -43,6 +51,8 @@ cd app
 Linux/macOS:
 
 ```sh
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r engine/requirements.txt
 cd app
 ../scripts/npm.sh install
 ```
@@ -83,6 +93,36 @@ cd app
 
 The first implementation uses a fake Python transcript. This validates the Electron -> Python -> clipboard loop before adding faster-whisper.
 
+## STT Engine
+
+The local engine uses `faster-whisper`.
+
+Defaults:
+
+```text
+DICTEX_STT_MODEL=base
+DICTEX_STT_LANGUAGE=fr
+DICTEX_STT_DEVICE=cpu
+DICTEX_STT_COMPUTE_TYPE=int8
+```
+
+Override example:
+
+```powershell
+$env:DICTEX_STT_MODEL="small"
+$env:DICTEX_STT_LANGUAGE="fr"
+cd app
+..\scripts\npm.cmd run dev
+```
+
+On Windows, if Python is not available through `py -3.11`, set:
+
+```powershell
+$env:DICTEX_PYTHON="C:\Users\souid\DicTeX\.venv\Scripts\python.exe"
+```
+
+In development, the Electron app automatically uses the repository `.venv` Python when it exists.
+
 ## Local STT Data
 
 The app stores local STT data under Electron's `userData` directory:
@@ -102,7 +142,7 @@ Each dictation writes at least two events:
 ```
 
 ```json
-{"event_type":"stt_result","session_id":"session_...","segment_id":"seg_0001","stt_engine":"dictex-local-engine","stt_model":"fake-transcriber-v0","stt_language":"fr","stt_output":"fake transcript from DicTeX local engine","corrected_transcript":null}
+{"event_type":"stt_result","session_id":"session_...","segment_id":"seg_0001","stt_engine":"faster-whisper","stt_model":"base","stt_language":"fr","stt_output":"...","corrected_transcript":null}
 ```
 
 The correction UX is intentionally not implemented yet. The important MVP decision is to preserve the audio -> STT output link from the beginning.

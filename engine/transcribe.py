@@ -1,6 +1,27 @@
 import json
+import os
 import sys
 from pathlib import Path
+
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
+
+from faster_whisper import WhisperModel
+
+
+DEFAULT_MODEL = "base"
+DEFAULT_LANGUAGE = "fr"
+DEFAULT_DEVICE = "cpu"
+DEFAULT_COMPUTE_TYPE = "int8"
+
+
+def get_env(name: str, default: str) -> str:
+    value = os.environ.get(name)
+    return value if value else default
 
 
 def main() -> int:
@@ -15,15 +36,28 @@ def main() -> int:
 
     audio_size = audio_path.stat().st_size
 
-    # Placeholder until faster-whisper is wired in. Keeping the Python boundary now
-    # validates the Electron -> local engine -> clipboard loop.
+    model_name = get_env("DICTEX_STT_MODEL", DEFAULT_MODEL)
+    language = get_env("DICTEX_STT_LANGUAGE", DEFAULT_LANGUAGE)
+    device = get_env("DICTEX_STT_DEVICE", DEFAULT_DEVICE)
+    compute_type = get_env("DICTEX_STT_COMPUTE_TYPE", DEFAULT_COMPUTE_TYPE)
+
+    model = WhisperModel(model_name, device=device, compute_type=compute_type)
+    segments, info = model.transcribe(str(audio_path), language=language, vad_filter=True)
+    transcript = " ".join(segment.text.strip() for segment in segments).strip()
+
     print(
         json.dumps(
             {
-                "transcript": f"fake transcript from DicTeX local engine ({audio_size} bytes received)",
+                "transcript": transcript,
                 "audio_path": str(audio_path),
                 "audio_size": audio_size,
-            }
+                "stt_engine": "faster-whisper",
+                "stt_model": model_name,
+                "stt_language": info.language,
+                "stt_language_probability": info.language_probability,
+                "stt_duration": info.duration,
+            },
+            ensure_ascii=False,
         )
     )
     return 0
