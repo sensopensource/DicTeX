@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,6 +31,29 @@ type SttConfig = {
   computeType: string;
 };
 
+type AudioSegmentRecord = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+};
+
+type SttBenchmarkResult = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+  sttEngine: string;
+  sttModel: string;
+  sttLanguage: string;
+  transcript: string;
+  audioDurationSeconds: number | null;
+  transcriptionDurationMs: number;
+};
+
+type SttBenchmarkResponse = {
+  source: AudioSegmentRecord;
+  results: SttBenchmarkResult[];
+};
+
 type EngineTranscriptionResult = {
   transcript: string;
   sttEngine: string;
@@ -51,6 +74,7 @@ const repoRoot = path.resolve(__dirname, "..", "..", "..");
 const enginePath = path.join(repoRoot, "engine", "transcribe.py");
 const sessionId = `session_${new Date().toISOString().replace(/\D/g, "")}`;
 const globalHotkey = "Super+Alt+Space";
+const sttBenchmarkModels = ["tiny", "base", "small"];
 
 let mainWindow: BrowserWindow | null = null;
 let globalHotkeyRegistered = false;
@@ -157,6 +181,10 @@ function getDataRoot(): string {
   return path.join(app.getPath("userData"), "data");
 }
 
+function getEventsPath(): string {
+  return path.join(getDataRoot(), "events.jsonl");
+}
+
 function getAudioExtension(mimeType: string): string {
   if (mimeType.includes("webm")) {
     return "webm";
@@ -178,15 +206,63 @@ function toPortableRef(basePath: string, targetPath: string): string {
   return path.relative(basePath, targetPath).split(path.sep).join("/");
 }
 
+function resolveDataRef(portableRef: string): string {
+  const dataRoot = path.resolve(getDataRoot());
+  const targetPath = path.resolve(dataRoot, portableRef);
+  const relative = path.relative(dataRoot, targetPath);
+
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Data reference points outside data directory: ${portableRef}`);
+  }
+
+  return targetPath;
+}
+
 async function appendEvent(event: Record<string, JsonValue>): Promise<void> {
   const dataRoot = getDataRoot();
   await mkdir(dataRoot, { recursive: true });
-  await appendFile(path.join(dataRoot, "events.jsonl"), `${JSON.stringify(event)}\n`, {
+  await appendFile(getEventsPath(), `${JSON.stringify(event)}\n`, {
     encoding: "utf8",
   });
 }
 
-function transcribeWithPython(audioPath: string): Promise<EngineTranscriptionResult> {
+async function getLatestAudioSegment(): Promise<AudioSegmentRecord | null> {
+  const eventsPath = getEventsPath();
+  if (!existsSync(eventsPath)) {
+    return null;
+  }
+
+  const contents = await readFile(eventsPath, { encoding: "utf8" });
+  let latestAudioSegment: AudioSegmentRecord | null = null;
+
+  for (const line of contents.split(/\r?\n/)) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    try {
+      const event = JSON.parse(line) as Record<string, unknown>;
+      if (
+        event.event_type === "audio_segment" &&
+        typeof event.session_id === "string" &&
+        typeof event.segment_id === "string" &&
+        typeof event.audio_ref === "string"
+      ) {
+        latestAudioSegment = {
+          sessionId: event.session_id,
+          segmentId: event.segment_id,
+          audioRef: event.audio_ref,
+        };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return latestAudioSegment;
+}
+
+function transcribeWithPython(audioPath: string, config: SttConfig = getSttConfig()): Promise<EngineTranscriptionResult> {
   return new Promise((resolve, reject) => {
     const python = getPythonInvocation();
     const child = spawn(python.command, [...python.argsPrefix, enginePath, audioPath], {
@@ -195,6 +271,10 @@ function transcribeWithPython(audioPath: string): Promise<EngineTranscriptionRes
         ...process.env,
         HF_HUB_DISABLE_SYMLINKS_WARNING: "1",
         PYTHONIOENCODING: "utf-8",
+        DICTEX_STT_MODEL: config.model,
+        DICTEX_STT_LANGUAGE: config.language,
+        DICTEX_STT_DEVICE: config.device,
+        DICTEX_STT_COMPUTE_TYPE: config.computeType,
       },
       windowsHide: true,
     });
@@ -341,6 +421,63 @@ ipcMain.handle(
     };
   },
 );
+
+ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkResponse> => {
+  const latestAudioSegment = await getLatestAudioSegment();
+  if (!latestAudioSegment) {
+    throw new Error("No stored audio segment found");
+  }
+
+  const audioPath = resolveDataRef(latestAudioSegment.audioRef);
+  if (!existsSync(audioPath)) {
+    throw new Error(`Audio segment file not found: ${latestAudioSegment.audioRef}`);
+  }
+
+  const baseConfig = getSttConfig();
+  const results: SttBenchmarkResult[] = [];
+
+  for (const model of sttBenchmarkModels) {
+    const config = {
+      ...baseConfig,
+      model,
+    };
+    const transcriptionStartedAt = Date.now();
+    const sttResult = await transcribeWithPython(audioPath, config);
+    const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
+    const result: SttBenchmarkResult = {
+      sessionId: latestAudioSegment.sessionId,
+      segmentId: latestAudioSegment.segmentId,
+      audioRef: latestAudioSegment.audioRef,
+      sttEngine: sttResult.sttEngine,
+      sttModel: sttResult.sttModel,
+      sttLanguage: sttResult.sttLanguage,
+      transcript: sttResult.transcript,
+      audioDurationSeconds: sttResult.audioDurationSeconds,
+      transcriptionDurationMs,
+    };
+
+    await appendEvent({
+      event_type: "stt_benchmark_result",
+      session_id: result.sessionId,
+      segment_id: result.segmentId,
+      created_at: new Date().toISOString(),
+      audio_ref: result.audioRef,
+      stt_engine: result.sttEngine,
+      stt_model: result.sttModel,
+      stt_language: result.sttLanguage,
+      transcript: result.transcript,
+      audio_duration_seconds: result.audioDurationSeconds,
+      transcription_duration_ms: result.transcriptionDurationMs,
+    });
+
+    results.push(result);
+  }
+
+  return {
+    source: latestAudioSegment,
+    results,
+  };
+});
 
 ipcMain.handle("diagnostics:open-data-folder", async (): Promise<boolean> => {
   const dataRoot = getDataRoot();

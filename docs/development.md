@@ -169,4 +169,10 @@ Each dictation writes at least two events:
 {"event_type":"stt_result","session_id":"session_...","segment_id":"seg_0001","stt_engine":"faster-whisper","stt_model":"base","stt_language":"fr","stt_output":"...","corrected_transcript":null}
 ```
 
+The STT benchmark action reuses the latest stored audio segment and appends one result per tested model:
+
+```json
+{"event_type":"stt_benchmark_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","stt_engine":"faster-whisper","stt_model":"small","stt_language":"fr","transcript":"...","audio_duration_seconds":2.4,"transcription_duration_ms":1830}
+```
+
 The correction UX is intentionally not implemented yet. The important MVP decision is to preserve the audio -> STT output link from the beginning.
