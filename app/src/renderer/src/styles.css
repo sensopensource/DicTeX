@@ -62,6 +62,25 @@ h1 {
   line-height: 1.7;
 }
 
+.shortcut {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 1.25rem 0 0;
+  border: 1px solid rgba(32, 25, 15, 0.12);
+  border-radius: 999px;
+  padding: 0.65rem 0.9rem;
+  color: #20190f;
+  background: rgba(255, 252, 244, 0.62);
+  font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+  font-size: 0.9rem;
+}
+
+.shortcut-warning {
+  color: #9b1c1c;
+  font-weight: 700;
+}
+
 .dictation-card {
   align-self: center;
   padding: 2rem;

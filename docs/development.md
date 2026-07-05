@@ -93,6 +93,25 @@ cd app
 
 The first implementation uses a fake Python transcript. This validates the Electron -> Python -> clipboard loop before adding faster-whisper.
 
+## Global Dictation Hotkey
+
+DicTeX registers this global toggle shortcut:
+
+```text
+Win+Alt+Space
+```
+
+Behavior:
+
+```text
+press once -> start recording
+press again -> stop recording, transcribe, copy, paste
+```
+
+On Windows, global hotkey dictation pastes into the active application after copying the transcript to the clipboard. On other platforms, the transcript is copied to the clipboard and auto-paste is skipped for now.
+
+The manual `Hold to dictate` button still records and copies to clipboard without auto-pasting.
+
 ## STT Engine
 
 The local engine uses `faster-whisper`.
