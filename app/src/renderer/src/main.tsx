@@ -67,7 +67,7 @@ type DictationApi = {
   openDataFolder: () => Promise<boolean>;
   openEventsLog: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
-  runLatestSttBenchmark: () => Promise<SttBenchmarkResponse>;
+  runLatestSttBenchmark?: () => Promise<SttBenchmarkResponse>;
 };
 
 declare global {
@@ -236,6 +236,11 @@ function App(): React.ReactElement {
   }
 
   async function runLatestSttBenchmark(): Promise<void> {
+    if (typeof window.dictex.runLatestSttBenchmark !== "function") {
+      setBenchmarkError("Restart DicTeX to load the benchmark preload API");
+      return;
+    }
+
     setBenchmarkError("");
     setNotice("");
     setIsBenchmarking(true);
@@ -320,10 +325,19 @@ function App(): React.ReactElement {
           </div>
           <button
             className="secondary-button"
-            disabled={isBenchmarking || status === "recording" || status === "transcribing"}
+            disabled={
+              typeof window.dictex.runLatestSttBenchmark !== "function" ||
+              isBenchmarking ||
+              status === "recording" ||
+              status === "transcribing"
+            }
             onClick={runLatestSttBenchmark}
           >
-            {isBenchmarking ? "Running" : "Benchmark latest"}
+            {typeof window.dictex.runLatestSttBenchmark !== "function"
+              ? "Restart app"
+              : isBenchmarking
+                ? "Running"
+                : "Benchmark latest"}
           </button>
         </div>
 
