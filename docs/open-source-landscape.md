@@ -25,10 +25,11 @@ DicTeX should reuse existing open source building blocks where possible.
 
 ## UI
 
-- Tauri: lightweight desktop application shell.
-- React: UI layer.
-- TipTap: rich document editor.
-- CodeMirror: structured text and LaTeX editing.
+- Electron: current desktop application shell.
+- React: current UI layer.
+- Tauri: possible future lightweight desktop shell, not current.
+- TipTap: possible future rich document editor, not part of the current MVP.
+- CodeMirror: possible future structured text and LaTeX editor, not part of the current MVP.
 
 ## Learning And Fine-Tuning Later
 
@@ -40,7 +41,7 @@ DicTeX should reuse existing open source building blocks where possible.
 
 ## Positioning
 
-Existing projects cover parts of the pipeline, but DicTeX aims to combine:
+Existing projects cover parts of the pipeline, but DicTeX aims to eventually combine:
 
 - local-first mathematical dictation;
 - paragraph/math distinction;
@@ -48,3 +49,4 @@ Existing projects cover parts of the pipeline, but DicTeX aims to combine:
 - structured correction logs;
 - improvement over time.
 
+The current implementation only covers the local dictation foundation: faster-whisper transcription, active-app insertion, and local STT event logging.

@@ -1,43 +1,56 @@
 # Architecture
 
-The first architecture should be simple and local.
+The first architecture is simple and local.
 
 ```mermaid
 flowchart LR
-    A[Voice] --> B[Transcription]
-    B --> C[Paragraph or math?]
-    C --> D[Text + LaTeX]
-    D --> E[Insert in active app]
-    E --> F[Fast correction]
-    F --> G[Correct output]
-    F --> H[Correction logs]
-    H --> I[Future improvement]
+    A[Voice] --> B[Electron Renderer]
+    B --> C[Python STT Engine]
+    C --> D[Clipboard / Active App]
+    C --> E[JSONL STT Logs]
+    E --> F[Future Correction Data]
 ```
 
 ## Pipeline
 
+Current pipeline:
+
 ```text
 Audio capture
 -> speech-to-text
+-> clipboard
+-> optional Windows auto-paste
+-> audio_segment + stt_result event storage
+```
+
+Future math pipeline:
+
+```text
+STT output
 -> transcript normalization
 -> paragraph/math/command classification
 -> LaTeX generation
--> insertion into active app
 -> correction
 -> correction event storage
 ```
 
-## Recommended MVP Stack
+## Current MVP Stack
 
-- Desktop shell: Tauri or a local web app.
+- Desktop shell: Electron.
 - UI: React.
-- Editor: TipTap or CodeMirror.
-- STT: faster-whisper first, whisper.cpp later for packaging.
-- Local LLM: Ollama first, llama.cpp later for tighter integration.
-- Math rendering: KaTeX.
-- Math validation: SymPy and latex2sympy2.
-- Storage: SQLite.
+- App language: TypeScript.
+- STT sidecar: Python.
+- STT engine: faster-whisper.
+- Storage: JSONL events plus local audio files.
 - Training export: JSONL.
+
+Possible later additions:
+
+- whisper.cpp for packaging.
+- Ollama or llama.cpp for local math/text transformation.
+- KaTeX for math preview.
+- SymPy and latex2sympy2 for math validation.
+- SQLite when JSONL is no longer enough.
 
 ## Data Model
 
@@ -46,12 +59,10 @@ Core entities:
 - dictation session;
 - audio segment;
 - raw transcript;
-- normalized transcript;
-- generated output;
-- correction event;
-- target application;
-- user preference.
+- STT result;
+- correction event later;
+- user preference later.
 
-The data model must preserve the link between what was spoken, what the system generated, and what the user corrected.
+The current data model must preserve the link between what was spoken and what the STT model produced.
 
-For the MVP, DicTeX should not assume that it owns the document. It acts like a local dictation layer that outputs text and LaTeX into another application.
+For the MVP, DicTeX should not assume that it owns the document. It acts like a local dictation layer that outputs text into another application. LaTeX generation is a future layer.

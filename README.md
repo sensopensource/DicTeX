@@ -2,13 +2,22 @@
 
 DicTeX is a local-first voice tool for mathematical dictation.
 
-It turns spoken language into text and LaTeX that can be inserted into the active application, while storing correction logs that can later improve the system.
+It currently turns spoken language into text that can be inserted into the active application, while storing local STT data that can later support correction, evaluation, and fine-tuning.
 
 ## Core Idea
 
 Mathematical dictation is not only speech-to-text.
 
-Users mix natural language, equations, commands, hesitation, and corrections. DicTeX is designed around that reality:
+Users mix natural language, equations, commands, hesitation, and corrections. DicTeX is designed around that reality, but the current implementation intentionally starts with the dictation foundation:
+
+```text
+Voice
+-> transcription
+-> clipboard / active app insertion
+-> local STT event logging
+```
+
+Future math loop:
 
 ```text
 Voice
@@ -25,26 +34,29 @@ Voice
 
 ```mermaid
 flowchart LR
-    A[Voice] --> B[Transcription]
-    B --> C[Paragraph or math?]
-    C --> D[Text + LaTeX]
-    D --> E[Insert in active app]
-    E --> F[Fast correction]
-    F --> G[Correct output]
-    F --> H[Correction logs]
-    H --> I[Future improvement]
+    A[Voice] --> B[Local STT]
+    B --> C[Clipboard / active app]
+    C --> D[STT event logs]
+    D --> E[Future correction + improvement]
 ```
 
 ## MVP Scope
 
-The first version focuses on a small but useful local workflow:
+The current MVP focuses on a small but useful local workflow:
 
 - local speech-to-text;
+- insertion into the active application;
+- global hotkey dictation;
+- Windows auto-paste;
+- local audio segment storage;
+- local STT result logging.
+
+Future MVP layers include:
+
 - paragraph vs math detection;
 - spoken math to LaTeX;
-- insertion into the active application;
 - fast correction loop;
-- local correction logging;
+- correction event logging;
 - optional Markdown + LaTeX output.
 
 ## Not In The MVP
@@ -56,9 +68,9 @@ The first version focuses on a small but useful local workflow:
 - mobile apps;
 - multi-user backend.
 
-## Why Correction Logs Matter
+## Why Local Logs Matter
 
-Every correction should be stored with context:
+Every segment should preserve the audio -> STT output link. Future corrections should be stored with context:
 
 ```json
 {
@@ -105,4 +117,4 @@ Dicter des maths, corriger vite, ameliorer le systeme avec chaque correction.
 
 ## Status
 
-Early MVP. The app currently supports local faster-whisper transcription, local STT event logging, and global Windows hotkey dictation on the active development branch.
+Early MVP. The app currently supports local faster-whisper transcription, local STT event logging, global Windows hotkey dictation, and Windows auto-paste.

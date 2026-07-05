@@ -91,7 +91,7 @@ cd app
 ../scripts/npm.sh run dev
 ```
 
-The first implementation uses a fake Python transcript. This validates the Electron -> Python -> clipboard loop before adding faster-whisper.
+The app uses a Python sidecar with faster-whisper for local transcription.
 
 ## Global Dictation Hotkey
 

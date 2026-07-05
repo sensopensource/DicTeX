@@ -4,6 +4,8 @@ Correction is a core part of DicTeX.
 
 The system should not only replace visible output. It should record correction events that can later improve rules, prompts, preferences, and models.
 
+Correction UI is not implemented yet. The current app only stores `audio_segment` and `stt_result` events. This document describes the future correction layer that should build on those records.
+
 ## Correction Event
 
 Example:

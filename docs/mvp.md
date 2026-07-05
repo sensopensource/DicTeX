@@ -2,7 +2,7 @@
 
 The MVP should prove one thing:
 
-DicTeX can turn spoken mathematical thinking into text and LaTeX that can be inserted into the active app, with a low-friction correction loop.
+DicTeX can turn spoken input into text that can be inserted into the active app, while preserving local audio and STT logs for future improvement.
 
 ## Target User
 
@@ -16,16 +16,23 @@ Initial target:
 
 - Record short voice segments.
 - Transcribe locally.
-- Classify each segment as paragraph, math, or command.
-- Convert spoken math into LaTeX.
 - Insert the output into the active application.
-- Allow fast correction.
-- Store every correction event locally.
-- Optionally expose Markdown/LaTeX output for copy, paste, or export.
+- Trigger dictation with a global hotkey.
+- Auto-paste on Windows.
+- Store every audio segment locally.
+- Store every STT result locally.
+
+Future MVP layers:
+
+- classify each segment as paragraph, math, or command;
+- convert spoken math into LaTeX;
+- allow fast correction;
+- store correction events locally;
+- optionally expose Markdown/LaTeX output for copy, paste, or export.
 
 ## Initial Math Scope
 
-The first math scope should stay narrow:
+The first math scope is not implemented yet. When it starts, it should stay narrow:
 
 - variables;
 - basic arithmetic;

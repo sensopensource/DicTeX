@@ -4,6 +4,8 @@ DicTeX is a local-first tool for mathematical dictation.
 
 The goal is to let users speak naturally while mixing paragraphs, equations, and editing commands. The system should output text and LaTeX into the active application, then make correction fast and reusable for future improvement.
 
+Current implementation status: DicTeX has the local dictation foundation only. Paragraph/math detection, LaTeX generation, and correction UI are future layers.
+
 ## Problem
 
 General speech-to-text tools are not good enough for mathematical reasoning.
