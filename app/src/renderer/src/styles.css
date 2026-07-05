@@ -51,7 +51,14 @@ h1 {
   color: #f4f4f4;
   font-size: 1.15rem;
   font-weight: 600;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
+}
+
+h2 {
+  margin: 0;
+  color: #f4f4f4;
+  font-size: 0.92rem;
+  font-weight: 600;
 }
 
 .status-pill {
@@ -192,6 +199,79 @@ h1 {
   padding: 0.75rem;
 }
 
+.benchmark-panel {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.75rem;
+}
+
+.benchmark-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.benchmark-header div {
+  min-width: 0;
+}
+
+.benchmark-header p {
+  overflow: hidden;
+  margin: 0.15rem 0 0;
+  color: #8f8f8f;
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.benchmark-results {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.benchmark-result {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.45rem;
+  padding: 0.6rem;
+  background: #101010;
+}
+
+.benchmark-meta {
+  display: grid;
+  grid-template-columns: minmax(4rem, 1fr) repeat(3, minmax(3.75rem, auto));
+  gap: 0.5rem;
+  align-items: center;
+  color: #8f8f8f;
+  font-size: 0.72rem;
+}
+
+.benchmark-meta strong {
+  overflow: hidden;
+  color: #f4f4f4;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.benchmark-meta span {
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.benchmark-result p {
+  margin: 0;
+  color: #d8d8d8;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .transcript-label {
   color: #8f8f8f;
   font-size: 0.72rem;
@@ -273,5 +353,18 @@ textarea {
 
   .metric:nth-last-child(-n + 2) {
     border-bottom: 0;
+  }
+
+  .benchmark-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .benchmark-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .benchmark-meta span {
+    text-align: left;
   }
 }

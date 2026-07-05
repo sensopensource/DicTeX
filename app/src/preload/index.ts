@@ -32,6 +32,29 @@ type SttConfig = {
   computeType: string;
 };
 
+type AudioSegmentRecord = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+};
+
+type SttBenchmarkResult = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+  sttEngine: string;
+  sttModel: string;
+  sttLanguage: string;
+  transcript: string;
+  audioDurationSeconds: number | null;
+  transcriptionDurationMs: number;
+};
+
+type SttBenchmarkResponse = {
+  source: AudioSegmentRecord;
+  results: SttBenchmarkResult[];
+};
+
 contextBridge.exposeInMainWorld("dictex", {
   transcribeAudio: (audioBytes: Uint8Array, mimeType: string, options: TranscriptionOptions = {}) =>
     ipcRenderer.invoke("dictation:transcribe", audioBytes, mimeType, options) as Promise<TranscriptionResponse>,
@@ -56,4 +79,5 @@ contextBridge.exposeInMainWorld("dictex", {
   openDataFolder: () => ipcRenderer.invoke("diagnostics:open-data-folder") as Promise<boolean>,
   openEventsLog: () => ipcRenderer.invoke("diagnostics:open-events-log") as Promise<boolean>,
   getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
+  runLatestSttBenchmark: () => ipcRenderer.invoke("benchmark:run-latest-stt") as Promise<SttBenchmarkResponse>,
 });

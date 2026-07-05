@@ -33,6 +33,29 @@ type SttConfig = {
   computeType: string;
 };
 
+type AudioSegmentRecord = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+};
+
+type SttBenchmarkResult = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+  sttEngine: string;
+  sttModel: string;
+  sttLanguage: string;
+  transcript: string;
+  audioDurationSeconds: number | null;
+  transcriptionDurationMs: number;
+};
+
+type SttBenchmarkResponse = {
+  source: AudioSegmentRecord;
+  results: SttBenchmarkResult[];
+};
+
 type DictationApi = {
   transcribeAudio: (
     audioBytes: Uint8Array,
@@ -44,6 +67,7 @@ type DictationApi = {
   openDataFolder: () => Promise<boolean>;
   openEventsLog: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
+  runLatestSttBenchmark: () => Promise<SttBenchmarkResponse>;
 };
 
 declare global {
@@ -63,6 +87,10 @@ function App(): React.ReactElement {
   const [sttConfig, setSttConfig] = useState<SttConfig | null>(null);
   const [lastPasteState, setLastPasteState] = useState<"none" | "pasted" | "clipboard-only">("none");
   const [lastResult, setLastResult] = useState<TranscriptionResult | null>(null);
+  const [benchmarkSource, setBenchmarkSource] = useState<AudioSegmentRecord | null>(null);
+  const [benchmarkResults, setBenchmarkResults] = useState<SttBenchmarkResult[]>([]);
+  const [benchmarkError, setBenchmarkError] = useState("");
+  const [isBenchmarking, setIsBenchmarking] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const isStartingRef = useRef(false);
@@ -207,6 +235,22 @@ function App(): React.ReactElement {
     }
   }
 
+  async function runLatestSttBenchmark(): Promise<void> {
+    setBenchmarkError("");
+    setNotice("");
+    setIsBenchmarking(true);
+
+    try {
+      const result = await window.dictex.runLatestSttBenchmark();
+      setBenchmarkSource(result.source);
+      setBenchmarkResults(result.results);
+    } catch (benchmarkRunError) {
+      setBenchmarkError(benchmarkRunError instanceof Error ? benchmarkRunError.message : "Benchmark failed");
+    } finally {
+      setIsBenchmarking(false);
+    }
+  }
+
   const statusLabel =
     status === "done" && lastPasteState === "pasted"
       ? "pasted"
@@ -266,6 +310,42 @@ function App(): React.ReactElement {
         <Metric label="Output" value={lastPasteState === "pasted" ? "pasted" : lastPasteState === "clipboard-only" ? "clipboard" : "-"} />
       </section>
 
+      <section className="panel benchmark-panel" aria-busy={isBenchmarking}>
+        <div className="benchmark-header">
+          <div>
+            <h2>STT benchmark</h2>
+            <p title={benchmarkSource ? `${benchmarkSource.sessionId} / ${benchmarkSource.segmentId}` : undefined}>
+              {benchmarkSource ? `${benchmarkSource.sessionId} / ${benchmarkSource.segmentId}` : "Latest audio segment"}
+            </p>
+          </div>
+          <button
+            className="secondary-button"
+            disabled={isBenchmarking || status === "recording" || status === "transcribing"}
+            onClick={runLatestSttBenchmark}
+          >
+            {isBenchmarking ? "Running" : "Benchmark latest"}
+          </button>
+        </div>
+
+        {benchmarkError && <pre className="error">{benchmarkError}</pre>}
+
+        {benchmarkResults.length > 0 && (
+          <div className="benchmark-results">
+            {benchmarkResults.map((result) => (
+              <article className="benchmark-result" key={result.sttModel}>
+                <div className="benchmark-meta">
+                  <strong>{result.sttModel}</strong>
+                  <span>{result.sttLanguage}</span>
+                  <span>{formatAudioDuration(result.audioDurationSeconds)}</span>
+                  <span>{result.transcriptionDurationMs} ms</span>
+                </div>
+                <p>{result.transcript || "-"}</p>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="panel transcript-panel">
         <label className="transcript-label" htmlFor="transcript">
           Last transcript
@@ -303,6 +383,10 @@ function Metric({ label, value }: { label: string; value: string }): React.React
       <strong title={value}>{value}</strong>
     </div>
   );
+}
+
+function formatAudioDuration(durationSeconds: number | null): string {
+  return durationSeconds === null ? "-" : `${durationSeconds.toFixed(2)} s`;
 }
 
 createRoot(document.getElementById("root")!).render(
