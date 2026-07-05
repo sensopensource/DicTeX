@@ -1,8 +1,8 @@
 # DicTeX
 
-DicTeX is a local-first voice tool for mathematical writing.
+DicTeX is a local-first voice tool for mathematical dictation.
 
-It turns spoken language into structured documents containing paragraphs, LaTeX equations, and correction logs that can later improve the system.
+It turns spoken language into text and LaTeX that can be inserted into the active application, while storing correction logs that can later improve the system.
 
 ## Core Idea
 
@@ -15,6 +15,7 @@ Voice
 -> transcription
 -> paragraph/math detection
 -> text + LaTeX generation
+-> insertion into the active app
 -> fast correction
 -> correction logs
 -> future improvement
@@ -27,10 +28,11 @@ flowchart LR
     A[Voice] --> B[Transcription]
     B --> C[Paragraph or math?]
     C --> D[Text + LaTeX]
-    D --> E[Fast correction]
-    E --> F[Final document]
-    E --> G[Correction logs]
-    G --> H[Future improvement]
+    D --> E[Insert in active app]
+    E --> F[Fast correction]
+    F --> G[Correct output]
+    F --> H[Correction logs]
+    H --> I[Future improvement]
 ```
 
 ## MVP Scope
@@ -40,10 +42,10 @@ The first version focuses on a small but useful local workflow:
 - local speech-to-text;
 - paragraph vs math detection;
 - spoken math to LaTeX;
-- editable rendered document;
+- insertion into the active application;
 - fast correction loop;
 - local correction logging;
-- Markdown + LaTeX export.
+- optional Markdown + LaTeX output.
 
 ## Not In The MVP
 
@@ -60,7 +62,9 @@ Every correction should be stored with context:
 
 ```json
 {
-  "audio_segment_id": "seg_042",
+  "session_id": "session_2026_07_05_001",
+  "segment_id": "seg_042",
+  "target_app": "obsidian",
   "raw_transcript": "un sur x plus un",
   "predicted_latex": "\\frac{1}{x} + 1",
   "corrected_latex": "\\frac{1}{x + 1}",
@@ -81,7 +85,7 @@ Those logs can later improve:
 
 DicTeX est un outil local-first de dictee mathematique.
 
-Il transforme la voix en documents structures contenant du texte, des equations LaTeX et un journal de corrections utilisable pour ameliorer progressivement le systeme.
+Il transforme la voix en texte et equations LaTeX inserables dans l'application active, tout en enregistrant un journal de corrections utilisable pour ameliorer progressivement le systeme.
 
 Objectif produit :
 
@@ -100,4 +104,3 @@ Dicter des maths, corriger vite, ameliorer le systeme avec chaque correction.
 ## Status
 
 Early product definition. No usable implementation yet.
-

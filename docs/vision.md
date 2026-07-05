@@ -1,8 +1,8 @@
 # Vision
 
-DicTeX is a local-first tool for writing mathematical documents with voice.
+DicTeX is a local-first tool for mathematical dictation.
 
-The goal is to let users speak naturally while mixing paragraphs, equations, and editing commands. The system should produce a structured document that can be corrected quickly and exported as Markdown or LaTeX.
+The goal is to let users speak naturally while mixing paragraphs, equations, and editing commands. The system should output text and LaTeX into the active application, then make correction fast and reusable for future improvement.
 
 ## Problem
 
@@ -23,7 +23,7 @@ The core product is not just speech-to-LaTeX.
 The core product is:
 
 ```text
-voice -> structured document -> fast correction -> reusable improvement data
+voice -> text/LaTeX output -> fast correction -> reusable improvement data
 ```
 
 DicTeX should make mathematical dictation practical by treating correction as a first-class part of the system.
@@ -35,5 +35,5 @@ DicTeX should make mathematical dictation practical by treating correction as a 
 - English-first public documentation for open source discoverability.
 - Correction speed matters as much as model accuracy.
 - Store structured correction data from day one.
+- Session-first data model for the MVP, not document-first.
 - Fine-tuning comes later, after enough clean correction data exists.
-

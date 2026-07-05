@@ -2,7 +2,7 @@
 
 The MVP should prove one thing:
 
-DicTeX can turn spoken mathematical thinking into an editable document with a low-friction correction loop.
+DicTeX can turn spoken mathematical thinking into text and LaTeX that can be inserted into the active app, with a low-friction correction loop.
 
 ## Target User
 
@@ -18,10 +18,10 @@ Initial target:
 - Transcribe locally.
 - Classify each segment as paragraph, math, or command.
 - Convert spoken math into LaTeX.
-- Render the document with math preview.
+- Insert the output into the active application.
 - Allow fast correction.
 - Store every correction event locally.
-- Export Markdown with LaTeX.
+- Optionally expose Markdown/LaTeX output for copy, paste, or export.
 
 ## Initial Math Scope
 
@@ -61,6 +61,8 @@ Ambiguous result candidates:
 ## Out Of Scope
 
 - complete LaTeX authoring;
+- full document ownership;
+- internal document editor;
 - full theorem proving;
 - automatic proof checking;
 - advanced symbolic computation;
@@ -68,4 +70,3 @@ Ambiguous result candidates:
 - cloud sync;
 - mobile support;
 - model fine-tuning in the first version.
-

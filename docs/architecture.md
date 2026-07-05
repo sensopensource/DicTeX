@@ -7,10 +7,11 @@ flowchart LR
     A[Voice] --> B[Transcription]
     B --> C[Paragraph or math?]
     C --> D[Text + LaTeX]
-    D --> E[Fast correction]
-    E --> F[Final document]
-    E --> G[Correction logs]
-    G --> H[Future improvement]
+    D --> E[Insert in active app]
+    E --> F[Fast correction]
+    F --> G[Correct output]
+    F --> H[Correction logs]
+    H --> I[Future improvement]
 ```
 
 ## Pipeline
@@ -21,7 +22,7 @@ Audio capture
 -> transcript normalization
 -> paragraph/math/command classification
 -> LaTeX generation
--> rendering
+-> insertion into active app
 -> correction
 -> correction event storage
 ```
@@ -42,13 +43,15 @@ Audio capture
 
 Core entities:
 
-- document;
+- dictation session;
 - audio segment;
 - raw transcript;
 - normalized transcript;
-- generated block;
+- generated output;
 - correction event;
+- target application;
 - user preference.
 
 The data model must preserve the link between what was spoken, what the system generated, and what the user corrected.
 
+For the MVP, DicTeX should not assume that it owns the document. It acts like a local dictation layer that outputs text and LaTeX into another application.

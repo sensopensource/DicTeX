@@ -2,7 +2,7 @@
 
 Correction is a core part of DicTeX.
 
-The system should not only edit the visible document. It should record correction events that can later improve rules, prompts, preferences, and models.
+The system should not only replace visible output. It should record correction events that can later improve rules, prompts, preferences, and models.
 
 ## Correction Event
 
@@ -12,8 +12,9 @@ Example:
 {
   "event_type": "correction",
   "timestamp": "2026-07-05T12:00:00Z",
-  "document_id": "doc_001",
+  "session_id": "session_2026_07_05_001",
   "segment_id": "seg_042",
+  "target_app": "obsidian",
   "audio_ref": "audio/seg_042.wav",
   "raw_transcript": "un sur x plus un",
   "normalized_transcript": "un sur x plus un",
@@ -44,7 +45,7 @@ Corrections should not immediately mutate the global system.
 
 Use separate levels:
 
-- local document correction;
+- local output correction;
 - user preference;
 - rule improvement;
 - prompt improvement;
@@ -58,4 +59,3 @@ Correction events should be exportable as JSONL:
 ```jsonl
 {"input":"un sur x plus un","wrong":"\\frac{1}{x} + 1","correct":"\\frac{1}{x + 1}","error_type":"fraction_scope"}
 ```
-
