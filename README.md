@@ -100,6 +100,7 @@ Dicter des maths, corriger vite, ameliorer le systeme avec chaque correction.
 - [Architecture](docs/architecture.md)
 - [Correction Loop](docs/correction-loop.md)
 - [Open Source Landscape](docs/open-source-landscape.md)
+- [Development](docs/development.md)
 
 ## Status
 

@@ -1,0 +1,191 @@
+:root {
+  color: #20190f;
+  background: #f5efe1;
+  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(209, 96, 43, 0.25), transparent 32rem),
+    linear-gradient(135deg, #f8f0df 0%, #ead8b8 52%, #d7c59e 100%);
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(22rem, 1fr);
+  gap: 2rem;
+  min-height: 100vh;
+  padding: 4rem;
+}
+
+.hero {
+  align-self: center;
+}
+
+.eyebrow {
+  margin: 0 0 1rem;
+  color: #8b3f20;
+  font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  max-width: 11ch;
+  font-size: clamp(3.5rem, 9vw, 7.5rem);
+  line-height: 0.86;
+  letter-spacing: -0.07em;
+}
+
+.lede {
+  max-width: 34rem;
+  margin: 1.5rem 0 0;
+  color: #594b36;
+  font-size: 1.1rem;
+  line-height: 1.7;
+}
+
+.dictation-card {
+  align-self: center;
+  padding: 2rem;
+  border: 1px solid rgba(32, 25, 15, 0.12);
+  border-radius: 2rem;
+  background: rgba(255, 252, 244, 0.76);
+  box-shadow: 0 2rem 5rem rgba(65, 43, 18, 0.16);
+  backdrop-filter: blur(24px);
+}
+
+.record-button {
+  width: 100%;
+  min-height: 12rem;
+  border: 0;
+  border-radius: 1.5rem;
+  color: #fffaf0;
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.2), transparent 11rem),
+    #20190f;
+  box-shadow: inset 0 -0.5rem 1rem rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  font-size: clamp(2rem, 5vw, 4rem);
+  font-weight: 700;
+  letter-spacing: -0.06em;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.record-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.record-button:active:not(:disabled) {
+  transform: translateY(2px) scale(0.99);
+  background: #8b3f20;
+}
+
+.record-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.status {
+  margin: 1rem 0 1.5rem;
+  color: #594b36;
+  font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.status-recording {
+  color: #b84521;
+}
+
+.status-done {
+  color: #356442;
+}
+
+.status-error {
+  color: #9b1c1c;
+}
+
+.transcript-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #594b36;
+  font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+textarea {
+  width: 100%;
+  min-height: 12rem;
+  resize: vertical;
+  border: 1px solid rgba(32, 25, 15, 0.18);
+  border-radius: 1rem;
+  padding: 1rem;
+  color: #20190f;
+  background: rgba(255, 252, 244, 0.9);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.secondary-button {
+  width: 100%;
+  margin-top: 1rem;
+  border: 1px solid rgba(32, 25, 15, 0.18);
+  border-radius: 999px;
+  padding: 0.9rem 1.2rem;
+  color: #20190f;
+  background: #f3dfb8;
+  cursor: pointer;
+  font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+  font-weight: 700;
+}
+
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.error {
+  overflow: auto;
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  color: #7f1d1d;
+  background: #fee2e2;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 800px) {
+  .shell {
+    grid-template-columns: 1fr;
+    padding: 2rem;
+  }
+
+  h1 {
+    max-width: 12ch;
+  }
+}
