@@ -1,0 +1,18 @@
+# OS
+Thumbs.db
+Desktop.ini
+
+# Editors
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Local runtime data
+.env
+.env.*
+data/
+audio/
+corrections.local.jsonl
+
