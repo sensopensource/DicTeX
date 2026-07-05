@@ -1,0 +1,3 @@
+# The first implementation uses a fake transcript to validate the desktop loop.
+# faster-whisper will be added after the Electron -> Python boundary is stable.
+

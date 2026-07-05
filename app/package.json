@@ -1,0 +1,27 @@
+{
+  "name": "dictex-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DicTeX desktop app",
+  "main": "out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.6",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.0.4",
+    "electron": "^39.2.7",
+    "electron-vite": "^4.0.1",
+    "vite": "^7.1.12",
+    "typescript": "^5.9.3"
+  }
+}
