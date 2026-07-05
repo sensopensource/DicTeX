@@ -23,6 +23,14 @@ type TranscriptionOptions = {
   trigger?: "manual" | "global_hotkey";
 };
 
+type SttConfig = {
+  engine: string;
+  model: string;
+  language: string;
+  device: string;
+  computeType: string;
+};
+
 type EngineTranscriptionResult = {
   transcript: string;
   sttEngine: string;
@@ -47,6 +55,16 @@ const globalHotkey = "Super+Alt+Space";
 let mainWindow: BrowserWindow | null = null;
 let globalHotkeyRegistered = false;
 let segmentCounter = 0;
+
+function getSttConfig(): SttConfig {
+  return {
+    engine: "faster-whisper",
+    model: process.env.DICTEX_STT_MODEL || "base",
+    language: process.env.DICTEX_STT_LANGUAGE || "fr",
+    device: process.env.DICTEX_STT_DEVICE || "cpu",
+    computeType: process.env.DICTEX_STT_COMPUTE_TYPE || "int8",
+  };
+}
 
 function createWindow(): BrowserWindow {
   mainWindow = new BrowserWindow({
@@ -341,6 +359,8 @@ ipcMain.handle("diagnostics:open-events-log", async (): Promise<boolean> => {
   const error = await shell.openPath(eventsPath);
   return error.length === 0;
 });
+
+ipcMain.handle("diagnostics:get-stt-config", (): SttConfig => getSttConfig());
 
 app.whenReady().then(() => {
   createWindow();

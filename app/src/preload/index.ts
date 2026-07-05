@@ -24,6 +24,14 @@ type HotkeyStatus = {
   registered: boolean;
 };
 
+type SttConfig = {
+  engine: string;
+  model: string;
+  language: string;
+  device: string;
+  computeType: string;
+};
+
 contextBridge.exposeInMainWorld("dictex", {
   transcribeAudio: (audioBytes: Uint8Array, mimeType: string, options: TranscriptionOptions = {}) =>
     ipcRenderer.invoke("dictation:transcribe", audioBytes, mimeType, options) as Promise<TranscriptionResponse>,
@@ -47,4 +55,5 @@ contextBridge.exposeInMainWorld("dictex", {
   },
   openDataFolder: () => ipcRenderer.invoke("diagnostics:open-data-folder") as Promise<boolean>,
   openEventsLog: () => ipcRenderer.invoke("diagnostics:open-events-log") as Promise<boolean>,
+  getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
 });

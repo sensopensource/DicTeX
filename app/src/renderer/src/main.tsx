@@ -25,6 +25,14 @@ type HotkeyStatus = {
   registered: boolean;
 };
 
+type SttConfig = {
+  engine: string;
+  model: string;
+  language: string;
+  device: string;
+  computeType: string;
+};
+
 type DictationApi = {
   transcribeAudio: (
     audioBytes: Uint8Array,
@@ -35,6 +43,7 @@ type DictationApi = {
   onHotkeyStatus: (callback: (status: HotkeyStatus) => void) => () => void;
   openDataFolder: () => Promise<boolean>;
   openEventsLog: () => Promise<boolean>;
+  getSttConfig: () => Promise<SttConfig>;
 };
 
 declare global {
@@ -49,7 +58,9 @@ function App(): React.ReactElement {
   const [status, setStatus] = useState<Status>("idle");
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [hotkeyStatus, setHotkeyStatus] = useState<HotkeyStatus | null>(null);
+  const [sttConfig, setSttConfig] = useState<SttConfig | null>(null);
   const [lastPasteState, setLastPasteState] = useState<"none" | "pasted" | "clipboard-only">("none");
   const [lastResult, setLastResult] = useState<TranscriptionResult | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -77,6 +88,9 @@ function App(): React.ReactElement {
       void startRecording();
     });
     const removeHotkeyStatusListener = window.dictex.onHotkeyStatus(setHotkeyStatus);
+    void window.dictex.getSttConfig().then(setSttConfig).catch(() => {
+      setNotice("Could not read STT config");
+    });
 
     return () => {
       removeToggleListener();
@@ -93,6 +107,7 @@ function App(): React.ReactElement {
     stopRequestedRef.current = false;
     pendingTranscriptionOptionsRef.current = { trigger: "manual" };
     setError("");
+    setNotice("");
     setStatus("recording");
     setTranscript("");
     setLastPasteState("none");
@@ -175,18 +190,20 @@ function App(): React.ReactElement {
   }
 
   async function openDataFolder(): Promise<void> {
-    const opened = await window.dictex.openDataFolder();
-    if (!opened) {
-      setError("Could not open data folder");
-      setStatus("error");
+    try {
+      const opened = await window.dictex.openDataFolder();
+      setNotice(opened ? "Opened data folder" : "Could not open data folder");
+    } catch (openError) {
+      setNotice(openError instanceof Error ? openError.message : "Could not open data folder");
     }
   }
 
   async function openEventsLog(): Promise<void> {
-    const opened = await window.dictex.openEventsLog();
-    if (!opened) {
-      setError("Could not open events log");
-      setStatus("error");
+    try {
+      const opened = await window.dictex.openEventsLog();
+      setNotice(opened ? "Opened events log" : "Could not open events log");
+    } catch (openError) {
+      setNotice(openError instanceof Error ? openError.message : "Could not open events log");
     }
   }
 
@@ -229,22 +246,22 @@ function App(): React.ReactElement {
         <div className="shortcut-row">
           <span>Shortcut</span>
           <strong>Win+Alt+Space</strong>
-          <span className={hotkeyStatus?.registered === false ? "signal-bad" : "signal-good"}>
-            {hotkeyStatus?.registered === false ? "not registered" : "registered"}
+          <span className={hotkeyStatus === null ? "signal-muted" : hotkeyStatus.registered ? "signal-good" : "signal-bad"}>
+            {hotkeyStatus === null ? "checking" : hotkeyStatus.registered ? "registered" : "not registered"}
           </span>
         </div>
       </section>
 
       <section className="panel diagnostics-grid">
-        <Metric label="Engine" value={lastResult?.sttEngine ?? "faster-whisper"} />
-        <Metric label="Model" value={lastResult?.sttModel ?? "base"} />
-        <Metric label="Language" value={lastResult?.sttLanguage ?? "fr"} />
+        <Metric label="Engine" value={lastResult?.sttEngine ?? sttConfig?.engine ?? "-"} />
+        <Metric label="Model" value={lastResult?.sttModel ?? sttConfig?.model ?? "-"} />
+        <Metric label="Language" value={lastResult?.sttLanguage ?? sttConfig?.language ?? "-"} />
         <Metric label="Latency" value={lastResult ? `${lastResult.transcriptionDurationMs} ms` : "-"} />
         <Metric label="Session" value={lastResult?.sessionId ?? "-"} />
         <Metric label="Segment" value={lastResult?.segmentId ?? "-"} />
         <Metric
           label="Audio"
-          value={lastResult?.audioDurationSeconds ? `${lastResult.audioDurationSeconds.toFixed(2)} s` : "-"}
+          value={lastResult?.audioDurationSeconds !== null && lastResult?.audioDurationSeconds !== undefined ? `${lastResult.audioDurationSeconds.toFixed(2)} s` : "-"}
         />
         <Metric label="Output" value={lastPasteState === "pasted" ? "pasted" : lastPasteState === "clipboard-only" ? "clipboard" : "-"} />
       </section>
@@ -261,6 +278,7 @@ function App(): React.ReactElement {
         />
 
         {error && <pre className="error">{error}</pre>}
+        {notice && <p className="notice">{notice}</p>}
 
         <div className="actions">
           <button className="secondary-button" disabled={!transcript} onClick={copyTranscript}>

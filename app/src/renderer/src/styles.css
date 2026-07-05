@@ -144,6 +144,10 @@ h1 {
   color: #ff9a9a;
 }
 
+.signal-muted {
+  color: #777;
+}
+
 .diagnostics-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -244,6 +248,12 @@ textarea {
   white-space: pre-wrap;
 }
 
+.notice {
+  margin: 0;
+  color: #9a9a9a;
+  font-size: 0.78rem;
+}
+
 @media (max-width: 680px) {
   .diagnostics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -265,4 +275,3 @@ textarea {
     border-bottom: 0;
   }
 }
-
