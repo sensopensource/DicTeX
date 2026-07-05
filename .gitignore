@@ -23,6 +23,7 @@ app/dist/
 # Local runtime data
 .env
 .env.*
+.local/
 data/
 audio/
 corrections.local.jsonl
