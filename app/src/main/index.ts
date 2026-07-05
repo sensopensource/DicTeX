@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, globalShortcut, ipcMain } from "electron";
+import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
@@ -11,6 +11,11 @@ type TranscriptionResult = {
   pastedToActiveApp: boolean;
   sessionId: string;
   segmentId: string;
+  sttEngine: string;
+  sttModel: string;
+  sttLanguage: string;
+  audioDurationSeconds: number | null;
+  transcriptionDurationMs: number;
 };
 
 type TranscriptionOptions = {
@@ -310,9 +315,32 @@ ipcMain.handle(
       pastedToActiveApp,
       sessionId,
       segmentId,
+      sttEngine: sttResult.sttEngine,
+      sttModel: sttResult.sttModel,
+      sttLanguage: sttResult.sttLanguage,
+      audioDurationSeconds: sttResult.audioDurationSeconds,
+      transcriptionDurationMs,
     };
   },
 );
+
+ipcMain.handle("diagnostics:open-data-folder", async (): Promise<boolean> => {
+  const dataRoot = getDataRoot();
+  await mkdir(dataRoot, { recursive: true });
+  const error = await shell.openPath(dataRoot);
+  return error.length === 0;
+});
+
+ipcMain.handle("diagnostics:open-events-log", async (): Promise<boolean> => {
+  const dataRoot = getDataRoot();
+  await mkdir(dataRoot, { recursive: true });
+  const eventsPath = path.join(dataRoot, "events.jsonl");
+  if (!existsSync(eventsPath)) {
+    await writeFile(eventsPath, "", { encoding: "utf8" });
+  }
+  const error = await shell.openPath(eventsPath);
+  return error.length === 0;
+});
 
 app.whenReady().then(() => {
   createWindow();

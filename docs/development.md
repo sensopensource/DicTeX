@@ -112,6 +112,11 @@ On Windows, global hotkey dictation pastes into the active application after cop
 
 The manual `Hold to dictate` button still records and copies to clipboard without auto-pasting.
 
+The UI also exposes diagnostics shortcuts:
+
+- `Open data folder`
+- `Open events log`
+
 ## STT Engine
 
 The local engine uses `faster-whisper`.

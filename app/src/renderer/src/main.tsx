@@ -13,6 +13,11 @@ type TranscriptionResult = {
   pastedToActiveApp: boolean;
   sessionId: string;
   segmentId: string;
+  sttEngine: string;
+  sttModel: string;
+  sttLanguage: string;
+  audioDurationSeconds: number | null;
+  transcriptionDurationMs: number;
 };
 
 type HotkeyStatus = {
@@ -28,6 +33,8 @@ type DictationApi = {
   ) => Promise<TranscriptionResult>;
   onDictationToggle: (callback: () => void) => () => void;
   onHotkeyStatus: (callback: (status: HotkeyStatus) => void) => () => void;
+  openDataFolder: () => Promise<boolean>;
+  openEventsLog: () => Promise<boolean>;
 };
 
 declare global {
@@ -44,6 +51,7 @@ function App(): React.ReactElement {
   const [error, setError] = useState("");
   const [hotkeyStatus, setHotkeyStatus] = useState<HotkeyStatus | null>(null);
   const [lastPasteState, setLastPasteState] = useState<"none" | "pasted" | "clipboard-only">("none");
+  const [lastResult, setLastResult] = useState<TranscriptionResult | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const isStartingRef = useRef(false);
@@ -88,6 +96,7 @@ function App(): React.ReactElement {
     setStatus("recording");
     setTranscript("");
     setLastPasteState("none");
+    setLastResult(null);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -150,6 +159,7 @@ function App(): React.ReactElement {
       );
 
       setTranscript(result.transcript);
+      setLastResult(result);
       setLastPasteState(result.pastedToActiveApp ? "pasted" : "clipboard-only");
       setStatus("done");
     } catch (transcriptionError) {
@@ -164,22 +174,40 @@ function App(): React.ReactElement {
     }
   }
 
-  return (
-    <main className="shell">
-      <section className="hero">
-        <p className="eyebrow">DicTeX MVP</p>
-        <h1>Speak once. Get text on your clipboard.</h1>
-        <p className="lede">
-          This first brick validates the OpenWhispr-like loop: record a short voice segment,
-          send it to the local engine, show the transcript, and copy it automatically.
-        </p>
-        <p className="shortcut">
-          Global shortcut: <strong>Win+Alt+Space</strong>{" "}
-          {hotkeyStatus?.registered === false && <span className="shortcut-warning">not registered</span>}
-        </p>
-      </section>
+  async function openDataFolder(): Promise<void> {
+    const opened = await window.dictex.openDataFolder();
+    if (!opened) {
+      setError("Could not open data folder");
+      setStatus("error");
+    }
+  }
 
-      <section className="dictation-card">
+  async function openEventsLog(): Promise<void> {
+    const opened = await window.dictex.openEventsLog();
+    if (!opened) {
+      setError("Could not open events log");
+      setStatus("error");
+    }
+  }
+
+  const statusLabel =
+    status === "done" && lastPasteState === "pasted"
+      ? "pasted"
+      : status === "done" && lastPasteState === "clipboard-only"
+        ? "copied"
+        : status;
+
+  return (
+    <main className="app-shell">
+      <header className="titlebar">
+        <div>
+          <p className="eyebrow">DicTeX</p>
+          <h1>Local dictation</h1>
+        </div>
+        <div className={`status-pill status-${statusLabel}`}>{statusLabel}</div>
+      </header>
+
+      <section className="panel controls-panel">
         <button
           className="record-button"
           disabled={status === "transcribing"}
@@ -198,19 +226,32 @@ function App(): React.ReactElement {
           {status === "recording" ? "Release to transcribe" : "Hold to dictate"}
         </button>
 
-        <div className={`status status-${status}`}>
-          {status === "idle" && "Ready"}
-          {status === "recording" && "Recording..."}
-          {status === "transcribing" && "Transcribing locally..."}
-          {status === "done" &&
-            (lastPasteState === "pasted" ? "Transcript pasted into active app" : "Transcript copied to clipboard")}
-          {status === "error" && "Something failed"}
+        <div className="shortcut-row">
+          <span>Shortcut</span>
+          <strong>Win+Alt+Space</strong>
+          <span className={hotkeyStatus?.registered === false ? "signal-bad" : "signal-good"}>
+            {hotkeyStatus?.registered === false ? "not registered" : "registered"}
+          </span>
         </div>
+      </section>
 
-        {error && <pre className="error">{error}</pre>}
+      <section className="panel diagnostics-grid">
+        <Metric label="Engine" value={lastResult?.sttEngine ?? "faster-whisper"} />
+        <Metric label="Model" value={lastResult?.sttModel ?? "base"} />
+        <Metric label="Language" value={lastResult?.sttLanguage ?? "fr"} />
+        <Metric label="Latency" value={lastResult ? `${lastResult.transcriptionDurationMs} ms` : "-"} />
+        <Metric label="Session" value={lastResult?.sessionId ?? "-"} />
+        <Metric label="Segment" value={lastResult?.segmentId ?? "-"} />
+        <Metric
+          label="Audio"
+          value={lastResult?.audioDurationSeconds ? `${lastResult.audioDurationSeconds.toFixed(2)} s` : "-"}
+        />
+        <Metric label="Output" value={lastPasteState === "pasted" ? "pasted" : lastPasteState === "clipboard-only" ? "clipboard" : "-"} />
+      </section>
 
+      <section className="panel transcript-panel">
         <label className="transcript-label" htmlFor="transcript">
-          Transcript
+          Last transcript
         </label>
         <textarea
           id="transcript"
@@ -219,11 +260,30 @@ function App(): React.ReactElement {
           placeholder="Your transcript will appear here."
         />
 
-        <button className="secondary-button" disabled={!transcript} onClick={copyTranscript}>
-          Copy transcript
-        </button>
+        {error && <pre className="error">{error}</pre>}
+
+        <div className="actions">
+          <button className="secondary-button" disabled={!transcript} onClick={copyTranscript}>
+            Copy
+          </button>
+          <button className="secondary-button" onClick={openDataFolder}>
+            Open data folder
+          </button>
+          <button className="secondary-button" onClick={openEventsLog}>
+            Open events log
+          </button>
+        </div>
       </section>
     </main>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }): React.ReactElement {
+  return (
+    <div className="metric">
+      <span>{label}</span>
+      <strong title={value}>{value}</strong>
+    </div>
   );
 }
 
