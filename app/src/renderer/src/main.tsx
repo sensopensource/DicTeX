@@ -77,6 +77,24 @@ type SttBenchmarkResponse = {
   results: SttBenchmarkResult[];
 };
 
+type SttCorrectionTarget = {
+  sessionId: string;
+  segmentId: string;
+  audioRef?: string;
+  rawTranscript: string;
+};
+
+type SttCorrectionRequest = SttCorrectionTarget & {
+  correctedTranscript: string;
+  correctionMethod?: "keyboard";
+};
+
+type SttCorrectionResult = {
+  createdAt: string;
+  sessionId: string;
+  segmentId: string;
+};
+
 type DictationApi = {
   transcribeAudio: (
     audioBytes: Uint8Array,
@@ -92,6 +110,7 @@ type DictationApi = {
   runSttBenchmarkForSegment?: (source: AudioSegmentRecord) => Promise<SttBenchmarkResponse>;
   getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
   writeClipboardText?: (text: string) => Promise<boolean>;
+  saveSttCorrection?: (correction: SttCorrectionRequest) => Promise<SttCorrectionResult>;
 };
 
 declare global {
@@ -119,6 +138,11 @@ function App(): React.ReactElement {
   const [historyError, setHistoryError] = useState("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [benchmarkingSegmentKey, setBenchmarkingSegmentKey] = useState("");
+  const [correctionTarget, setCorrectionTarget] = useState<SttCorrectionTarget | null>(null);
+  const [correctionDraft, setCorrectionDraft] = useState("");
+  const [correctionError, setCorrectionError] = useState("");
+  const [correctionNotice, setCorrectionNotice] = useState("");
+  const [isSavingCorrection, setIsSavingCorrection] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const isStartingRef = useRef(false);
@@ -169,6 +193,10 @@ function App(): React.ReactElement {
     setTranscript("");
     setLastPasteState("none");
     setLastResult(null);
+    setCorrectionTarget(null);
+    setCorrectionDraft("");
+    setCorrectionError("");
+    setCorrectionNotice("");
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -232,6 +260,12 @@ function App(): React.ReactElement {
 
       setTranscript(result.transcript);
       setLastResult(result);
+      setCorrectionTarget({
+        sessionId: result.sessionId,
+        segmentId: result.segmentId,
+        rawTranscript: result.transcript,
+      });
+      setCorrectionDraft(result.transcript);
       setLastPasteState(result.pastedToActiveApp ? "pasted" : "clipboard-only");
       setStatus("done");
       void loadRecentSegments();
@@ -259,6 +293,48 @@ function App(): React.ReactElement {
   async function copyHistoryTranscript(segment: RecentSegment): Promise<void> {
     await writeClipboardText(segment.transcript);
     setNotice(`Copied ${segment.segmentId}`);
+  }
+
+  function selectCorrectionTarget(segment: RecentSegment): void {
+    setCorrectionTarget({
+      sessionId: segment.sessionId,
+      segmentId: segment.segmentId,
+      audioRef: segment.audioRef,
+      rawTranscript: segment.transcript,
+    });
+    setCorrectionDraft(segment.transcript);
+    setCorrectionError("");
+    setCorrectionNotice("");
+    setNotice(`Correction target ${segment.segmentId}`);
+  }
+
+  async function saveSttCorrection(): Promise<void> {
+    if (!correctionTarget) {
+      return;
+    }
+
+    if (typeof window.dictex.saveSttCorrection !== "function") {
+      setCorrectionError("Restart DicTeX to load the correction preload API");
+      return;
+    }
+
+    setCorrectionError("");
+    setCorrectionNotice("");
+    setIsSavingCorrection(true);
+
+    try {
+      const result = await window.dictex.saveSttCorrection({
+        ...correctionTarget,
+        correctedTranscript: correctionDraft,
+        correctionMethod: "keyboard",
+      });
+      setCorrectionNotice(`Saved correction for ${result.segmentId}`);
+      void loadRecentSegments();
+    } catch (saveError) {
+      setCorrectionError(saveError instanceof Error ? saveError.message : "Could not save correction");
+    } finally {
+      setIsSavingCorrection(false);
+    }
   }
 
   async function loadRecentSegments(): Promise<void> {
@@ -499,6 +575,9 @@ function App(): React.ReactElement {
                     >
                       {benchmarkingSegmentKey === segmentKey ? "Running" : "Benchmark"}
                     </button>
+                    <button className="secondary-button" disabled={!segment.transcript} onClick={() => selectCorrectionTarget(segment)}>
+                      Correct
+                    </button>
                   </div>
                 </article>
               );
@@ -517,6 +596,33 @@ function App(): React.ReactElement {
           onChange={(event) => setTranscript(event.target.value)}
           placeholder="Your transcript will appear here."
         />
+
+        {correctionTarget && (
+          <div className="correction-box">
+            <div className="correction-header">
+              <div>
+                <h2>STT correction</h2>
+                <p title={`${correctionTarget.sessionId} / ${correctionTarget.segmentId}`}>
+                  {correctionTarget.sessionId} / {correctionTarget.segmentId}
+                </p>
+              </div>
+              <button
+                className="secondary-button"
+                disabled={isSavingCorrection || correctionDraft.length === 0}
+                onClick={() => void saveSttCorrection()}
+              >
+                {isSavingCorrection ? "Saving" : "Save correction"}
+              </button>
+            </div>
+            <textarea
+              aria-label="Corrected transcript"
+              value={correctionDraft}
+              onChange={(event) => setCorrectionDraft(event.target.value)}
+            />
+            {correctionError && <pre className="error">{correctionError}</pre>}
+            {correctionNotice && <p className="notice">{correctionNotice}</p>}
+          </div>
+        )}
 
         {error && <pre className="error">{error}</pre>}
         {notice && <p className="notice">{notice}</p>}

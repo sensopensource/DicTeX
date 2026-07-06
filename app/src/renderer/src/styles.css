@@ -335,6 +335,39 @@ h2 {
   gap: 0.45rem;
 }
 
+.correction-box {
+  display: grid;
+  gap: 0.6rem;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.55rem;
+  padding: 0.65rem;
+  background: #101010;
+}
+
+.correction-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.correction-header div {
+  min-width: 0;
+}
+
+.correction-header p {
+  overflow: hidden;
+  margin: 0.15rem 0 0;
+  color: #8f8f8f;
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.correction-box textarea {
+  min-height: 6rem;
+}
+
 .transcript-label {
   color: #8f8f8f;
   font-size: 0.72rem;
@@ -419,7 +452,8 @@ textarea {
   }
 
   .benchmark-header,
-  .history-header {
+  .history-header,
+  .correction-header {
     align-items: stretch;
     flex-direction: column;
   }

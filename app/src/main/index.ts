@@ -47,6 +47,21 @@ type BenchmarkCandidate = {
   variant?: string;
 };
 
+type SttCorrectionRequest = {
+  sessionId: string;
+  segmentId: string;
+  audioRef?: string;
+  rawTranscript: string;
+  correctedTranscript: string;
+  correctionMethod?: "keyboard";
+};
+
+type SttCorrectionResult = {
+  createdAt: string;
+  sessionId: string;
+  segmentId: string;
+};
+
 type SttBenchmarkResult = {
   sessionId: string;
   segmentId: string;
@@ -513,6 +528,36 @@ ipcMain.handle("history:get-recent-segments", async (_event, limit?: number): Pr
 ipcMain.handle("clipboard:write-text", (_event, text: string): boolean => {
   clipboard.writeText(text);
   return true;
+});
+
+ipcMain.handle("correction:save-stt", async (_event, correction: SttCorrectionRequest): Promise<SttCorrectionResult> => {
+  if (
+    !correction ||
+    typeof correction.sessionId !== "string" ||
+    typeof correction.segmentId !== "string" ||
+    typeof correction.rawTranscript !== "string" ||
+    typeof correction.correctedTranscript !== "string"
+  ) {
+    throw new Error("Invalid STT correction");
+  }
+
+  const createdAt = new Date().toISOString();
+  await appendEvent({
+    event_type: "stt_correction",
+    created_at: createdAt,
+    session_id: correction.sessionId,
+    segment_id: correction.segmentId,
+    audio_ref: typeof correction.audioRef === "string" ? correction.audioRef : null,
+    raw_transcript: correction.rawTranscript,
+    corrected_transcript: correction.correctedTranscript,
+    correction_method: correction.correctionMethod ?? "keyboard",
+  });
+
+  return {
+    createdAt,
+    sessionId: correction.sessionId,
+    segmentId: correction.segmentId,
+  };
 });
 
 ipcMain.handle("diagnostics:open-data-folder", async (): Promise<boolean> => {
