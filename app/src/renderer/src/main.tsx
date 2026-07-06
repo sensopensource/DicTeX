@@ -51,6 +51,9 @@ type RecentSegment = {
   sttLanguage: string;
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number | null;
+  correctedTranscript: string | null;
+  correctionCreatedAt: string | null;
+  correctionMethod: string | null;
 };
 
 type BenchmarkStage =
@@ -297,9 +300,14 @@ function App(): React.ReactElement {
     }
   }
 
-  async function copyHistoryTranscript(segment: RecentSegment): Promise<void> {
-    await navigator.clipboard.writeText(segment.transcript);
-    setNotice(`Copied ${segment.sessionId} / ${segment.segmentId}`);
+  async function copyHistoryTranscript(segment: RecentSegment, mode: "raw" | "corrected"): Promise<void> {
+    const text = mode === "corrected" ? segment.correctedTranscript : segment.transcript;
+    if (!text) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(text);
+    setNotice(`Copied ${mode} transcript for ${segment.sessionId} / ${segment.segmentId}`);
   }
 
   async function saveSttCorrection(): Promise<void> {
@@ -490,9 +498,19 @@ function App(): React.ReactElement {
                   <strong title={`${segment.sessionId} / ${segment.segmentId}`}>
                     {segment.sessionId} / {segment.segmentId}
                   </strong>
+                  <em className={segment.correctedTranscript ? "correction-state correction-state-done" : "correction-state"}>
+                    {segment.correctedTranscript ? "corrected" : "raw"}
+                  </em>
                 </div>
 
-                <p className="history-transcript">{segment.transcript || "-"}</p>
+                {segment.correctedTranscript ? (
+                  <div className="history-transcripts">
+                    <p className="history-transcript history-transcript-corrected">{segment.correctedTranscript}</p>
+                    <p className="history-raw-transcript">Raw: {segment.transcript || "-"}</p>
+                  </div>
+                ) : (
+                  <p className="history-transcript">{segment.transcript || "-"}</p>
+                )}
 
                 <div className="history-footer">
                   <div className="history-meta">
@@ -500,11 +518,17 @@ function App(): React.ReactElement {
                     <span>{segment.sttLanguage}</span>
                     <span>{formatAudioDuration(segment.audioDurationSeconds)}</span>
                     <span>{formatLatency(segment.transcriptionDurationMs)}</span>
+                    {segment.correctionMethod && <span>{segment.correctionMethod}</span>}
                   </div>
                   <div className="history-actions">
-                    <button className="secondary-button" disabled={!segment.transcript} onClick={() => void copyHistoryTranscript(segment)}>
-                      Copy
+                    <button className="secondary-button" disabled={!segment.transcript} onClick={() => void copyHistoryTranscript(segment, "raw")}>
+                      Copy raw
                     </button>
+                    {segment.correctedTranscript && (
+                      <button className="secondary-button" onClick={() => void copyHistoryTranscript(segment, "corrected")}>
+                        Copy corrected
+                      </button>
+                    )}
                     <button
                       className="secondary-button"
                       disabled={

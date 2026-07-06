@@ -50,6 +50,9 @@ type RecentSegment = {
   sttLanguage: string;
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number | null;
+  correctedTranscript: string | null;
+  correctionCreatedAt: string | null;
+  correctionMethod: string | null;
 };
 
 type BenchmarkStage =
