@@ -352,6 +352,44 @@ h2 {
   justify-content: flex-end;
 }
 
+.correction-panel {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.75rem;
+}
+
+.correction-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.correction-header div {
+  min-width: 0;
+}
+
+.correction-header p {
+  overflow: hidden;
+  margin: 0.15rem 0 0;
+  color: #8f8f8f;
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.correction-raw {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #8f8f8f;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .benchmark-header {
   display: flex;
   align-items: center;
@@ -525,6 +563,11 @@ textarea {
 
   .history-actions {
     justify-content: flex-start;
+  }
+
+  .correction-header {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .benchmark-meta {
