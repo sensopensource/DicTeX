@@ -38,10 +38,29 @@ type AudioSegmentRecord = {
   audioRef: string;
 };
 
+type BenchmarkStage =
+  | "stt"
+  | "normalization"
+  | "segment_classification"
+  | "math_transform"
+  | "correction_suggestion";
+
+type BenchmarkCandidate = {
+  stage: BenchmarkStage;
+  provider: string;
+  model: string;
+  variant?: string;
+};
+
 type SttBenchmarkResult = {
   sessionId: string;
   segmentId: string;
   audioRef: string;
+  candidate: BenchmarkCandidate;
+  stage: BenchmarkStage;
+  provider: string;
+  model: string;
+  variant: string | null;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;

@@ -155,6 +155,24 @@ Future model comparison should be based on actual stored segments, not assumptio
 
 Fine-tuning should not happen before enough clean local correction data exists.
 
+## Benchmark Candidates
+
+Benchmarking is stage-aware. A benchmark candidate is identified by:
+
+```text
+stage + provider + model + variant
+```
+
+Current implemented candidates are STT candidates, for example:
+
+```json
+{"stage":"stt","provider":"faster-whisper","model":"base","variant":"cpu-int8-fr"}
+```
+
+Future candidates may belong to other stages, such as normalization, segment classification, math transform, or correction suggestion. They can include local STT engines, local LLMs, remote LLMs, or rule-based transforms, but candidates should only be compared within the same stage for the same segment.
+
+Do not treat a Whisper STT transcript and a Claude or Qwen math-transform output as the same kind of benchmark artifact. They may share benchmark metadata, but their stage defines what output is being evaluated.
+
 ## Math Parsing Decisions
 
 Math parsing is not part of the current working loop yet.

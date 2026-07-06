@@ -37,10 +37,29 @@ type AudioSegmentRecord = {
   audioRef: string;
 };
 
+type BenchmarkStage =
+  | "stt"
+  | "normalization"
+  | "segment_classification"
+  | "math_transform"
+  | "correction_suggestion";
+
+type BenchmarkCandidate = {
+  stage: BenchmarkStage;
+  provider: string;
+  model: string;
+  variant?: string;
+};
+
 type SttBenchmarkResult = {
   sessionId: string;
   segmentId: string;
   audioRef: string;
+  candidate: BenchmarkCandidate;
+  stage: BenchmarkStage;
+  provider: string;
+  model: string;
+  variant: string | null;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;
@@ -74,7 +93,7 @@ const repoRoot = path.resolve(__dirname, "..", "..", "..");
 const enginePath = path.join(repoRoot, "engine", "transcribe.py");
 const sessionId = `session_${new Date().toISOString().replace(/\D/g, "")}`;
 const globalHotkey = "Super+Alt+Space";
-const sttBenchmarkModels = ["tiny", "base", "small"];
+const sttBenchmarkCandidateModels = ["tiny", "base", "small"];
 
 let mainWindow: BrowserWindow | null = null;
 let globalHotkeyRegistered = false;
@@ -88,6 +107,15 @@ function getSttConfig(): SttConfig {
     device: process.env.DICTEX_STT_DEVICE || "cpu",
     computeType: process.env.DICTEX_STT_COMPUTE_TYPE || "int8",
   };
+}
+
+function getSttBenchmarkCandidates(config: SttConfig): BenchmarkCandidate[] {
+  return sttBenchmarkCandidateModels.map((model) => ({
+    stage: "stt",
+    provider: config.engine,
+    model,
+    variant: `${config.device}-${config.computeType}-${config.language}`,
+  }));
 }
 
 function createWindow(): BrowserWindow {
@@ -436,10 +464,10 @@ ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkRespons
   const baseConfig = getSttConfig();
   const results: SttBenchmarkResult[] = [];
 
-  for (const model of sttBenchmarkModels) {
+  for (const candidate of getSttBenchmarkCandidates(baseConfig)) {
     const config = {
       ...baseConfig,
-      model,
+      model: candidate.model,
     };
     const transcriptionStartedAt = Date.now();
     const sttResult = await transcribeWithPython(audioPath, config);
@@ -448,6 +476,11 @@ ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkRespons
       sessionId: latestAudioSegment.sessionId,
       segmentId: latestAudioSegment.segmentId,
       audioRef: latestAudioSegment.audioRef,
+      candidate,
+      stage: candidate.stage,
+      provider: candidate.provider,
+      model: candidate.model,
+      variant: candidate.variant ?? null,
       sttEngine: sttResult.sttEngine,
       sttModel: sttResult.sttModel,
       sttLanguage: sttResult.sttLanguage,
@@ -462,6 +495,10 @@ ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkRespons
       segment_id: result.segmentId,
       created_at: new Date().toISOString(),
       audio_ref: result.audioRef,
+      stage: result.stage,
+      provider: result.provider,
+      model: result.model,
+      variant: result.variant,
       stt_engine: result.sttEngine,
       stt_model: result.sttModel,
       stt_language: result.sttLanguage,
