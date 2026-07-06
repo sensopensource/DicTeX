@@ -50,6 +50,9 @@ type RecentSegment = {
   sttLanguage: string;
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number | null;
+  correctedTranscript: string | null;
+  correctionCreatedAt: string | null;
+  correctionMethod: string | null;
 };
 
 type SttBenchmarkResult = {
@@ -282,7 +285,16 @@ function App(): React.ReactElement {
 
   async function copyHistoryTranscript(segment: RecentSegment): Promise<void> {
     await writeClipboardText(segment.transcript);
-    setNotice(`Copied ${segment.segmentId}`);
+    setNotice(`Copied raw ${segment.segmentId}`);
+  }
+
+  async function copyCorrectedHistoryTranscript(segment: RecentSegment): Promise<void> {
+    if (!segment.correctedTranscript) {
+      return;
+    }
+
+    await writeClipboardText(segment.correctedTranscript);
+    setNotice(`Copied corrected ${segment.segmentId}`);
   }
 
   function selectCorrectionTarget(segment: RecentSegment): void {
@@ -516,12 +528,33 @@ function App(): React.ReactElement {
                     <span>{segment.sttLanguage}</span>
                     <span>{formatAudioDuration(segment.audioDurationSeconds)}</span>
                     <span>{segment.transcriptionDurationMs === null ? "-" : `${segment.transcriptionDurationMs} ms`}</span>
+                    <span className={segment.correctedTranscript ? "signal-good" : "signal-muted"}>
+                      {segment.correctedTranscript ? "corrected" : "raw"}
+                    </span>
                   </div>
-                  <p>{segment.transcript || "-"}</p>
+                  {segment.correctedTranscript ? (
+                    <div className="history-transcripts">
+                      <p>
+                        <span>Raw</span>
+                        {segment.transcript || "-"}
+                      </p>
+                      <p>
+                        <span>Corrected</span>
+                        {segment.correctedTranscript}
+                      </p>
+                    </div>
+                  ) : (
+                    <p>{segment.transcript || "-"}</p>
+                  )}
                   <div className="history-actions">
                     <button className="secondary-button" disabled={!segment.transcript} onClick={() => void copyHistoryTranscript(segment)}>
-                      Copy
+                      Copy raw
                     </button>
+                    {segment.correctedTranscript && (
+                      <button className="secondary-button" onClick={() => void copyCorrectedHistoryTranscript(segment)}>
+                        Copy corrected
+                      </button>
+                    )}
                     <button className="secondary-button" disabled={!segment.transcript} onClick={() => selectCorrectionTarget(segment)}>
                       Correct
                     </button>
