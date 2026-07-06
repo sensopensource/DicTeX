@@ -51,6 +51,21 @@ type RecentSegment = {
   transcriptionDurationMs: number | null;
 };
 
+type SttCorrectionRequest = {
+  sessionId: string;
+  segmentId: string;
+  audioRef?: string;
+  rawTranscript: string;
+  correctedTranscript: string;
+  correctionMethod?: "keyboard";
+};
+
+type SttCorrectionResult = {
+  createdAt: string;
+  sessionId: string;
+  segmentId: string;
+};
+
 type SttBenchmarkResult = {
   sessionId: string;
   segmentId: string;
@@ -95,4 +110,6 @@ contextBridge.exposeInMainWorld("dictex", {
   runLatestSttBenchmark: () => ipcRenderer.invoke("benchmark:run-latest-stt") as Promise<SttBenchmarkResponse>,
   getRecentSegments: (limit = 20) => ipcRenderer.invoke("history:get-recent-segments", limit) as Promise<RecentSegment[]>,
   writeClipboardText: (text: string) => ipcRenderer.invoke("clipboard:write-text", text) as Promise<boolean>,
+  saveSttCorrection: (correction: SttCorrectionRequest) =>
+    ipcRenderer.invoke("correction:save-stt", correction) as Promise<SttCorrectionResult>,
 });
