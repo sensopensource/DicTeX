@@ -75,6 +75,27 @@ cd app
 ../scripts/npm.sh run build
 ```
 
+## Manual MVP Smoke Test
+
+Run this checklist on Windows when validating MVP behavior manually. CI does not cover microphone input, global hotkeys, auto-paste, Python STT, or local model availability.
+
+1. Launch the app:
+
+```powershell
+cd app
+..\scripts\npm.cmd run dev
+```
+
+2. Confirm the app opens to the compact utility UI and shows the global shortcut status.
+3. Hold `Hold to dictate`, speak a short French phrase, then release.
+4. Confirm the transcript appears in `Last transcript` and the diagnostics show session id, segment id, model, language, latency, and audio duration when available.
+5. Confirm the transcript is copied to the clipboard.
+6. Press `Win+Alt+Space`, speak a short phrase, then press `Win+Alt+Space` again.
+7. Confirm Windows auto-paste inserts the transcript into the previously active text field, or that the UI reports clipboard-only behavior if paste fails.
+8. Click `Open events log` and confirm `audio_segment` and `stt_result` events were appended.
+9. Click `Open data folder` and confirm the stored audio file exists under `data/audio/session_.../`.
+10. Click `Benchmark latest` and confirm `tiny`, `base`, and `small` STT results appear and `stt_benchmark_result` events are appended.
+
 ## Run
 
 Windows:
