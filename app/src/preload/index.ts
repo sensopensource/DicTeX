@@ -58,7 +58,11 @@ type RecentSegment = {
   correctedTranscript: string | null;
   correctionCreatedAt: string | null;
   correctionMethod: string | null;
+  benchmarkSetSplit: SttBenchmarkSetSplit | null;
+  benchmarkSetCreatedAt: string | null;
 };
+
+type SttBenchmarkSetSplit = "train_candidate_pool" | "validation" | "test_frozen";
 
 type BenchmarkStage =
   | "stt"
@@ -121,6 +125,20 @@ type SttCorrectionResponse = {
   correctionMethod: "keyboard";
 };
 
+type SttBenchmarkSetMembershipRequest = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string | null;
+  split: SttBenchmarkSetSplit;
+};
+
+type SttBenchmarkSetMembershipResponse = {
+  createdAt: string;
+  sessionId: string;
+  segmentId: string;
+  split: SttBenchmarkSetSplit;
+};
+
 contextBridge.exposeInMainWorld("dictex", {
   transcribeAudio: (audioBytes: Uint8Array, mimeType: string, options: TranscriptionOptions = {}) =>
     ipcRenderer.invoke("dictation:transcribe", audioBytes, mimeType, options) as Promise<TranscriptionResponse>,
@@ -150,6 +168,8 @@ contextBridge.exposeInMainWorld("dictex", {
     ipcRenderer.invoke("audio:get-segment", audioSegment) as Promise<AudioSegmentPlayback>,
   saveSttCorrection: (correction: SttCorrectionRequest) =>
     ipcRenderer.invoke("corrections:save-stt", correction) as Promise<SttCorrectionResponse>,
+  markSttBenchmarkSetMembership: (membership: SttBenchmarkSetMembershipRequest) =>
+    ipcRenderer.invoke("benchmark-set:mark-stt", membership) as Promise<SttBenchmarkSetMembershipResponse>,
   runLatestSttBenchmark: () => ipcRenderer.invoke("benchmark:run-latest-stt") as Promise<SttBenchmarkResponse>,
   runSegmentSttBenchmark: (audioSegment: AudioSegmentRecord) =>
     ipcRenderer.invoke("benchmark:run-segment-stt", audioSegment) as Promise<SttBenchmarkResponse>,
