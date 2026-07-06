@@ -7,6 +7,7 @@ type TranscriptionResponse = {
   pastedToActiveApp: boolean;
   sessionId: string;
   segmentId: string;
+  audioRef: string;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;
@@ -87,6 +88,22 @@ type SttBenchmarkResponse = {
   results: SttBenchmarkResult[];
 };
 
+type SttCorrectionRequest = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string | null;
+  rawTranscript: string;
+  correctedTranscript: string;
+  correctionMethod?: "keyboard";
+};
+
+type SttCorrectionResponse = {
+  createdAt: string;
+  sessionId: string;
+  segmentId: string;
+  correctionMethod: "keyboard";
+};
+
 contextBridge.exposeInMainWorld("dictex", {
   transcribeAudio: (audioBytes: Uint8Array, mimeType: string, options: TranscriptionOptions = {}) =>
     ipcRenderer.invoke("dictation:transcribe", audioBytes, mimeType, options) as Promise<TranscriptionResponse>,
@@ -112,6 +129,8 @@ contextBridge.exposeInMainWorld("dictex", {
   openEventsLog: () => ipcRenderer.invoke("diagnostics:open-events-log") as Promise<boolean>,
   getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
   getRecentSegments: (limit = 20) => ipcRenderer.invoke("history:get-recent-segments", limit) as Promise<RecentSegment[]>,
+  saveSttCorrection: (correction: SttCorrectionRequest) =>
+    ipcRenderer.invoke("corrections:save-stt", correction) as Promise<SttCorrectionResponse>,
   runLatestSttBenchmark: () => ipcRenderer.invoke("benchmark:run-latest-stt") as Promise<SttBenchmarkResponse>,
   runSegmentSttBenchmark: (audioSegment: AudioSegmentRecord) =>
     ipcRenderer.invoke("benchmark:run-segment-stt", audioSegment) as Promise<SttBenchmarkResponse>,
