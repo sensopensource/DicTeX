@@ -52,10 +52,29 @@ type RecentSegment = {
   transcriptionDurationMs: number | null;
 };
 
+type BenchmarkStage =
+  | "stt"
+  | "normalization"
+  | "segment_classification"
+  | "math_transform"
+  | "correction_suggestion";
+
+type BenchmarkCandidate = {
+  stage: BenchmarkStage;
+  provider: string;
+  model: string;
+  variant?: string;
+};
+
 type SttBenchmarkResult = {
   sessionId: string;
   segmentId: string;
   audioRef: string;
+  candidate: BenchmarkCandidate;
+  stage: BenchmarkStage;
+  provider: string;
+  model: string;
+  variant: string | null;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;
@@ -437,9 +456,9 @@ function App(): React.ReactElement {
         {benchmarkResults.length > 0 && (
           <div className="benchmark-results">
             {benchmarkResults.map((result) => (
-              <article className="benchmark-result" key={result.sttModel}>
+              <article className="benchmark-result" key={formatBenchmarkCandidateKey(result)}>
                 <div className="benchmark-meta">
-                  <strong>{result.sttModel}</strong>
+                  <strong title={formatBenchmarkCandidate(result)}>{formatBenchmarkCandidate(result)}</strong>
                   <span>{result.sttLanguage}</span>
                   <span>{formatAudioDuration(result.audioDurationSeconds)}</span>
                   <span>{result.transcriptionDurationMs} ms</span>
@@ -514,6 +533,14 @@ function formatTimestamp(timestamp: string | null): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatBenchmarkCandidate(result: SttBenchmarkResult): string {
+  return `${result.stage}:${result.provider}/${result.model}${result.variant ? ` (${result.variant})` : ""}`;
+}
+
+function formatBenchmarkCandidateKey(result: SttBenchmarkResult): string {
+  return `${result.stage}/${result.provider}/${result.model}/${result.variant ?? ""}`;
 }
 
 createRoot(document.getElementById("root")!).render(
