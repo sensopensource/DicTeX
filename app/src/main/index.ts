@@ -40,10 +40,18 @@ type AudioSegmentRecord = {
 
 type RecentSegment = ReconstructedSegment;
 
+type BenchmarkCandidate = {
+  stage: "stt";
+  provider: string;
+  model: string;
+  variant?: string;
+};
+
 type SttBenchmarkResult = {
   sessionId: string;
   segmentId: string;
   audioRef: string;
+  candidate: BenchmarkCandidate;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;
@@ -77,7 +85,11 @@ const repoRoot = path.resolve(__dirname, "..", "..", "..");
 const enginePath = path.join(repoRoot, "engine", "transcribe.py");
 const sessionId = `session_${new Date().toISOString().replace(/\D/g, "")}`;
 const globalHotkey = "Super+Alt+Space";
-const sttBenchmarkModels = ["tiny", "base", "small"];
+const sttBenchmarkCandidates: BenchmarkCandidate[] = [
+  { stage: "stt", provider: "faster-whisper", model: "tiny" },
+  { stage: "stt", provider: "faster-whisper", model: "base" },
+  { stage: "stt", provider: "faster-whisper", model: "small" },
+];
 
 let mainWindow: BrowserWindow | null = null;
 let globalHotkeyRegistered = false;
@@ -91,6 +103,10 @@ function getSttConfig(): SttConfig {
     device: process.env.DICTEX_STT_DEVICE || "cpu",
     computeType: process.env.DICTEX_STT_COMPUTE_TYPE || "int8",
   };
+}
+
+function getSttCandidateVariant(config: SttConfig): string {
+  return `${config.device}-${config.computeType}-${config.language}`;
 }
 
 function createWindow(): BrowserWindow {
@@ -255,10 +271,14 @@ async function runSttBenchmarkForSegment(source: AudioSegmentRecord): Promise<St
   const baseConfig = getSttConfig();
   const results: SttBenchmarkResult[] = [];
 
-  for (const model of sttBenchmarkModels) {
+  for (const candidate of sttBenchmarkCandidates) {
     const config = {
       ...baseConfig,
-      model,
+      model: candidate.model,
+    };
+    const candidateWithVariant = {
+      ...candidate,
+      variant: getSttCandidateVariant(config),
     };
     const transcriptionStartedAt = Date.now();
     const sttResult = await transcribeWithPython(audioPath, config);
@@ -267,6 +287,7 @@ async function runSttBenchmarkForSegment(source: AudioSegmentRecord): Promise<St
       sessionId: source.sessionId,
       segmentId: source.segmentId,
       audioRef: source.audioRef,
+      candidate: candidateWithVariant,
       sttEngine: sttResult.sttEngine,
       sttModel: sttResult.sttModel,
       sttLanguage: sttResult.sttLanguage,
@@ -281,6 +302,11 @@ async function runSttBenchmarkForSegment(source: AudioSegmentRecord): Promise<St
       segment_id: result.segmentId,
       created_at: new Date().toISOString(),
       audio_ref: result.audioRef,
+      stage: result.candidate.stage,
+      provider: result.candidate.provider,
+      model: result.candidate.model,
+      variant: result.candidate.variant ?? null,
+      candidate: result.candidate,
       stt_engine: result.sttEngine,
       stt_model: result.sttModel,
       stt_language: result.sttLanguage,
