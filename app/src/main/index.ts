@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { readLocalEvents, reconstructSegments } from "./local-events";
+import { readLocalEvents, reconstructSegments, type ReconstructedSegment } from "./local-events";
 
 type TranscriptionResult = {
   transcript: string;
@@ -38,18 +38,7 @@ type AudioSegmentRecord = {
   audioRef: string;
 };
 
-type RecentSegment = {
-  createdAt: string | null;
-  sessionId: string;
-  segmentId: string;
-  audioRef: string;
-  transcript: string;
-  sttEngine: string;
-  sttModel: string;
-  sttLanguage: string;
-  audioDurationSeconds: number | null;
-  transcriptionDurationMs: number | null;
-};
+type RecentSegment = ReconstructedSegment;
 
 type SttBenchmarkResult = {
   sessionId: string;
@@ -253,89 +242,8 @@ async function getLatestAudioSegment(): Promise<AudioSegmentRecord | null> {
   };
 }
 
-async function readEventLines(): Promise<Record<string, unknown>[]> {
-  const eventsPath = getEventsPath();
-  if (!existsSync(eventsPath)) {
-    return [];
-  }
-
-  const contents = await readFile(eventsPath, { encoding: "utf8" });
-  const events: Record<string, unknown>[] = [];
-
-  for (const line of contents.split(/\r?\n/)) {
-    if (!line.trim()) {
-      continue;
-    }
-
-    try {
-      events.push(JSON.parse(line) as Record<string, unknown>);
-    } catch {
-      continue;
-    }
-  }
-
-  return events;
-}
-
-function getSegmentKey(sessionId: string, segmentId: string): string {
-  return `${sessionId}:${segmentId}`;
-}
-
 async function getRecentSegments(limit = 20): Promise<RecentSegment[]> {
-  const audioSegments = new Map<string, { audioRef: string; createdAt: string | null }>();
-  const recentSegments: RecentSegment[] = [];
-
-  for (const event of await readEventLines()) {
-    if (
-      event.event_type === "audio_segment" &&
-      typeof event.session_id === "string" &&
-      typeof event.segment_id === "string" &&
-      typeof event.audio_ref === "string"
-    ) {
-      audioSegments.set(getSegmentKey(event.session_id, event.segment_id), {
-        audioRef: event.audio_ref,
-        createdAt: typeof event.created_at === "string" ? event.created_at : null,
-      });
-      continue;
-    }
-
-    if (
-      event.event_type === "stt_result" &&
-      typeof event.session_id === "string" &&
-      typeof event.segment_id === "string" &&
-      typeof event.stt_output === "string"
-    ) {
-      const key = getSegmentKey(event.session_id, event.segment_id);
-      const audioSegment = audioSegments.get(key);
-      const audioRef =
-        typeof event.audio_ref === "string"
-          ? event.audio_ref
-          : audioSegment?.audioRef;
-
-      if (!audioRef) {
-        continue;
-      }
-
-      recentSegments.push({
-        createdAt:
-          typeof event.created_at === "string"
-            ? event.created_at
-            : audioSegment?.createdAt ?? null,
-        sessionId: event.session_id,
-        segmentId: event.segment_id,
-        audioRef,
-        transcript: event.stt_output,
-        sttEngine: typeof event.stt_engine === "string" ? event.stt_engine : "unknown",
-        sttModel: typeof event.stt_model === "string" ? event.stt_model : "unknown",
-        sttLanguage: typeof event.stt_language === "string" ? event.stt_language : "unknown",
-        audioDurationSeconds: typeof event.audio_duration_seconds === "number" ? event.audio_duration_seconds : null,
-        transcriptionDurationMs:
-          typeof event.transcription_duration_ms === "number" ? event.transcription_duration_ms : null,
-      });
-    }
-  }
-
-  return recentSegments.reverse().slice(0, limit);
+  return reconstructSegments(await readLocalEvents(getEventsPath()), limit);
 }
 
 async function runSttBenchmarkForSegment(source: AudioSegmentRecord): Promise<SttBenchmarkResponse> {
@@ -557,19 +465,6 @@ ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkRespons
   }
 
   return runSttBenchmarkForSegment(latestAudioSegment);
-});
-
-ipcMain.handle("benchmark:run-stt-for-segment", async (_event, source: AudioSegmentRecord): Promise<SttBenchmarkResponse> => {
-  if (
-    !source ||
-    typeof source.sessionId !== "string" ||
-    typeof source.segmentId !== "string" ||
-    typeof source.audioRef !== "string"
-  ) {
-    throw new Error("Invalid benchmark segment");
-  }
-
-  return runSttBenchmarkForSegment(source);
 });
 
 ipcMain.handle("history:get-recent-segments", async (_event, limit?: number): Promise<RecentSegment[]> => {
