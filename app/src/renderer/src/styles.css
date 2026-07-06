@@ -307,6 +307,13 @@ h2 {
   white-space: nowrap;
 }
 
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
 .benchmark-header {
   display: flex;
   align-items: center;
@@ -476,6 +483,10 @@ textarea {
   .history-heading,
   .history-footer {
     grid-template-columns: 1fr;
+  }
+
+  .history-actions {
+    justify-content: flex-start;
   }
 
   .benchmark-meta {

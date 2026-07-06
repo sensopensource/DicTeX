@@ -101,6 +101,7 @@ type DictationApi = {
   getSttConfig: () => Promise<SttConfig>;
   getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
   runLatestSttBenchmark?: () => Promise<SttBenchmarkResponse>;
+  runSegmentSttBenchmark?: (audioSegment: AudioSegmentRecord) => Promise<SttBenchmarkResponse>;
 };
 
 declare global {
@@ -127,6 +128,7 @@ function App(): React.ReactElement {
   const [benchmarkResults, setBenchmarkResults] = useState<SttBenchmarkResult[]>([]);
   const [benchmarkError, setBenchmarkError] = useState("");
   const [isBenchmarking, setIsBenchmarking] = useState(false);
+  const [benchmarkTargetKey, setBenchmarkTargetKey] = useState<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const isStartingRef = useRef(false);
@@ -305,6 +307,7 @@ function App(): React.ReactElement {
     setBenchmarkError("");
     setNotice("");
     setIsBenchmarking(true);
+    setBenchmarkTargetKey("latest");
 
     try {
       const result = await window.dictex.runLatestSttBenchmark();
@@ -314,6 +317,35 @@ function App(): React.ReactElement {
       setBenchmarkError(benchmarkRunError instanceof Error ? benchmarkRunError.message : "Benchmark failed");
     } finally {
       setIsBenchmarking(false);
+      setBenchmarkTargetKey(null);
+    }
+  }
+
+  async function runSegmentSttBenchmark(segment: RecentSegment): Promise<void> {
+    if (typeof window.dictex.runSegmentSttBenchmark !== "function") {
+      setBenchmarkError("Restart DicTeX to load the selected segment benchmark API");
+      return;
+    }
+
+    const segmentKey = getSegmentKey(segment);
+    setBenchmarkError("");
+    setNotice("");
+    setIsBenchmarking(true);
+    setBenchmarkTargetKey(segmentKey);
+
+    try {
+      const result = await window.dictex.runSegmentSttBenchmark({
+        sessionId: segment.sessionId,
+        segmentId: segment.segmentId,
+        audioRef: segment.audioRef,
+      });
+      setBenchmarkSource(result.source);
+      setBenchmarkResults(result.results);
+    } catch (benchmarkRunError) {
+      setBenchmarkError(benchmarkRunError instanceof Error ? benchmarkRunError.message : "Benchmark failed");
+    } finally {
+      setIsBenchmarking(false);
+      setBenchmarkTargetKey(null);
     }
   }
 
@@ -398,7 +430,7 @@ function App(): React.ReactElement {
         ) : (
           <div className="history-list">
             {recentSegments.map((segment) => (
-              <article className="history-item" key={`${segment.sessionId}/${segment.segmentId}`}>
+              <article className="history-item" key={getSegmentKey(segment)}>
                 <div className="history-heading">
                   <span title={segment.createdAt ?? undefined}>{formatTimestamp(segment.createdAt)}</span>
                   <strong title={`${segment.sessionId} / ${segment.segmentId}`}>
@@ -415,9 +447,23 @@ function App(): React.ReactElement {
                     <span>{formatAudioDuration(segment.audioDurationSeconds)}</span>
                     <span>{formatLatency(segment.transcriptionDurationMs)}</span>
                   </div>
-                  <button className="secondary-button" disabled={!segment.transcript} onClick={() => void copyHistoryTranscript(segment)}>
-                    Copy
-                  </button>
+                  <div className="history-actions">
+                    <button className="secondary-button" disabled={!segment.transcript} onClick={() => void copyHistoryTranscript(segment)}>
+                      Copy
+                    </button>
+                    <button
+                      className="secondary-button"
+                      disabled={
+                        typeof window.dictex.runSegmentSttBenchmark !== "function" ||
+                        isBenchmarking ||
+                        status === "recording" ||
+                        status === "transcribing"
+                      }
+                      onClick={() => void runSegmentSttBenchmark(segment)}
+                    >
+                      {benchmarkTargetKey === getSegmentKey(segment) ? "Running" : "Benchmark"}
+                    </button>
+                  </div>
                 </div>
               </article>
             ))}
@@ -445,7 +491,7 @@ function App(): React.ReactElement {
           >
             {typeof window.dictex.runLatestSttBenchmark !== "function"
               ? "Restart app"
-              : isBenchmarking
+              : benchmarkTargetKey === "latest"
                 ? "Running"
                 : "Benchmark latest"}
           </button>
@@ -541,6 +587,10 @@ function formatBenchmarkCandidate(result: SttBenchmarkResult): string {
 
 function formatBenchmarkCandidateKey(result: SttBenchmarkResult): string {
   return `${result.stage}/${result.provider}/${result.model}/${result.variant ?? ""}`;
+}
+
+function getSegmentKey(segment: Pick<RecentSegment, "sessionId" | "segmentId">): string {
+  return `${segment.sessionId}/${segment.segmentId}`;
 }
 
 createRoot(document.getElementById("root")!).render(
