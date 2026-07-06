@@ -69,6 +69,11 @@ type SttBenchmarkResponse = {
   results: SttBenchmarkResult[];
 };
 
+type AudioSegmentPlayback = {
+  audioBytes: Uint8Array;
+  audioMimeType: string;
+};
+
 type DictationApi = {
   transcribeAudio: (
     audioBytes: Uint8Array,
@@ -81,6 +86,7 @@ type DictationApi = {
   openEventsLog: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
   getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
+  getSegmentAudio?: (audioRef: string) => Promise<AudioSegmentPlayback>;
   runLatestSttBenchmark?: () => Promise<SttBenchmarkResponse>;
 };
 
@@ -104,6 +110,9 @@ function App(): React.ReactElement {
   const [recentSegments, setRecentSegments] = useState<RecentSegment[]>([]);
   const [historyError, setHistoryError] = useState("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [loadingAudioKey, setLoadingAudioKey] = useState<string | null>(null);
+  const [playingAudioKey, setPlayingAudioKey] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState("");
   const [benchmarkSource, setBenchmarkSource] = useState<AudioSegmentRecord | null>(null);
   const [benchmarkResults, setBenchmarkResults] = useState<SttBenchmarkResult[]>([]);
   const [benchmarkError, setBenchmarkError] = useState("");
@@ -114,6 +123,8 @@ function App(): React.ReactElement {
   const stopRequestedRef = useRef(false);
   const statusRef = useRef<Status>("idle");
   const pendingTranscriptionOptionsRef = useRef<TranscriptionOptions>({ trigger: "manual" });
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const audioObjectUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     statusRef.current = status;
@@ -141,6 +152,7 @@ function App(): React.ReactElement {
     return () => {
       removeToggleListener();
       removeHotkeyStatusListener();
+      stopAudioPlayback();
     };
   }, []);
 
@@ -259,6 +271,62 @@ function App(): React.ReactElement {
     setNotice(`Copied ${segment.sessionId} / ${segment.segmentId}`);
   }
 
+  function stopAudioPlayback(): void {
+    audioPlayerRef.current?.pause();
+    audioPlayerRef.current = null;
+
+    if (audioObjectUrlRef.current) {
+      URL.revokeObjectURL(audioObjectUrlRef.current);
+      audioObjectUrlRef.current = null;
+    }
+
+    setPlayingAudioKey(null);
+    setLoadingAudioKey(null);
+  }
+
+  async function playHistoryAudio(segment: RecentSegment): Promise<void> {
+    if (typeof window.dictex.getSegmentAudio !== "function") {
+      setAudioError("Restart DicTeX to load the audio playback API");
+      return;
+    }
+
+    const segmentKey = getSegmentKey(segment);
+    if (playingAudioKey === segmentKey) {
+      stopAudioPlayback();
+      return;
+    }
+
+    stopAudioPlayback();
+    setAudioError("");
+    setLoadingAudioKey(segmentKey);
+
+    try {
+      const audio = await window.dictex.getSegmentAudio(segment.audioRef);
+      const audioBuffer = new ArrayBuffer(audio.audioBytes.byteLength);
+      new Uint8Array(audioBuffer).set(audio.audioBytes);
+      const blob = new Blob([audioBuffer], { type: audio.audioMimeType });
+      const audioUrl = URL.createObjectURL(blob);
+      const player = new Audio(audioUrl);
+
+      audioObjectUrlRef.current = audioUrl;
+      audioPlayerRef.current = player;
+
+      player.onended = stopAudioPlayback;
+      player.onerror = () => {
+        setAudioError(`Could not play ${segment.sessionId} / ${segment.segmentId}`);
+        stopAudioPlayback();
+      };
+
+      await player.play();
+      setPlayingAudioKey(segmentKey);
+    } catch (playError) {
+      setAudioError(playError instanceof Error ? playError.message : "Could not play audio segment");
+      stopAudioPlayback();
+    } finally {
+      setLoadingAudioKey(null);
+    }
+  }
+
   async function openDataFolder(): Promise<void> {
     try {
       const opened = await window.dictex.openDataFolder();
@@ -373,13 +441,14 @@ function App(): React.ReactElement {
         </div>
 
         {historyError && <pre className="error">{historyError}</pre>}
+        {audioError && <pre className="error">{audioError}</pre>}
 
         {recentSegments.length === 0 && !historyError ? (
           <p className="empty-state">No stored dictation segments found.</p>
         ) : (
           <div className="history-list">
             {recentSegments.map((segment) => (
-              <article className="history-item" key={`${segment.sessionId}/${segment.segmentId}`}>
+              <article className="history-item" key={getSegmentKey(segment)}>
                 <div className="history-heading">
                   <span title={segment.createdAt ?? undefined}>{formatTimestamp(segment.createdAt)}</span>
                   <strong title={`${segment.sessionId} / ${segment.segmentId}`}>
@@ -396,9 +465,27 @@ function App(): React.ReactElement {
                     <span>{formatAudioDuration(segment.audioDurationSeconds)}</span>
                     <span>{formatLatency(segment.transcriptionDurationMs)}</span>
                   </div>
-                  <button className="secondary-button" disabled={!segment.transcript} onClick={() => void copyHistoryTranscript(segment)}>
-                    Copy
-                  </button>
+                  <div className="history-actions">
+                    <button
+                      className="secondary-button"
+                      disabled={
+                        !segment.audioRef ||
+                        loadingAudioKey === getSegmentKey(segment) ||
+                        status === "recording" ||
+                        status === "transcribing"
+                      }
+                      onClick={() => void playHistoryAudio(segment)}
+                    >
+                      {loadingAudioKey === getSegmentKey(segment)
+                        ? "Loading"
+                        : playingAudioKey === getSegmentKey(segment)
+                          ? "Stop"
+                          : "Play"}
+                    </button>
+                    <button className="secondary-button" disabled={!segment.transcript} onClick={() => void copyHistoryTranscript(segment)}>
+                      Copy
+                    </button>
+                  </div>
                 </div>
               </article>
             ))}
@@ -514,6 +601,10 @@ function formatTimestamp(timestamp: string | null): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function getSegmentKey(segment: Pick<RecentSegment, "sessionId" | "segmentId">): string {
+  return `${segment.sessionId}/${segment.segmentId}`;
 }
 
 createRoot(document.getElementById("root")!).render(

@@ -68,6 +68,11 @@ type SttBenchmarkResponse = {
   results: SttBenchmarkResult[];
 };
 
+type AudioSegmentPlayback = {
+  audioBytes: Uint8Array;
+  audioMimeType: string;
+};
+
 contextBridge.exposeInMainWorld("dictex", {
   transcribeAudio: (audioBytes: Uint8Array, mimeType: string, options: TranscriptionOptions = {}) =>
     ipcRenderer.invoke("dictation:transcribe", audioBytes, mimeType, options) as Promise<TranscriptionResponse>,
@@ -93,5 +98,6 @@ contextBridge.exposeInMainWorld("dictex", {
   openEventsLog: () => ipcRenderer.invoke("diagnostics:open-events-log") as Promise<boolean>,
   getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
   getRecentSegments: (limit = 20) => ipcRenderer.invoke("history:get-recent-segments", limit) as Promise<RecentSegment[]>,
+  getSegmentAudio: (audioRef: string) => ipcRenderer.invoke("audio:get-segment", audioRef) as Promise<AudioSegmentPlayback>,
   runLatestSttBenchmark: () => ipcRenderer.invoke("benchmark:run-latest-stt") as Promise<SttBenchmarkResponse>,
 });

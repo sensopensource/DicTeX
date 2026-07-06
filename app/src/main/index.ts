@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -58,6 +58,11 @@ type SttBenchmarkResult = {
 type SttBenchmarkResponse = {
   source: AudioSegmentRecord;
   results: SttBenchmarkResult[];
+};
+
+type AudioSegmentPlayback = {
+  audioBytes: Uint8Array;
+  audioMimeType: string;
 };
 
 type EngineTranscriptionResult = {
@@ -201,6 +206,18 @@ function getAudioExtension(mimeType: string): string {
   }
 
   return "audio";
+}
+
+function getAudioMimeTypeFromRef(audioRef: string): string {
+  if (audioRef.endsWith(".webm")) {
+    return "audio/webm";
+  }
+
+  if (audioRef.endsWith(".wav")) {
+    return "audio/wav";
+  }
+
+  return "application/octet-stream";
 }
 
 function getNextSegmentId(): string {
@@ -399,6 +416,23 @@ ipcMain.handle(
 ipcMain.handle("history:get-recent-segments", async (_event, limit?: number): Promise<ReconstructedSegment[]> => {
   const safeLimit = typeof limit === "number" && Number.isFinite(limit) ? Math.min(Math.max(Math.trunc(limit), 1), 50) : 20;
   return reconstructRecentSegments(await readLocalEvents(getEventsPath()), safeLimit);
+});
+
+ipcMain.handle("audio:get-segment", async (_event, audioRef: string): Promise<AudioSegmentPlayback> => {
+  if (typeof audioRef !== "string" || audioRef.length === 0) {
+    throw new Error("Missing audio reference");
+  }
+
+  const audioPath = resolveDataRef(audioRef);
+  if (!existsSync(audioPath)) {
+    throw new Error(`Audio segment file not found: ${audioRef}`);
+  }
+
+  const audioBytes = await readFile(audioPath);
+  return {
+    audioBytes: new Uint8Array(audioBytes),
+    audioMimeType: getAudioMimeTypeFromRef(audioRef),
+  };
 });
 
 ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkResponse> => {
