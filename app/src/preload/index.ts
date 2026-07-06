@@ -38,10 +38,18 @@ type AudioSegmentRecord = {
   audioRef: string;
 };
 
+type BenchmarkCandidate = {
+  stage: "stt";
+  provider: string;
+  model: string;
+  variant?: string;
+};
+
 type SttBenchmarkResult = {
   sessionId: string;
   segmentId: string;
   audioRef: string;
+  candidate: BenchmarkCandidate;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;

@@ -39,10 +39,18 @@ type AudioSegmentRecord = {
   audioRef: string;
 };
 
+type BenchmarkCandidate = {
+  stage: "stt";
+  provider: string;
+  model: string;
+  variant?: string;
+};
+
 type SttBenchmarkResult = {
   sessionId: string;
   segmentId: string;
   audioRef: string;
+  candidate: BenchmarkCandidate;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;
@@ -346,10 +354,12 @@ function App(): React.ReactElement {
         {benchmarkResults.length > 0 && (
           <div className="benchmark-results">
             {benchmarkResults.map((result) => (
-              <article className="benchmark-result" key={result.sttModel}>
+              <article className="benchmark-result" key={`${result.candidate.stage}:${result.candidate.provider}:${result.candidate.model}:${result.candidate.variant ?? ""}`}>
                 <div className="benchmark-meta">
-                  <strong>{result.sttModel}</strong>
-                  <span>{result.sttLanguage}</span>
+                  <strong title={formatBenchmarkCandidate(result.candidate)}>{result.candidate.model}</strong>
+                  <span>{result.candidate.provider}</span>
+                  <span>{result.candidate.stage}</span>
+                  <span>{result.candidate.variant ?? result.sttLanguage}</span>
                   <span>{formatAudioDuration(result.audioDurationSeconds)}</span>
                   <span>{result.transcriptionDurationMs} ms</span>
                 </div>
@@ -401,6 +411,10 @@ function Metric({ label, value }: { label: string; value: string }): React.React
 
 function formatAudioDuration(durationSeconds: number | null): string {
   return durationSeconds === null ? "-" : `${durationSeconds.toFixed(2)} s`;
+}
+
+function formatBenchmarkCandidate(candidate: BenchmarkCandidate): string {
+  return `${candidate.stage} / ${candidate.provider} / ${candidate.model}${candidate.variant ? ` / ${candidate.variant}` : ""}`;
 }
 
 createRoot(document.getElementById("root")!).render(

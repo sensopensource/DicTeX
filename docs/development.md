@@ -175,4 +175,12 @@ The STT benchmark action reuses the latest stored audio segment and appends one 
 {"event_type":"stt_benchmark_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","stt_engine":"faster-whisper","stt_model":"small","stt_language":"fr","transcript":"...","audio_duration_seconds":2.4,"transcription_duration_ms":1830}
 ```
 
+Benchmark results also include candidate metadata so the benchmark loop can grow beyond faster-whisper model names:
+
+```json
+{"stage":"stt","provider":"faster-whisper","model":"base","variant":"cpu-int8-fr"}
+```
+
+The only implemented stage today is `stt`. Future issues may add stages such as `normalization`, `segment_classification`, `math_transform`, and `correction_suggestion`. Compare candidates within the same stage for the same segment; current benchmark runs compare only STT candidates.
+
 The correction UX is intentionally not implemented yet. The important MVP decision is to preserve the audio -> STT output link from the beginning.
