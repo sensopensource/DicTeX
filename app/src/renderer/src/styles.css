@@ -205,18 +205,21 @@ h2 {
   padding: 0.75rem;
 }
 
-.benchmark-header {
+.benchmark-header,
+.history-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
 }
 
-.benchmark-header div {
+.benchmark-header div,
+.history-header div {
   min-width: 0;
 }
 
-.benchmark-header p {
+.benchmark-header p,
+.history-header p {
   overflow: hidden;
   margin: 0.15rem 0 0;
   color: #8f8f8f;
@@ -270,6 +273,66 @@ h2 {
   font-size: 0.8rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.history-panel {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.75rem;
+}
+
+.history-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.history-item {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.45rem;
+  padding: 0.6rem;
+  background: #101010;
+}
+
+.history-meta {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, auto) minmax(5rem, 1fr) repeat(5, minmax(3.5rem, auto));
+  gap: 0.5rem;
+  align-items: center;
+  color: #8f8f8f;
+  font-size: 0.7rem;
+}
+
+.history-meta strong,
+.history-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-meta strong {
+  color: #f4f4f4;
+  font-weight: 600;
+}
+
+.history-meta span:not(:nth-child(2)) {
+  text-align: right;
+}
+
+.history-item p {
+  margin: 0;
+  color: #d8d8d8;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 
 .transcript-label {
@@ -355,16 +418,19 @@ textarea {
     border-bottom: 0;
   }
 
-  .benchmark-header {
+  .benchmark-header,
+  .history-header {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .benchmark-meta {
+  .benchmark-meta,
+  .history-meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .benchmark-meta span {
+  .benchmark-meta span,
+  .history-meta span:not(:nth-child(2)) {
     text-align: left;
   }
 }
