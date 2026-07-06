@@ -4,6 +4,13 @@ import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  getLatestAudioSegment as getLatestAudioSegmentFromEvents,
+  getLatestSttCorrection,
+  readLocalEvents,
+  reconstructRecentSegments,
+  type ReconstructedSegment,
+} from "./localEvents.js";
 
 type TranscriptionResult = {
   transcript: string;
@@ -11,6 +18,7 @@ type TranscriptionResult = {
   pastedToActiveApp: boolean;
   sessionId: string;
   segmentId: string;
+  audioRef: string;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;
@@ -37,21 +45,70 @@ type AudioSegmentRecord = {
   audioRef: string;
 };
 
+type AudioSegmentPlayback = {
+  audioBytes: Uint8Array;
+  mimeType: string;
+};
+
+type BenchmarkStage =
+  | "stt"
+  | "normalization"
+  | "segment_classification"
+  | "math_transform"
+  | "correction_suggestion";
+
+type BenchmarkCandidate = {
+  stage: BenchmarkStage;
+  provider: string;
+  model: string;
+  variant?: string;
+};
+
 type SttBenchmarkResult = {
   sessionId: string;
   segmentId: string;
   audioRef: string;
+  candidate: BenchmarkCandidate;
+  stage: BenchmarkStage;
+  provider: string;
+  model: string;
+  variant: string | null;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;
   transcript: string;
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number;
+  score: SttBenchmarkScore | null;
 };
 
 type SttBenchmarkResponse = {
   source: AudioSegmentRecord;
   results: SttBenchmarkResult[];
+};
+
+type SttBenchmarkScore = {
+  stage: "stt";
+  metric: "cer";
+  value: number;
+  referenceTranscript: string;
+  correctionCreatedAt: string | null;
+};
+
+type SttCorrectionRequest = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string | null;
+  rawTranscript: string;
+  correctedTranscript: string;
+  correctionMethod?: "keyboard";
+};
+
+type SttCorrectionResponse = {
+  createdAt: string;
+  sessionId: string;
+  segmentId: string;
+  correctionMethod: "keyboard";
 };
 
 type EngineTranscriptionResult = {
@@ -74,7 +131,7 @@ const repoRoot = path.resolve(__dirname, "..", "..", "..");
 const enginePath = path.join(repoRoot, "engine", "transcribe.py");
 const sessionId = `session_${new Date().toISOString().replace(/\D/g, "")}`;
 const globalHotkey = "Super+Alt+Space";
-const sttBenchmarkModels = ["tiny", "base", "small"];
+const sttBenchmarkCandidateModels = ["tiny", "base", "small"];
 
 let mainWindow: BrowserWindow | null = null;
 let globalHotkeyRegistered = false;
@@ -88,6 +145,15 @@ function getSttConfig(): SttConfig {
     device: process.env.DICTEX_STT_DEVICE || "cpu",
     computeType: process.env.DICTEX_STT_COMPUTE_TYPE || "int8",
   };
+}
+
+function getSttBenchmarkCandidates(config: SttConfig): BenchmarkCandidate[] {
+  return sttBenchmarkCandidateModels.map((model) => ({
+    stage: "stt",
+    provider: config.engine,
+    model,
+    variant: `${config.device}-${config.computeType}-${config.language}`,
+  }));
 }
 
 function createWindow(): BrowserWindow {
@@ -197,6 +263,18 @@ function getAudioExtension(mimeType: string): string {
   return "audio";
 }
 
+function getAudioMimeType(audioRef: string): string {
+  if (audioRef.endsWith(".webm")) {
+    return "audio/webm";
+  }
+
+  if (audioRef.endsWith(".wav")) {
+    return "audio/wav";
+  }
+
+  return "application/octet-stream";
+}
+
 function getNextSegmentId(): string {
   segmentCounter += 1;
   return `seg_${String(segmentCounter).padStart(4, "0")}`;
@@ -227,39 +305,7 @@ async function appendEvent(event: Record<string, JsonValue>): Promise<void> {
 }
 
 async function getLatestAudioSegment(): Promise<AudioSegmentRecord | null> {
-  const eventsPath = getEventsPath();
-  if (!existsSync(eventsPath)) {
-    return null;
-  }
-
-  const contents = await readFile(eventsPath, { encoding: "utf8" });
-  let latestAudioSegment: AudioSegmentRecord | null = null;
-
-  for (const line of contents.split(/\r?\n/)) {
-    if (!line.trim()) {
-      continue;
-    }
-
-    try {
-      const event = JSON.parse(line) as Record<string, unknown>;
-      if (
-        event.event_type === "audio_segment" &&
-        typeof event.session_id === "string" &&
-        typeof event.segment_id === "string" &&
-        typeof event.audio_ref === "string"
-      ) {
-        latestAudioSegment = {
-          sessionId: event.session_id,
-          segmentId: event.segment_id,
-          audioRef: event.audio_ref,
-        };
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return latestAudioSegment;
+  return getLatestAudioSegmentFromEvents(await readLocalEvents(getEventsPath()));
 }
 
 function transcribeWithPython(audioPath: string, config: SttConfig = getSttConfig()): Promise<EngineTranscriptionResult> {
@@ -353,6 +399,127 @@ function pasteClipboardIntoActiveApp(): Promise<boolean> {
   });
 }
 
+function calculateCharacterErrorRate(candidateTranscript: string, referenceTranscript: string): number {
+  const candidate = normalizeForScoring(candidateTranscript);
+  const reference = normalizeForScoring(referenceTranscript);
+
+  if (reference.length === 0) {
+    return candidate.length === 0 ? 0 : 1;
+  }
+
+  return calculateEditDistance(candidate, reference) / reference.length;
+}
+
+function normalizeForScoring(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+function calculateEditDistance(left: string, right: string): number {
+  const previousRow = Array.from({ length: right.length + 1 }, (_value, index) => index);
+  const currentRow = Array.from({ length: right.length + 1 }, () => 0);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    currentRow[0] = leftIndex;
+
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitutionCost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      currentRow[rightIndex] = Math.min(
+        previousRow[rightIndex] + 1,
+        currentRow[rightIndex - 1] + 1,
+        previousRow[rightIndex - 1] + substitutionCost,
+      );
+    }
+
+    for (let rightIndex = 0; rightIndex <= right.length; rightIndex += 1) {
+      previousRow[rightIndex] = currentRow[rightIndex];
+    }
+  }
+
+  return previousRow[right.length];
+}
+
+async function runSttBenchmarkForAudioSegment(audioSegment: AudioSegmentRecord): Promise<SttBenchmarkResponse> {
+  const audioPath = resolveDataRef(audioSegment.audioRef);
+  if (!existsSync(audioPath)) {
+    throw new Error(`Audio segment file not found: ${audioSegment.audioRef}`);
+  }
+
+  const baseConfig = getSttConfig();
+  const results: SttBenchmarkResult[] = [];
+  const correction = getLatestSttCorrection(await readLocalEvents(getEventsPath()), audioSegment.sessionId, audioSegment.segmentId);
+
+  for (const candidate of getSttBenchmarkCandidates(baseConfig)) {
+    const config = {
+      ...baseConfig,
+      model: candidate.model,
+    };
+    const transcriptionStartedAt = Date.now();
+    const sttResult = await transcribeWithPython(audioPath, config);
+    const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
+    const result: SttBenchmarkResult = {
+      sessionId: audioSegment.sessionId,
+      segmentId: audioSegment.segmentId,
+      audioRef: audioSegment.audioRef,
+      candidate,
+      stage: candidate.stage,
+      provider: candidate.provider,
+      model: candidate.model,
+      variant: candidate.variant ?? null,
+      sttEngine: sttResult.sttEngine,
+      sttModel: sttResult.sttModel,
+      sttLanguage: sttResult.sttLanguage,
+      transcript: sttResult.transcript,
+      audioDurationSeconds: sttResult.audioDurationSeconds,
+      transcriptionDurationMs,
+      score: correction
+        ? {
+            stage: "stt",
+            metric: "cer",
+            value: calculateCharacterErrorRate(sttResult.transcript, correction.correctedTranscript),
+            referenceTranscript: correction.correctedTranscript,
+            correctionCreatedAt: correction.correctionCreatedAt,
+          }
+        : null,
+    };
+
+    await appendEvent({
+      event_type: "stt_benchmark_result",
+      session_id: result.sessionId,
+      segment_id: result.segmentId,
+      created_at: new Date().toISOString(),
+      audio_ref: result.audioRef,
+      stage: result.stage,
+      provider: result.provider,
+      model: result.model,
+      variant: result.variant,
+      candidate: {
+        stage: result.stage,
+        provider: result.provider,
+        model: result.model,
+        variant: result.variant,
+      },
+      stt_engine: result.sttEngine,
+      stt_model: result.sttModel,
+      stt_language: result.sttLanguage,
+      transcript: result.transcript,
+      audio_duration_seconds: result.audioDurationSeconds,
+      transcription_duration_ms: result.transcriptionDurationMs,
+      score_metric: result.score?.metric ?? null,
+      score_value: result.score?.value ?? null,
+      score_reference_type: result.score ? "stt_correction" : null,
+      score_reference_transcript: result.score?.referenceTranscript ?? null,
+      score_reference_created_at: result.score?.correctionCreatedAt ?? null,
+    });
+
+    results.push(result);
+  }
+
+  return {
+    source: audioSegment,
+    results,
+  };
+}
+
 ipcMain.handle(
   "dictation:transcribe",
   async (
@@ -413,6 +580,7 @@ ipcMain.handle(
       pastedToActiveApp,
       sessionId,
       segmentId,
+      audioRef,
       sttEngine: sttResult.sttEngine,
       sttModel: sttResult.sttModel,
       sttLanguage: sttResult.sttLanguage,
@@ -422,61 +590,83 @@ ipcMain.handle(
   },
 );
 
+ipcMain.handle("history:get-recent-segments", async (_event, limit?: number): Promise<ReconstructedSegment[]> => {
+  const safeLimit = typeof limit === "number" && Number.isFinite(limit) ? Math.min(Math.max(Math.trunc(limit), 1), 50) : 20;
+  return reconstructRecentSegments(await readLocalEvents(getEventsPath()), safeLimit);
+});
+
+ipcMain.handle("audio:get-segment", async (_event, audioSegment: AudioSegmentRecord): Promise<AudioSegmentPlayback> => {
+  if (
+    !audioSegment ||
+    typeof audioSegment.sessionId !== "string" ||
+    typeof audioSegment.segmentId !== "string" ||
+    typeof audioSegment.audioRef !== "string"
+  ) {
+    throw new Error("Invalid audio segment");
+  }
+
+  const audioPath = resolveDataRef(audioSegment.audioRef);
+  if (!existsSync(audioPath)) {
+    throw new Error(`Audio segment file not found: ${audioSegment.audioRef}`);
+  }
+
+  return {
+    audioBytes: new Uint8Array(await readFile(audioPath)),
+    mimeType: getAudioMimeType(audioSegment.audioRef),
+  };
+});
+
+ipcMain.handle("corrections:save-stt", async (_event, correction: SttCorrectionRequest): Promise<SttCorrectionResponse> => {
+  if (!correction.sessionId || !correction.segmentId) {
+    throw new Error("Missing correction segment identity");
+  }
+
+  if (typeof correction.rawTranscript !== "string" || typeof correction.correctedTranscript !== "string") {
+    throw new Error("Correction transcripts must be strings");
+  }
+
+  const createdAt = new Date().toISOString();
+  const correctionMethod: "keyboard" = "keyboard";
+
+  await appendEvent({
+    event_type: "stt_correction",
+    created_at: createdAt,
+    session_id: correction.sessionId,
+    segment_id: correction.segmentId,
+    audio_ref: correction.audioRef,
+    raw_transcript: correction.rawTranscript,
+    corrected_transcript: correction.correctedTranscript,
+    correction_method: correctionMethod,
+  });
+
+  return {
+    createdAt,
+    sessionId: correction.sessionId,
+    segmentId: correction.segmentId,
+    correctionMethod,
+  };
+});
+
 ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkResponse> => {
   const latestAudioSegment = await getLatestAudioSegment();
   if (!latestAudioSegment) {
     throw new Error("No stored audio segment found");
   }
 
-  const audioPath = resolveDataRef(latestAudioSegment.audioRef);
-  if (!existsSync(audioPath)) {
-    throw new Error(`Audio segment file not found: ${latestAudioSegment.audioRef}`);
+  return runSttBenchmarkForAudioSegment(latestAudioSegment);
+});
+
+ipcMain.handle("benchmark:run-segment-stt", async (_event, audioSegment: AudioSegmentRecord): Promise<SttBenchmarkResponse> => {
+  if (
+    !audioSegment ||
+    typeof audioSegment.sessionId !== "string" ||
+    typeof audioSegment.segmentId !== "string" ||
+    typeof audioSegment.audioRef !== "string"
+  ) {
+    throw new Error("Invalid benchmark segment");
   }
 
-  const baseConfig = getSttConfig();
-  const results: SttBenchmarkResult[] = [];
-
-  for (const model of sttBenchmarkModels) {
-    const config = {
-      ...baseConfig,
-      model,
-    };
-    const transcriptionStartedAt = Date.now();
-    const sttResult = await transcribeWithPython(audioPath, config);
-    const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
-    const result: SttBenchmarkResult = {
-      sessionId: latestAudioSegment.sessionId,
-      segmentId: latestAudioSegment.segmentId,
-      audioRef: latestAudioSegment.audioRef,
-      sttEngine: sttResult.sttEngine,
-      sttModel: sttResult.sttModel,
-      sttLanguage: sttResult.sttLanguage,
-      transcript: sttResult.transcript,
-      audioDurationSeconds: sttResult.audioDurationSeconds,
-      transcriptionDurationMs,
-    };
-
-    await appendEvent({
-      event_type: "stt_benchmark_result",
-      session_id: result.sessionId,
-      segment_id: result.segmentId,
-      created_at: new Date().toISOString(),
-      audio_ref: result.audioRef,
-      stt_engine: result.sttEngine,
-      stt_model: result.sttModel,
-      stt_language: result.sttLanguage,
-      transcript: result.transcript,
-      audio_duration_seconds: result.audioDurationSeconds,
-      transcription_duration_ms: result.transcriptionDurationMs,
-    });
-
-    results.push(result);
-  }
-
-  return {
-    source: latestAudioSegment,
-    results,
-  };
+  return runSttBenchmarkForAudioSegment(audioSegment);
 });
 
 ipcMain.handle("diagnostics:open-data-folder", async (): Promise<boolean> => {

@@ -13,6 +13,7 @@ type TranscriptionResult = {
   pastedToActiveApp: boolean;
   sessionId: string;
   segmentId: string;
+  audioRef: string;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;
@@ -39,21 +40,86 @@ type AudioSegmentRecord = {
   audioRef: string;
 };
 
+type AudioSegmentPlayback = {
+  audioBytes: Uint8Array;
+  mimeType: string;
+};
+
+type RecentSegment = {
+  createdAt: string | null;
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+  transcript: string;
+  sttEngine: string;
+  sttModel: string;
+  sttLanguage: string;
+  audioDurationSeconds: number | null;
+  transcriptionDurationMs: number | null;
+  correctedTranscript: string | null;
+  correctionCreatedAt: string | null;
+  correctionMethod: string | null;
+};
+
+type BenchmarkStage =
+  | "stt"
+  | "normalization"
+  | "segment_classification"
+  | "math_transform"
+  | "correction_suggestion";
+
+type BenchmarkCandidate = {
+  stage: BenchmarkStage;
+  provider: string;
+  model: string;
+  variant?: string;
+};
+
 type SttBenchmarkResult = {
   sessionId: string;
   segmentId: string;
   audioRef: string;
+  candidate: BenchmarkCandidate;
+  stage: BenchmarkStage;
+  provider: string;
+  model: string;
+  variant: string | null;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;
   transcript: string;
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number;
+  score: SttBenchmarkScore | null;
+};
+
+type SttBenchmarkScore = {
+  stage: "stt";
+  metric: "cer";
+  value: number;
+  referenceTranscript: string;
+  correctionCreatedAt: string | null;
 };
 
 type SttBenchmarkResponse = {
   source: AudioSegmentRecord;
   results: SttBenchmarkResult[];
+};
+
+type SttCorrectionRequest = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string | null;
+  rawTranscript: string;
+  correctedTranscript: string;
+  correctionMethod?: "keyboard";
+};
+
+type SttCorrectionResponse = {
+  createdAt: string;
+  sessionId: string;
+  segmentId: string;
+  correctionMethod: "keyboard";
 };
 
 type DictationApi = {
@@ -67,7 +133,11 @@ type DictationApi = {
   openDataFolder: () => Promise<boolean>;
   openEventsLog: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
+  getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
+  getSegmentAudio?: (audioSegment: AudioSegmentRecord) => Promise<AudioSegmentPlayback>;
+  saveSttCorrection?: (correction: SttCorrectionRequest) => Promise<SttCorrectionResponse>;
   runLatestSttBenchmark?: () => Promise<SttBenchmarkResponse>;
+  runSegmentSttBenchmark?: (audioSegment: AudioSegmentRecord) => Promise<SttBenchmarkResponse>;
 };
 
 declare global {
@@ -83,20 +153,31 @@ function App(): React.ReactElement {
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [correctionNotice, setCorrectionNotice] = useState("");
   const [hotkeyStatus, setHotkeyStatus] = useState<HotkeyStatus | null>(null);
   const [sttConfig, setSttConfig] = useState<SttConfig | null>(null);
   const [lastPasteState, setLastPasteState] = useState<"none" | "pasted" | "clipboard-only">("none");
   const [lastResult, setLastResult] = useState<TranscriptionResult | null>(null);
+  const [recentSegments, setRecentSegments] = useState<RecentSegment[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [audioError, setAudioError] = useState("");
+  const [loadingAudioSegmentKey, setLoadingAudioSegmentKey] = useState("");
+  const [playingAudioSegmentKey, setPlayingAudioSegmentKey] = useState("");
   const [benchmarkSource, setBenchmarkSource] = useState<AudioSegmentRecord | null>(null);
   const [benchmarkResults, setBenchmarkResults] = useState<SttBenchmarkResult[]>([]);
   const [benchmarkError, setBenchmarkError] = useState("");
   const [isBenchmarking, setIsBenchmarking] = useState(false);
+  const [benchmarkTargetKey, setBenchmarkTargetKey] = useState<string | null>(null);
+  const [isSavingCorrection, setIsSavingCorrection] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const isStartingRef = useRef(false);
   const stopRequestedRef = useRef(false);
   const statusRef = useRef<Status>("idle");
   const pendingTranscriptionOptionsRef = useRef<TranscriptionOptions>({ trigger: "manual" });
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const audioObjectUrlRef = useRef("");
 
   useEffect(() => {
     statusRef.current = status;
@@ -119,10 +200,12 @@ function App(): React.ReactElement {
     void window.dictex.getSttConfig().then(setSttConfig).catch(() => {
       setNotice("Could not read STT config");
     });
+    void loadRecentSegments();
 
     return () => {
       removeToggleListener();
       removeHotkeyStatusListener();
+      stopAudioPlayback();
     };
   }, []);
 
@@ -136,6 +219,7 @@ function App(): React.ReactElement {
     pendingTranscriptionOptionsRef.current = { trigger: "manual" };
     setError("");
     setNotice("");
+    setCorrectionNotice("");
     setStatus("recording");
     setTranscript("");
     setLastPasteState("none");
@@ -204,16 +288,140 @@ function App(): React.ReactElement {
       setTranscript(result.transcript);
       setLastResult(result);
       setLastPasteState(result.pastedToActiveApp ? "pasted" : "clipboard-only");
+      setCorrectionNotice("");
       setStatus("done");
+      void loadRecentSegments();
     } catch (transcriptionError) {
       setStatus("error");
       setError(transcriptionError instanceof Error ? transcriptionError.message : "Transcription failed");
     }
   }
 
+  async function loadRecentSegments(): Promise<void> {
+    if (typeof window.dictex.getRecentSegments !== "function") {
+      setHistoryError("Restart DicTeX to load the history preload API");
+      return;
+    }
+
+    setHistoryError("");
+    setIsLoadingHistory(true);
+
+    try {
+      setRecentSegments(await window.dictex.getRecentSegments(20));
+    } catch (historyLoadError) {
+      setHistoryError(historyLoadError instanceof Error ? historyLoadError.message : "Could not load recent segments");
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }
+
   async function copyTranscript(): Promise<void> {
     if (transcript) {
       await navigator.clipboard.writeText(transcript);
+    }
+  }
+
+  async function copyHistoryTranscript(segment: RecentSegment, mode: "raw" | "corrected"): Promise<void> {
+    const text = mode === "corrected" ? segment.correctedTranscript : segment.transcript;
+    if (!text) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(text);
+    setNotice(`Copied ${mode} transcript for ${segment.sessionId} / ${segment.segmentId}`);
+  }
+
+  function stopAudioPlayback(): void {
+    audioPlayerRef.current?.pause();
+    audioPlayerRef.current = null;
+
+    if (audioObjectUrlRef.current) {
+      URL.revokeObjectURL(audioObjectUrlRef.current);
+      audioObjectUrlRef.current = "";
+    }
+
+    setPlayingAudioSegmentKey("");
+    setLoadingAudioSegmentKey("");
+  }
+
+  async function playHistoryAudio(segment: RecentSegment): Promise<void> {
+    if (typeof window.dictex.getSegmentAudio !== "function") {
+      setAudioError("Restart DicTeX to load the audio playback API");
+      return;
+    }
+
+    const segmentKey = getSegmentKey(segment);
+    if (playingAudioSegmentKey === segmentKey) {
+      stopAudioPlayback();
+      return;
+    }
+
+    stopAudioPlayback();
+    setAudioError("");
+    setLoadingAudioSegmentKey(segmentKey);
+
+    try {
+      const playback = await window.dictex.getSegmentAudio({
+        sessionId: segment.sessionId,
+        segmentId: segment.segmentId,
+        audioRef: segment.audioRef,
+      });
+      const audioBytes = new Uint8Array(playback.audioBytes);
+      const audioBuffer = audioBytes.buffer.slice(
+        audioBytes.byteOffset,
+        audioBytes.byteOffset + audioBytes.byteLength,
+      ) as ArrayBuffer;
+      const audioUrl = URL.createObjectURL(new Blob([audioBuffer], { type: playback.mimeType }));
+      const player = new Audio(audioUrl);
+
+      audioPlayerRef.current = player;
+      audioObjectUrlRef.current = audioUrl;
+
+      player.onended = stopAudioPlayback;
+      player.onerror = () => {
+        setAudioError(`Could not play ${segment.sessionId} / ${segment.segmentId}`);
+        stopAudioPlayback();
+      };
+
+      await player.play();
+      setPlayingAudioSegmentKey(segmentKey);
+    } catch (playError) {
+      setAudioError(playError instanceof Error ? playError.message : "Could not play audio segment");
+      stopAudioPlayback();
+    } finally {
+      setLoadingAudioSegmentKey("");
+    }
+  }
+
+  async function saveSttCorrection(): Promise<void> {
+    if (!lastResult) {
+      setCorrectionNotice("No transcript segment to correct");
+      return;
+    }
+
+    if (typeof window.dictex.saveSttCorrection !== "function") {
+      setCorrectionNotice("Restart DicTeX to load the correction preload API");
+      return;
+    }
+
+    setCorrectionNotice("");
+    setIsSavingCorrection(true);
+
+    try {
+      const saved = await window.dictex.saveSttCorrection({
+        sessionId: lastResult.sessionId,
+        segmentId: lastResult.segmentId,
+        audioRef: lastResult.audioRef,
+        rawTranscript: lastResult.transcript,
+        correctedTranscript: transcript,
+        correctionMethod: "keyboard",
+      });
+      setCorrectionNotice(`Saved correction for ${saved.sessionId} / ${saved.segmentId}`);
+      void loadRecentSegments();
+    } catch (saveError) {
+      setCorrectionNotice(saveError instanceof Error ? saveError.message : "Could not save correction");
+    } finally {
+      setIsSavingCorrection(false);
     }
   }
 
@@ -244,6 +452,7 @@ function App(): React.ReactElement {
     setBenchmarkError("");
     setNotice("");
     setIsBenchmarking(true);
+    setBenchmarkTargetKey("latest");
 
     try {
       const result = await window.dictex.runLatestSttBenchmark();
@@ -253,6 +462,35 @@ function App(): React.ReactElement {
       setBenchmarkError(benchmarkRunError instanceof Error ? benchmarkRunError.message : "Benchmark failed");
     } finally {
       setIsBenchmarking(false);
+      setBenchmarkTargetKey(null);
+    }
+  }
+
+  async function runSegmentSttBenchmark(segment: RecentSegment): Promise<void> {
+    if (typeof window.dictex.runSegmentSttBenchmark !== "function") {
+      setBenchmarkError("Restart DicTeX to load the selected segment benchmark API");
+      return;
+    }
+
+    const segmentKey = getSegmentKey(segment);
+    setBenchmarkError("");
+    setNotice("");
+    setIsBenchmarking(true);
+    setBenchmarkTargetKey(segmentKey);
+
+    try {
+      const result = await window.dictex.runSegmentSttBenchmark({
+        sessionId: segment.sessionId,
+        segmentId: segment.segmentId,
+        audioRef: segment.audioRef,
+      });
+      setBenchmarkSource(result.source);
+      setBenchmarkResults(result.results);
+    } catch (benchmarkRunError) {
+      setBenchmarkError(benchmarkRunError instanceof Error ? benchmarkRunError.message : "Benchmark failed");
+    } finally {
+      setIsBenchmarking(false);
+      setBenchmarkTargetKey(null);
     }
   }
 
@@ -315,6 +553,102 @@ function App(): React.ReactElement {
         <Metric label="Output" value={lastPasteState === "pasted" ? "pasted" : lastPasteState === "clipboard-only" ? "clipboard" : "-"} />
       </section>
 
+      <section className="panel history-panel" aria-busy={isLoadingHistory}>
+        <div className="history-header">
+          <div>
+            <h2>Recent segments</h2>
+            <p>{recentSegments.length > 0 ? `${recentSegments.length} local dictations` : "Local segment history"}</p>
+          </div>
+          <button
+            className="secondary-button"
+            disabled={isLoadingHistory || status === "recording" || status === "transcribing"}
+            onClick={() => void loadRecentSegments()}
+          >
+            {isLoadingHistory ? "Loading" : "Refresh"}
+          </button>
+        </div>
+
+        {historyError && <pre className="error">{historyError}</pre>}
+        {audioError && <pre className="error">{audioError}</pre>}
+
+        {recentSegments.length === 0 && !historyError ? (
+          <p className="empty-state">No stored dictation segments found.</p>
+        ) : (
+          <div className="history-list">
+            {recentSegments.map((segment) => (
+              <article className="history-item" key={getSegmentKey(segment)}>
+                <div className="history-heading">
+                  <span title={segment.createdAt ?? undefined}>{formatTimestamp(segment.createdAt)}</span>
+                  <strong title={`${segment.sessionId} / ${segment.segmentId}`}>
+                    {segment.sessionId} / {segment.segmentId}
+                  </strong>
+                  <em className={segment.correctedTranscript ? "correction-state correction-state-done" : "correction-state"}>
+                    {segment.correctedTranscript ? "corrected" : "raw"}
+                  </em>
+                </div>
+
+                {segment.correctedTranscript ? (
+                  <div className="history-transcripts">
+                    <p className="history-transcript history-transcript-corrected">{segment.correctedTranscript}</p>
+                    <p className="history-raw-transcript">Raw: {segment.transcript || "-"}</p>
+                  </div>
+                ) : (
+                  <p className="history-transcript">{segment.transcript || "-"}</p>
+                )}
+
+                <div className="history-footer">
+                  <div className="history-meta">
+                    <span>{segment.sttModel}</span>
+                    <span>{segment.sttLanguage}</span>
+                    <span>{formatAudioDuration(segment.audioDurationSeconds)}</span>
+                    <span>{formatLatency(segment.transcriptionDurationMs)}</span>
+                    {segment.correctionMethod && <span>{segment.correctionMethod}</span>}
+                  </div>
+                  <div className="history-actions">
+                    <button
+                      className="secondary-button"
+                      disabled={
+                        !segment.audioRef ||
+                        loadingAudioSegmentKey === getSegmentKey(segment) ||
+                        status === "recording" ||
+                        status === "transcribing"
+                      }
+                      onClick={() => void playHistoryAudio(segment)}
+                    >
+                      {loadingAudioSegmentKey === getSegmentKey(segment)
+                        ? "Loading"
+                        : playingAudioSegmentKey === getSegmentKey(segment)
+                          ? "Stop"
+                          : "Play"}
+                    </button>
+                    <button className="secondary-button" disabled={!segment.transcript} onClick={() => void copyHistoryTranscript(segment, "raw")}>
+                      Copy raw
+                    </button>
+                    {segment.correctedTranscript && (
+                      <button className="secondary-button" onClick={() => void copyHistoryTranscript(segment, "corrected")}>
+                        Copy corrected
+                      </button>
+                    )}
+                    <button
+                      className="secondary-button"
+                      disabled={
+                        typeof window.dictex.runSegmentSttBenchmark !== "function" ||
+                        isBenchmarking ||
+                        status === "recording" ||
+                        status === "transcribing"
+                      }
+                      onClick={() => void runSegmentSttBenchmark(segment)}
+                    >
+                      {benchmarkTargetKey === getSegmentKey(segment) ? "Running" : "Benchmark"}
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="panel benchmark-panel" aria-busy={isBenchmarking}>
         <div className="benchmark-header">
           <div>
@@ -335,7 +669,7 @@ function App(): React.ReactElement {
           >
             {typeof window.dictex.runLatestSttBenchmark !== "function"
               ? "Restart app"
-              : isBenchmarking
+              : benchmarkTargetKey === "latest"
                 ? "Running"
                 : "Benchmark latest"}
           </button>
@@ -346,12 +680,13 @@ function App(): React.ReactElement {
         {benchmarkResults.length > 0 && (
           <div className="benchmark-results">
             {benchmarkResults.map((result) => (
-              <article className="benchmark-result" key={result.sttModel}>
+              <article className="benchmark-result" key={formatBenchmarkCandidateKey(result)}>
                 <div className="benchmark-meta">
-                  <strong>{result.sttModel}</strong>
+                  <strong title={formatBenchmarkCandidate(result)}>{formatBenchmarkCandidate(result)}</strong>
                   <span>{result.sttLanguage}</span>
                   <span>{formatAudioDuration(result.audioDurationSeconds)}</span>
                   <span>{result.transcriptionDurationMs} ms</span>
+                  {result.score && <span title={`Reference: ${result.score.referenceTranscript}`}>{formatScore(result.score)}</span>}
                 </div>
                 <p>{result.transcript || "-"}</p>
               </article>
@@ -367,16 +702,27 @@ function App(): React.ReactElement {
         <textarea
           id="transcript"
           value={transcript}
-          onChange={(event) => setTranscript(event.target.value)}
+          onChange={(event) => {
+            setTranscript(event.target.value);
+            setCorrectionNotice("");
+          }}
           placeholder="Your transcript will appear here."
         />
 
         {error && <pre className="error">{error}</pre>}
         {notice && <p className="notice">{notice}</p>}
+        {correctionNotice && <p className="notice">{correctionNotice}</p>}
 
         <div className="actions">
           <button className="secondary-button" disabled={!transcript} onClick={copyTranscript}>
             Copy
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!lastResult || isSavingCorrection || status === "recording" || status === "transcribing"}
+            onClick={() => void saveSttCorrection()}
+          >
+            {isSavingCorrection ? "Saving" : "Save correction"}
           </button>
           <button className="secondary-button" onClick={openDataFolder}>
             Open data folder
@@ -401,6 +747,44 @@ function Metric({ label, value }: { label: string; value: string }): React.React
 
 function formatAudioDuration(durationSeconds: number | null): string {
   return durationSeconds === null ? "-" : `${durationSeconds.toFixed(2)} s`;
+}
+
+function formatLatency(durationMs: number | null): string {
+  return durationMs === null ? "-" : `${durationMs} ms`;
+}
+
+function formatTimestamp(timestamp: string | null): string {
+  if (!timestamp) {
+    return "-";
+  }
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatBenchmarkCandidate(result: SttBenchmarkResult): string {
+  return `${result.stage}:${result.provider}/${result.model}${result.variant ? ` (${result.variant})` : ""}`;
+}
+
+function formatBenchmarkCandidateKey(result: SttBenchmarkResult): string {
+  return `${result.stage}/${result.provider}/${result.model}/${result.variant ?? ""}`;
+}
+
+function formatScore(score: SttBenchmarkScore): string {
+  return `${score.metric.toUpperCase()} ${(score.value * 100).toFixed(1)}%`;
+}
+
+function getSegmentKey(segment: Pick<RecentSegment, "sessionId" | "segmentId">): string {
+  return `${segment.sessionId}/${segment.segmentId}`;
 }
 
 createRoot(document.getElementById("root")!).render(
