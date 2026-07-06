@@ -38,6 +38,11 @@ type AudioSegmentRecord = {
   audioRef: string;
 };
 
+type AudioSegmentPlayback = {
+  audioBytes: Uint8Array;
+  mimeType: string;
+};
+
 type RecentSegment = {
   createdAt: string | null;
   sessionId: string;
@@ -94,5 +99,7 @@ contextBridge.exposeInMainWorld("dictex", {
   getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
   runLatestSttBenchmark: () => ipcRenderer.invoke("benchmark:run-latest-stt") as Promise<SttBenchmarkResponse>,
   getRecentSegments: (limit = 20) => ipcRenderer.invoke("history:get-recent-segments", limit) as Promise<RecentSegment[]>,
+  getAudioSegment: (source: AudioSegmentRecord) =>
+    ipcRenderer.invoke("audio:get-segment", source) as Promise<AudioSegmentPlayback>,
   writeClipboardText: (text: string) => ipcRenderer.invoke("clipboard:write-text", text) as Promise<boolean>,
 });

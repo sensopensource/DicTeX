@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readLocalEvents, reconstructSegments, type ReconstructedSegment } from "./local-events";
@@ -36,6 +36,11 @@ type AudioSegmentRecord = {
   sessionId: string;
   segmentId: string;
   audioRef: string;
+};
+
+type AudioSegmentPlayback = {
+  audioBytes: Uint8Array;
+  mimeType: string;
 };
 
 type RecentSegment = ReconstructedSegment;
@@ -198,6 +203,18 @@ function getAudioExtension(mimeType: string): string {
   }
 
   return "audio";
+}
+
+function getAudioMimeType(audioRef: string): string {
+  if (audioRef.endsWith(".webm")) {
+    return "audio/webm";
+  }
+
+  if (audioRef.endsWith(".wav")) {
+    return "audio/wav";
+  }
+
+  return "application/octet-stream";
 }
 
 function getNextSegmentId(): string {
@@ -469,6 +486,27 @@ ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkRespons
 
 ipcMain.handle("history:get-recent-segments", async (_event, limit?: number): Promise<RecentSegment[]> => {
   return getRecentSegments(typeof limit === "number" ? limit : 20);
+});
+
+ipcMain.handle("audio:get-segment", async (_event, source: AudioSegmentRecord): Promise<AudioSegmentPlayback> => {
+  if (
+    !source ||
+    typeof source.sessionId !== "string" ||
+    typeof source.segmentId !== "string" ||
+    typeof source.audioRef !== "string"
+  ) {
+    throw new Error("Invalid audio segment");
+  }
+
+  const audioPath = resolveDataRef(source.audioRef);
+  if (!existsSync(audioPath)) {
+    throw new Error(`Audio segment file not found: ${source.audioRef}`);
+  }
+
+  return {
+    audioBytes: await readFile(audioPath),
+    mimeType: getAudioMimeType(source.audioRef),
+  };
 });
 
 ipcMain.handle("clipboard:write-text", (_event, text: string): boolean => {
