@@ -75,6 +75,31 @@ cd app
 ../scripts/npm.sh run build
 ```
 
+## Manual MVP Smoke Test
+
+Run this checklist on Windows when validating MVP behavior manually. CI does not cover microphone input, global hotkeys, auto-paste, Python STT, or local model availability.
+
+1. Launch the app:
+
+```powershell
+cd app
+..\scripts\npm.cmd run dev
+```
+
+2. Confirm the app opens to the compact utility UI and shows the global shortcut status.
+3. Hold `Hold to dictate`, speak a short French phrase, then release.
+4. Confirm the transcript appears in `Last transcript` and the diagnostics show session id, segment id, model, language, latency, and audio duration when available.
+5. Confirm the transcript is copied to the clipboard.
+6. Press `Win+Alt+Space`, speak a short phrase, then press `Win+Alt+Space` again.
+7. Confirm Windows auto-paste inserts the transcript into the previously active text field, or that the UI reports clipboard-only behavior if paste fails.
+8. Confirm the recent segment history refreshes and can copy an older transcript.
+9. Play a recent segment from history and confirm local audio playback works.
+10. Edit `Last transcript`, click `Save correction`, and confirm the history marks the segment as corrected.
+11. Click `Open events log` and confirm `audio_segment`, `stt_result`, and `stt_correction` events were appended.
+12. Click `Open data folder` and confirm the stored audio file exists under `data/audio/session_.../`.
+13. Click `Benchmark latest` and confirm `tiny`, `base`, and `small` STT results appear and `stt_benchmark_result` events are appended.
+14. Benchmark a selected history segment and confirm results are associated with that segment id.
+
 ## Run
 
 Windows:
@@ -169,10 +194,16 @@ Each dictation writes at least two events:
 {"event_type":"stt_result","session_id":"session_...","segment_id":"seg_0001","stt_engine":"faster-whisper","stt_model":"base","stt_language":"fr","stt_output":"...","corrected_transcript":null}
 ```
 
-The STT benchmark action reuses the latest stored audio segment and appends one result per tested model:
+The STT benchmark actions reuse stored audio segments and append one result per tested model:
 
 ```json
-{"event_type":"stt_benchmark_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","stage":"stt","provider":"faster-whisper","model":"small","variant":"cpu-int8-fr","stt_engine":"faster-whisper","stt_model":"small","stt_language":"fr","transcript":"...","audio_duration_seconds":2.4,"transcription_duration_ms":1830}
+{"event_type":"stt_benchmark_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","stage":"stt","provider":"faster-whisper","model":"small","variant":"cpu-int8-fr","candidate":{"stage":"stt","provider":"faster-whisper","model":"small","variant":"cpu-int8-fr"},"stt_engine":"faster-whisper","stt_model":"small","stt_language":"fr","transcript":"...","audio_duration_seconds":2.4,"transcription_duration_ms":1830,"score_metric":"cer","score_value":0.12,"score_reference_type":"stt_correction"}
 ```
 
-The correction UX is intentionally not implemented yet. The important MVP decision is to preserve the audio -> STT output link from the beginning.
+STT corrections are append-only events linked to the original segment:
+
+```json
+{"event_type":"stt_correction","created_at":"2026-07-05T00:00:00.000Z","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","raw_transcript":"...","corrected_transcript":"...","correction_method":"keyboard"}
+```
+
+The important MVP decision is to preserve the audio -> raw STT -> correction -> benchmark score relationship without rewriting earlier events.

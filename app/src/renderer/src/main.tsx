@@ -40,6 +40,11 @@ type AudioSegmentRecord = {
   audioRef: string;
 };
 
+type AudioSegmentPlayback = {
+  audioBytes: Uint8Array;
+  mimeType: string;
+};
+
 type RecentSegment = {
   createdAt: string | null;
   sessionId: string;
@@ -129,6 +134,7 @@ type DictationApi = {
   openEventsLog: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
   getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
+  getSegmentAudio?: (audioSegment: AudioSegmentRecord) => Promise<AudioSegmentPlayback>;
   saveSttCorrection?: (correction: SttCorrectionRequest) => Promise<SttCorrectionResponse>;
   runLatestSttBenchmark?: () => Promise<SttBenchmarkResponse>;
   runSegmentSttBenchmark?: (audioSegment: AudioSegmentRecord) => Promise<SttBenchmarkResponse>;
@@ -155,6 +161,9 @@ function App(): React.ReactElement {
   const [recentSegments, setRecentSegments] = useState<RecentSegment[]>([]);
   const [historyError, setHistoryError] = useState("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [audioError, setAudioError] = useState("");
+  const [loadingAudioSegmentKey, setLoadingAudioSegmentKey] = useState("");
+  const [playingAudioSegmentKey, setPlayingAudioSegmentKey] = useState("");
   const [benchmarkSource, setBenchmarkSource] = useState<AudioSegmentRecord | null>(null);
   const [benchmarkResults, setBenchmarkResults] = useState<SttBenchmarkResult[]>([]);
   const [benchmarkError, setBenchmarkError] = useState("");
@@ -167,6 +176,8 @@ function App(): React.ReactElement {
   const stopRequestedRef = useRef(false);
   const statusRef = useRef<Status>("idle");
   const pendingTranscriptionOptionsRef = useRef<TranscriptionOptions>({ trigger: "manual" });
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const audioObjectUrlRef = useRef("");
 
   useEffect(() => {
     statusRef.current = status;
@@ -194,6 +205,7 @@ function App(): React.ReactElement {
     return () => {
       removeToggleListener();
       removeHotkeyStatusListener();
+      stopAudioPlayback();
     };
   }, []);
 
@@ -317,6 +329,68 @@ function App(): React.ReactElement {
 
     await navigator.clipboard.writeText(text);
     setNotice(`Copied ${mode} transcript for ${segment.sessionId} / ${segment.segmentId}`);
+  }
+
+  function stopAudioPlayback(): void {
+    audioPlayerRef.current?.pause();
+    audioPlayerRef.current = null;
+
+    if (audioObjectUrlRef.current) {
+      URL.revokeObjectURL(audioObjectUrlRef.current);
+      audioObjectUrlRef.current = "";
+    }
+
+    setPlayingAudioSegmentKey("");
+    setLoadingAudioSegmentKey("");
+  }
+
+  async function playHistoryAudio(segment: RecentSegment): Promise<void> {
+    if (typeof window.dictex.getSegmentAudio !== "function") {
+      setAudioError("Restart DicTeX to load the audio playback API");
+      return;
+    }
+
+    const segmentKey = getSegmentKey(segment);
+    if (playingAudioSegmentKey === segmentKey) {
+      stopAudioPlayback();
+      return;
+    }
+
+    stopAudioPlayback();
+    setAudioError("");
+    setLoadingAudioSegmentKey(segmentKey);
+
+    try {
+      const playback = await window.dictex.getSegmentAudio({
+        sessionId: segment.sessionId,
+        segmentId: segment.segmentId,
+        audioRef: segment.audioRef,
+      });
+      const audioBytes = new Uint8Array(playback.audioBytes);
+      const audioBuffer = audioBytes.buffer.slice(
+        audioBytes.byteOffset,
+        audioBytes.byteOffset + audioBytes.byteLength,
+      ) as ArrayBuffer;
+      const audioUrl = URL.createObjectURL(new Blob([audioBuffer], { type: playback.mimeType }));
+      const player = new Audio(audioUrl);
+
+      audioPlayerRef.current = player;
+      audioObjectUrlRef.current = audioUrl;
+
+      player.onended = stopAudioPlayback;
+      player.onerror = () => {
+        setAudioError(`Could not play ${segment.sessionId} / ${segment.segmentId}`);
+        stopAudioPlayback();
+      };
+
+      await player.play();
+      setPlayingAudioSegmentKey(segmentKey);
+    } catch (playError) {
+      setAudioError(playError instanceof Error ? playError.message : "Could not play audio segment");
+      stopAudioPlayback();
+    } finally {
+      setLoadingAudioSegmentKey("");
+    }
   }
 
   async function saveSttCorrection(): Promise<void> {
@@ -495,6 +569,7 @@ function App(): React.ReactElement {
         </div>
 
         {historyError && <pre className="error">{historyError}</pre>}
+        {audioError && <pre className="error">{audioError}</pre>}
 
         {recentSegments.length === 0 && !historyError ? (
           <p className="empty-state">No stored dictation segments found.</p>
@@ -530,6 +605,22 @@ function App(): React.ReactElement {
                     {segment.correctionMethod && <span>{segment.correctionMethod}</span>}
                   </div>
                   <div className="history-actions">
+                    <button
+                      className="secondary-button"
+                      disabled={
+                        !segment.audioRef ||
+                        loadingAudioSegmentKey === getSegmentKey(segment) ||
+                        status === "recording" ||
+                        status === "transcribing"
+                      }
+                      onClick={() => void playHistoryAudio(segment)}
+                    >
+                      {loadingAudioSegmentKey === getSegmentKey(segment)
+                        ? "Loading"
+                        : playingAudioSegmentKey === getSegmentKey(segment)
+                          ? "Stop"
+                          : "Play"}
+                    </button>
                     <button className="secondary-button" disabled={!segment.transcript} onClick={() => void copyHistoryTranscript(segment, "raw")}>
                       Copy raw
                     </button>

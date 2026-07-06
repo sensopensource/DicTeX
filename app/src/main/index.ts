@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -43,6 +43,11 @@ type AudioSegmentRecord = {
   sessionId: string;
   segmentId: string;
   audioRef: string;
+};
+
+type AudioSegmentPlayback = {
+  audioBytes: Uint8Array;
+  mimeType: string;
 };
 
 type BenchmarkStage =
@@ -258,6 +263,18 @@ function getAudioExtension(mimeType: string): string {
   return "audio";
 }
 
+function getAudioMimeType(audioRef: string): string {
+  if (audioRef.endsWith(".webm")) {
+    return "audio/webm";
+  }
+
+  if (audioRef.endsWith(".wav")) {
+    return "audio/wav";
+  }
+
+  return "application/octet-stream";
+}
+
 function getNextSegmentId(): string {
   segmentCounter += 1;
   return `seg_${String(segmentCounter).padStart(4, "0")}`;
@@ -383,11 +400,18 @@ function pasteClipboardIntoActiveApp(): Promise<boolean> {
 }
 
 function calculateCharacterErrorRate(candidateTranscript: string, referenceTranscript: string): number {
-  if (referenceTranscript.length === 0) {
-    return candidateTranscript.length === 0 ? 0 : 1;
+  const candidate = normalizeForScoring(candidateTranscript);
+  const reference = normalizeForScoring(referenceTranscript);
+
+  if (reference.length === 0) {
+    return candidate.length === 0 ? 0 : 1;
   }
 
-  return calculateEditDistance(candidateTranscript, referenceTranscript) / referenceTranscript.length;
+  return calculateEditDistance(candidate, reference) / reference.length;
+}
+
+function normalizeForScoring(value: string): string {
+  return value.trim().toLocaleLowerCase();
 }
 
 function calculateEditDistance(left: string, right: string): number {
@@ -468,12 +492,23 @@ async function runSttBenchmarkForAudioSegment(audioSegment: AudioSegmentRecord):
       provider: result.provider,
       model: result.model,
       variant: result.variant,
+      candidate: {
+        stage: result.stage,
+        provider: result.provider,
+        model: result.model,
+        variant: result.variant,
+      },
       stt_engine: result.sttEngine,
       stt_model: result.sttModel,
       stt_language: result.sttLanguage,
       transcript: result.transcript,
       audio_duration_seconds: result.audioDurationSeconds,
       transcription_duration_ms: result.transcriptionDurationMs,
+      score_metric: result.score?.metric ?? null,
+      score_value: result.score?.value ?? null,
+      score_reference_type: result.score ? "stt_correction" : null,
+      score_reference_transcript: result.score?.referenceTranscript ?? null,
+      score_reference_created_at: result.score?.correctionCreatedAt ?? null,
     });
 
     results.push(result);
@@ -558,6 +593,27 @@ ipcMain.handle(
 ipcMain.handle("history:get-recent-segments", async (_event, limit?: number): Promise<ReconstructedSegment[]> => {
   const safeLimit = typeof limit === "number" && Number.isFinite(limit) ? Math.min(Math.max(Math.trunc(limit), 1), 50) : 20;
   return reconstructRecentSegments(await readLocalEvents(getEventsPath()), safeLimit);
+});
+
+ipcMain.handle("audio:get-segment", async (_event, audioSegment: AudioSegmentRecord): Promise<AudioSegmentPlayback> => {
+  if (
+    !audioSegment ||
+    typeof audioSegment.sessionId !== "string" ||
+    typeof audioSegment.segmentId !== "string" ||
+    typeof audioSegment.audioRef !== "string"
+  ) {
+    throw new Error("Invalid audio segment");
+  }
+
+  const audioPath = resolveDataRef(audioSegment.audioRef);
+  if (!existsSync(audioPath)) {
+    throw new Error(`Audio segment file not found: ${audioSegment.audioRef}`);
+  }
+
+  return {
+    audioBytes: new Uint8Array(await readFile(audioPath)),
+    mimeType: getAudioMimeType(audioSegment.audioRef),
+  };
 });
 
 ipcMain.handle("corrections:save-stt", async (_event, correction: SttCorrectionRequest): Promise<SttCorrectionResponse> => {

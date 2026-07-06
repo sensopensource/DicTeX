@@ -81,7 +81,7 @@ Keep these layers separate:
 
 Do not collapse all corrections into a single final-output edit, or future training data will be ambiguous.
 
-For now, store `corrected_transcript: null` in `stt_result`. The correction UX can fill this later.
+Store `corrected_transcript: null` in `stt_result` for compatibility, but write human transcript corrections as separate `stt_correction` events. Do not mutate older `stt_result` records.
 
 ## UI Direction
 
@@ -113,6 +113,9 @@ Useful visible information:
 - last session and segment;
 - transcription duration;
 - paste result;
+- recent segment history;
+- correction state;
+- benchmark results;
 - data folder / events log access.
 
 ## Shortcut And Insertion Decisions
