@@ -75,6 +75,22 @@ cd app
 ../scripts/npm.sh run build
 ```
 
+## Manual MVP Smoke Test
+
+Run this checklist on Windows before merging product changes that touch dictation, insertion, local data, or benchmark behavior:
+
+- Launch the app with `..\scripts\npm.cmd run dev` from `app/`.
+- Confirm the window opens and shows ready status, shortcut status, STT config, and diagnostics.
+- Hold `Hold to dictate`, speak a short French phrase, release, and confirm the transcript appears.
+- Confirm the transcript is copied to the clipboard after manual dictation.
+- Press `Win+Alt+Space` once to start recording, speak briefly, then press it again to stop.
+- Confirm global hotkey dictation copies the transcript and auto-pastes into the active Windows app.
+- Confirm the latest session id, segment id, latency, audio duration, and output mode update.
+- Open the events log from the diagnostics button and confirm `audio_segment` and `stt_result` events were appended.
+- Open the data folder from the diagnostics button and confirm the segment audio file exists under `data/audio/`.
+- Run `Benchmark latest` after at least one segment exists and confirm `tiny`, `base`, and `small` results appear.
+- Reopen the events log and confirm `stt_benchmark_result` events were appended.
+
 ## Run
 
 Windows:
