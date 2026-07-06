@@ -1,9 +1,10 @@
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readLocalEvents, reconstructSegments } from "./local-events";
 
 type TranscriptionResult = {
   transcript: string;
@@ -227,39 +228,16 @@ async function appendEvent(event: Record<string, JsonValue>): Promise<void> {
 }
 
 async function getLatestAudioSegment(): Promise<AudioSegmentRecord | null> {
-  const eventsPath = getEventsPath();
-  if (!existsSync(eventsPath)) {
+  const [latestSegment] = reconstructSegments(await readLocalEvents(getEventsPath()), 1);
+  if (!latestSegment) {
     return null;
   }
 
-  const contents = await readFile(eventsPath, { encoding: "utf8" });
-  let latestAudioSegment: AudioSegmentRecord | null = null;
-
-  for (const line of contents.split(/\r?\n/)) {
-    if (!line.trim()) {
-      continue;
-    }
-
-    try {
-      const event = JSON.parse(line) as Record<string, unknown>;
-      if (
-        event.event_type === "audio_segment" &&
-        typeof event.session_id === "string" &&
-        typeof event.segment_id === "string" &&
-        typeof event.audio_ref === "string"
-      ) {
-        latestAudioSegment = {
-          sessionId: event.session_id,
-          segmentId: event.segment_id,
-          audioRef: event.audio_ref,
-        };
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return latestAudioSegment;
+  return {
+    sessionId: latestSegment.sessionId,
+    segmentId: latestSegment.segmentId,
+    audioRef: latestSegment.audioRef,
+  };
 }
 
 function transcribeWithPython(audioPath: string, config: SttConfig = getSttConfig()): Promise<EngineTranscriptionResult> {
