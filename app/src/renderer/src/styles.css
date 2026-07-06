@@ -251,7 +251,7 @@ h2 {
 
 .history-heading {
   display: grid;
-  grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr);
+  grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) auto;
   gap: 0.55rem;
   align-items: center;
   min-width: 0;
@@ -272,6 +272,28 @@ h2 {
   white-space: nowrap;
 }
 
+.correction-state {
+  border: 1px solid #343434;
+  border-radius: 999px;
+  padding: 0.18rem 0.42rem;
+  color: #8f8f8f;
+  background: #151515;
+  font-size: 0.64rem;
+  font-style: normal;
+  text-transform: uppercase;
+}
+
+.correction-state-done {
+  border-color: #275b37;
+  color: #93e0a8;
+}
+
+.history-transcripts {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
 .history-transcript {
   display: -webkit-box;
   margin: 0;
@@ -282,6 +304,22 @@ h2 {
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+.history-transcript-corrected {
+  color: #f0f0f0;
+}
+
+.history-raw-transcript {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #8f8f8f;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .history-footer {
@@ -305,6 +343,13 @@ h2 {
   max-width: 8rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
 }
 
 .benchmark-header {
@@ -476,6 +521,10 @@ textarea {
   .history-heading,
   .history-footer {
     grid-template-columns: 1fr;
+  }
+
+  .history-actions {
+    justify-content: flex-start;
   }
 
   .benchmark-meta {

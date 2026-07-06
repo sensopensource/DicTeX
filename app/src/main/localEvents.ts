@@ -46,12 +46,28 @@ export type SttBenchmarkResultEvent = {
   transcription_duration_ms?: number;
 };
 
+export type SttCorrectionEvent = {
+  event_type: "stt_correction";
+  session_id: string;
+  segment_id: string;
+  created_at?: string;
+  audio_ref?: string | null;
+  raw_transcript: string;
+  corrected_transcript: string;
+  correction_method?: string;
+};
+
 export type UnknownLocalEvent = {
   event_type: string;
   [key: string]: unknown;
 };
 
-export type LocalEvent = AudioSegmentEvent | SttResultEvent | SttBenchmarkResultEvent | UnknownLocalEvent;
+export type LocalEvent =
+  | AudioSegmentEvent
+  | SttResultEvent
+  | SttBenchmarkResultEvent
+  | SttCorrectionEvent
+  | UnknownLocalEvent;
 
 export type ReconstructedSegment = {
   createdAt: string | null;
@@ -64,6 +80,9 @@ export type ReconstructedSegment = {
   sttLanguage: string;
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number | null;
+  correctedTranscript: string | null;
+  correctionCreatedAt: string | null;
+  correctionMethod: string | null;
 };
 
 type SegmentDraft = {
@@ -77,7 +96,11 @@ type SegmentDraft = {
   sttLanguage: string | null;
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number | null;
+  correctedTranscript: string | null;
+  correctionCreatedAt: string | null;
+  correctionMethod: string | null;
   lastEventIndex: number;
+  lastCorrectionEventIndex: number | null;
 };
 
 export async function readLocalEvents(eventsPath: string): Promise<LocalEvent[]> {
@@ -126,7 +149,7 @@ export function reconstructRecentSegments(events: LocalEvent[], limit = 20): Rec
   const segments = new Map<string, SegmentDraft>();
 
   events.forEach((event, eventIndex) => {
-    if (!isAudioSegmentEvent(event) && !isSttResultEvent(event)) {
+    if (!isAudioSegmentEvent(event) && !isSttResultEvent(event) && !isSttCorrectionEvent(event)) {
       return;
     }
 
@@ -138,6 +161,7 @@ export function reconstructRecentSegments(events: LocalEvent[], limit = 20): Rec
     if (isAudioSegmentEvent(event)) {
       draft.audioRef = event.audio_ref;
       draft.createdAt = getString(event.created_at) ?? draft.createdAt;
+      draft.lastEventIndex = eventIndex;
     }
 
     if (isSttResultEvent(event)) {
@@ -149,9 +173,18 @@ export function reconstructRecentSegments(events: LocalEvent[], limit = 20): Rec
       draft.audioDurationSeconds = getNumber(event.audio_duration_seconds);
       draft.transcriptionDurationMs = getNumber(event.transcription_duration_ms);
       draft.createdAt = getString(event.created_at) ?? draft.createdAt;
+      draft.lastEventIndex = eventIndex;
     }
 
-    draft.lastEventIndex = eventIndex;
+    if (isSttCorrectionEvent(event)) {
+      if (draft.lastCorrectionEventIndex === null || eventIndex > draft.lastCorrectionEventIndex) {
+        draft.correctedTranscript = event.corrected_transcript;
+        draft.correctionCreatedAt = getString(event.created_at);
+        draft.correctionMethod = getString(event.correction_method) ?? "unknown";
+        draft.lastCorrectionEventIndex = eventIndex;
+      }
+    }
+
     segments.set(key, draft);
   });
 
@@ -172,6 +205,9 @@ export function reconstructRecentSegments(events: LocalEvent[], limit = 20): Rec
       sttLanguage: segment.sttLanguage ?? "unknown",
       audioDurationSeconds: segment.audioDurationSeconds,
       transcriptionDurationMs: segment.transcriptionDurationMs,
+      correctedTranscript: segment.correctedTranscript,
+      correctionCreatedAt: segment.correctionCreatedAt,
+      correctionMethod: segment.correctionMethod,
     }));
 }
 
@@ -187,7 +223,11 @@ function createSegmentDraft(sessionId: string, segmentId: string, eventIndex: nu
     sttLanguage: null,
     audioDurationSeconds: null,
     transcriptionDurationMs: null,
+    correctedTranscript: null,
+    correctionCreatedAt: null,
+    correctionMethod: null,
     lastEventIndex: eventIndex,
+    lastCorrectionEventIndex: null,
   };
 }
 
@@ -222,5 +262,15 @@ function isSttResultEvent(event: LocalEvent): event is SttResultEvent {
     typeof event.session_id === "string" &&
     typeof event.segment_id === "string" &&
     typeof event.stt_output === "string"
+  );
+}
+
+function isSttCorrectionEvent(event: LocalEvent): event is SttCorrectionEvent {
+  return (
+    event.event_type === "stt_correction" &&
+    typeof event.session_id === "string" &&
+    typeof event.segment_id === "string" &&
+    typeof event.raw_transcript === "string" &&
+    typeof event.corrected_transcript === "string"
   );
 }
