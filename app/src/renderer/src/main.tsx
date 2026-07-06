@@ -89,6 +89,7 @@ type DictationApi = {
   openEventsLog: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
   runLatestSttBenchmark?: () => Promise<SttBenchmarkResponse>;
+  runSttBenchmarkForSegment?: (source: AudioSegmentRecord) => Promise<SttBenchmarkResponse>;
   getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
   writeClipboardText?: (text: string) => Promise<boolean>;
 };
@@ -117,6 +118,7 @@ function App(): React.ReactElement {
   const [recentSegments, setRecentSegments] = useState<RecentSegment[]>([]);
   const [historyError, setHistoryError] = useState("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [benchmarkingSegmentKey, setBenchmarkingSegmentKey] = useState("");
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const isStartingRef = useRef(false);
@@ -317,6 +319,35 @@ function App(): React.ReactElement {
     }
   }
 
+  async function runSegmentSttBenchmark(segment: RecentSegment): Promise<void> {
+    if (typeof window.dictex.runSttBenchmarkForSegment !== "function") {
+      setBenchmarkError("Restart DicTeX to load the selected segment benchmark API");
+      return;
+    }
+
+    const segmentKey = getSegmentKey(segment);
+    setBenchmarkError("");
+    setNotice("");
+    setBenchmarkingSegmentKey(segmentKey);
+    setIsBenchmarking(true);
+
+    try {
+      const result = await window.dictex.runSttBenchmarkForSegment({
+        sessionId: segment.sessionId,
+        segmentId: segment.segmentId,
+        audioRef: segment.audioRef,
+      });
+      setBenchmarkSource(result.source);
+      setBenchmarkResults(result.results);
+      void loadRecentSegments();
+    } catch (benchmarkRunError) {
+      setBenchmarkError(benchmarkRunError instanceof Error ? benchmarkRunError.message : "Benchmark failed");
+    } finally {
+      setBenchmarkingSegmentKey("");
+      setIsBenchmarking(false);
+    }
+  }
+
   const statusLabel =
     status === "done" && lastPasteState === "pasted"
       ? "pasted"
@@ -455,6 +486,18 @@ function App(): React.ReactElement {
                   <div className="history-actions">
                     <button className="secondary-button" disabled={!segment.transcript} onClick={() => void copyHistoryTranscript(segment)}>
                       Copy
+                    </button>
+                    <button
+                      className="secondary-button"
+                      disabled={
+                        typeof window.dictex.runSttBenchmarkForSegment !== "function" ||
+                        isBenchmarking ||
+                        status === "recording" ||
+                        status === "transcribing"
+                      }
+                      onClick={() => void runSegmentSttBenchmark(segment)}
+                    >
+                      {benchmarkingSegmentKey === segmentKey ? "Running" : "Benchmark"}
                     </button>
                   </div>
                 </article>

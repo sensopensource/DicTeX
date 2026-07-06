@@ -493,6 +493,19 @@ ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkRespons
   return runSttBenchmarkForSegment(latestAudioSegment);
 });
 
+ipcMain.handle("benchmark:run-stt-for-segment", async (_event, source: AudioSegmentRecord): Promise<SttBenchmarkResponse> => {
+  if (
+    !source ||
+    typeof source.sessionId !== "string" ||
+    typeof source.segmentId !== "string" ||
+    typeof source.audioRef !== "string"
+  ) {
+    throw new Error("Invalid benchmark segment");
+  }
+
+  return runSttBenchmarkForSegment(source);
+});
+
 ipcMain.handle("history:get-recent-segments", async (_event, limit?: number): Promise<RecentSegment[]> => {
   return getRecentSegments(typeof limit === "number" ? limit : 20);
 });

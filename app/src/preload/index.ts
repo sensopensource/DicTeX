@@ -101,6 +101,8 @@ contextBridge.exposeInMainWorld("dictex", {
   openEventsLog: () => ipcRenderer.invoke("diagnostics:open-events-log") as Promise<boolean>,
   getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
   runLatestSttBenchmark: () => ipcRenderer.invoke("benchmark:run-latest-stt") as Promise<SttBenchmarkResponse>,
+  runSttBenchmarkForSegment: (source: AudioSegmentRecord) =>
+    ipcRenderer.invoke("benchmark:run-stt-for-segment", source) as Promise<SttBenchmarkResponse>,
   getRecentSegments: (limit = 20) => ipcRenderer.invoke("history:get-recent-segments", limit) as Promise<RecentSegment[]>,
   writeClipboardText: (text: string) => ipcRenderer.invoke("clipboard:write-text", text) as Promise<boolean>,
 });
