@@ -73,11 +73,19 @@ type SttBenchmarkResult = {
   transcript: string;
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number;
+  score: SttBenchmarkScore | null;
 };
 
 type SttBenchmarkResponse = {
   source: AudioSegmentRecord;
   results: SttBenchmarkResult[];
+};
+
+type SttBenchmarkScore = {
+  metric: "cer";
+  value: number;
+  referenceTranscript: string;
+  correctionCreatedAt: string | null;
 };
 
 type SttCorrectionTarget = {
@@ -534,6 +542,7 @@ function App(): React.ReactElement {
                   <span>{result.candidate.variant ?? result.sttLanguage}</span>
                   <span>{formatAudioDuration(result.audioDurationSeconds)}</span>
                   <span>{result.transcriptionDurationMs} ms</span>
+                  <span>{formatBenchmarkScore(result.score)}</span>
                 </div>
                 <p>{result.transcript || "-"}</p>
               </article>
@@ -713,6 +722,10 @@ function formatTimestamp(timestamp: string | null): string {
 
 function formatBenchmarkCandidate(candidate: BenchmarkCandidate): string {
   return `${candidate.stage} / ${candidate.provider} / ${candidate.model}${candidate.variant ? ` / ${candidate.variant}` : ""}`;
+}
+
+function formatBenchmarkScore(score: SttBenchmarkScore | null): string {
+  return score ? `${score.metric.toUpperCase()} ${(score.value * 100).toFixed(1)}%` : "-";
 }
 
 createRoot(document.getElementById("root")!).render(

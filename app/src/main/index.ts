@@ -73,11 +73,19 @@ type SttBenchmarkResult = {
   transcript: string;
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number;
+  score: SttBenchmarkScore | null;
 };
 
 type SttBenchmarkResponse = {
   source: AudioSegmentRecord;
   results: SttBenchmarkResult[];
+};
+
+type SttBenchmarkScore = {
+  metric: "cer";
+  value: number;
+  referenceTranscript: string;
+  correctionCreatedAt: string | null;
 };
 
 type EngineTranscriptionResult = {
@@ -284,6 +292,7 @@ async function runSttBenchmarkForSegment(source: AudioSegmentRecord): Promise<St
   }
 
   const baseConfig = getSttConfig();
+  const correction = await getCorrectionForSegment(source);
   const results: SttBenchmarkResult[] = [];
 
   for (const candidate of sttBenchmarkCandidates) {
@@ -309,6 +318,7 @@ async function runSttBenchmarkForSegment(source: AudioSegmentRecord): Promise<St
       transcript: sttResult.transcript,
       audioDurationSeconds: sttResult.audioDurationSeconds,
       transcriptionDurationMs,
+      score: correction ? scoreTranscript(sttResult.transcript, correction) : null,
     };
 
     await appendEvent({
@@ -328,6 +338,11 @@ async function runSttBenchmarkForSegment(source: AudioSegmentRecord): Promise<St
       transcript: result.transcript,
       audio_duration_seconds: result.audioDurationSeconds,
       transcription_duration_ms: result.transcriptionDurationMs,
+      score_metric: result.score?.metric ?? null,
+      score_value: result.score?.value ?? null,
+      score_reference_type: result.score ? "stt_correction" : null,
+      score_reference_transcript: result.score?.referenceTranscript ?? null,
+      score_reference_created_at: result.score?.correctionCreatedAt ?? null,
     });
 
     results.push(result);
@@ -337,6 +352,63 @@ async function runSttBenchmarkForSegment(source: AudioSegmentRecord): Promise<St
     source,
     results,
   };
+}
+
+async function getCorrectionForSegment(source: AudioSegmentRecord): Promise<SttBenchmarkScore | null> {
+  const segment = reconstructSegments(await readLocalEvents(getEventsPath())).find(
+    (candidate) => candidate.sessionId === source.sessionId && candidate.segmentId === source.segmentId,
+  );
+
+  if (!segment?.correctedTranscript) {
+    return null;
+  }
+
+  return {
+    metric: "cer",
+    value: 0,
+    referenceTranscript: segment.correctedTranscript,
+    correctionCreatedAt: segment.correctionCreatedAt,
+  };
+}
+
+function scoreTranscript(transcript: string, correction: SttBenchmarkScore): SttBenchmarkScore {
+  const reference = normalizeForScoring(correction.referenceTranscript);
+  const candidate = normalizeForScoring(transcript);
+  const distance = getEditDistance(candidate, reference);
+  const value = reference.length === 0 ? (candidate.length === 0 ? 0 : 1) : distance / reference.length;
+
+  return {
+    ...correction,
+    value,
+  };
+}
+
+function normalizeForScoring(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+function getEditDistance(left: string, right: string): number {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  const current = Array.from({ length: right.length + 1 }, () => 0);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    current[0] = leftIndex;
+
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitutionCost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] + substitutionCost,
+      );
+    }
+
+    for (let index = 0; index < previous.length; index += 1) {
+      previous[index] = current[index];
+    }
+  }
+
+  return previous[right.length];
 }
 
 function transcribeWithPython(audioPath: string, config: SttConfig = getSttConfig()): Promise<EngineTranscriptionResult> {

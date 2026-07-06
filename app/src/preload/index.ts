@@ -87,11 +87,19 @@ type SttBenchmarkResult = {
   transcript: string;
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number;
+  score: SttBenchmarkScore | null;
 };
 
 type SttBenchmarkResponse = {
   source: AudioSegmentRecord;
   results: SttBenchmarkResult[];
+};
+
+type SttBenchmarkScore = {
+  metric: "cer";
+  value: number;
+  referenceTranscript: string;
+  correctionCreatedAt: string | null;
 };
 
 contextBridge.exposeInMainWorld("dictex", {
