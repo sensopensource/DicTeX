@@ -84,6 +84,15 @@ type SttBenchmarkResult = {
   transcript: string;
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number;
+  score: SttBenchmarkScore | null;
+};
+
+type SttBenchmarkScore = {
+  stage: "stt";
+  metric: "cer";
+  value: number;
+  referenceTranscript: string;
+  correctionCreatedAt: string | null;
 };
 
 type SttBenchmarkResponse = {

@@ -85,6 +85,15 @@ type SttBenchmarkResult = {
   transcript: string;
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number;
+  score: SttBenchmarkScore | null;
+};
+
+type SttBenchmarkScore = {
+  stage: "stt";
+  metric: "cer";
+  value: number;
+  referenceTranscript: string;
+  correctionCreatedAt: string | null;
 };
 
 type SttBenchmarkResponse = {
@@ -586,6 +595,7 @@ function App(): React.ReactElement {
                   <span>{result.sttLanguage}</span>
                   <span>{formatAudioDuration(result.audioDurationSeconds)}</span>
                   <span>{result.transcriptionDurationMs} ms</span>
+                  {result.score && <span title={`Reference: ${result.score.referenceTranscript}`}>{formatScore(result.score)}</span>}
                 </div>
                 <p>{result.transcript || "-"}</p>
               </article>
@@ -676,6 +686,10 @@ function formatBenchmarkCandidate(result: SttBenchmarkResult): string {
 
 function formatBenchmarkCandidateKey(result: SttBenchmarkResult): string {
   return `${result.stage}/${result.provider}/${result.model}/${result.variant ?? ""}`;
+}
+
+function formatScore(score: SttBenchmarkScore): string {
+  return `${score.metric.toUpperCase()} ${(score.value * 100).toFixed(1)}%`;
 }
 
 function getSegmentKey(segment: Pick<RecentSegment, "sessionId" | "segmentId">): string {

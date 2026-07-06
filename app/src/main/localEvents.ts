@@ -85,6 +85,12 @@ export type ReconstructedSegment = {
   correctionMethod: string | null;
 };
 
+export type SegmentSttCorrection = {
+  correctedTranscript: string;
+  correctionCreatedAt: string | null;
+  correctionMethod: string | null;
+};
+
 type SegmentDraft = {
   createdAt: string | null;
   sessionId: string;
@@ -143,6 +149,26 @@ export function getLatestAudioSegment(events: LocalEvent[]): AudioSegmentRecord 
   }
 
   return latestAudioSegment;
+}
+
+export function getLatestSttCorrection(
+  events: LocalEvent[],
+  sessionId: string,
+  segmentId: string,
+): SegmentSttCorrection | null {
+  let latestCorrection: SegmentSttCorrection | null = null;
+
+  for (const event of events) {
+    if (isSttCorrectionEvent(event) && event.session_id === sessionId && event.segment_id === segmentId) {
+      latestCorrection = {
+        correctedTranscript: event.corrected_transcript,
+        correctionCreatedAt: getString(event.created_at),
+        correctionMethod: getString(event.correction_method),
+      };
+    }
+  }
+
+  return latestCorrection;
 }
 
 export function reconstructRecentSegments(events: LocalEvent[], limit = 20): ReconstructedSegment[] {

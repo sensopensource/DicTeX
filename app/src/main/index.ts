@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   getLatestAudioSegment as getLatestAudioSegmentFromEvents,
+  getLatestSttCorrection,
   readLocalEvents,
   reconstructRecentSegments,
   type ReconstructedSegment,
@@ -73,11 +74,20 @@ type SttBenchmarkResult = {
   transcript: string;
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number;
+  score: SttBenchmarkScore | null;
 };
 
 type SttBenchmarkResponse = {
   source: AudioSegmentRecord;
   results: SttBenchmarkResult[];
+};
+
+type SttBenchmarkScore = {
+  stage: "stt";
+  metric: "cer";
+  value: number;
+  referenceTranscript: string;
+  correctionCreatedAt: string | null;
 };
 
 type SttCorrectionRequest = {
@@ -372,6 +382,38 @@ function pasteClipboardIntoActiveApp(): Promise<boolean> {
   });
 }
 
+function calculateCharacterErrorRate(candidateTranscript: string, referenceTranscript: string): number {
+  if (referenceTranscript.length === 0) {
+    return candidateTranscript.length === 0 ? 0 : 1;
+  }
+
+  return calculateEditDistance(candidateTranscript, referenceTranscript) / referenceTranscript.length;
+}
+
+function calculateEditDistance(left: string, right: string): number {
+  const previousRow = Array.from({ length: right.length + 1 }, (_value, index) => index);
+  const currentRow = Array.from({ length: right.length + 1 }, () => 0);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    currentRow[0] = leftIndex;
+
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitutionCost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      currentRow[rightIndex] = Math.min(
+        previousRow[rightIndex] + 1,
+        currentRow[rightIndex - 1] + 1,
+        previousRow[rightIndex - 1] + substitutionCost,
+      );
+    }
+
+    for (let rightIndex = 0; rightIndex <= right.length; rightIndex += 1) {
+      previousRow[rightIndex] = currentRow[rightIndex];
+    }
+  }
+
+  return previousRow[right.length];
+}
+
 async function runSttBenchmarkForAudioSegment(audioSegment: AudioSegmentRecord): Promise<SttBenchmarkResponse> {
   const audioPath = resolveDataRef(audioSegment.audioRef);
   if (!existsSync(audioPath)) {
@@ -380,6 +422,7 @@ async function runSttBenchmarkForAudioSegment(audioSegment: AudioSegmentRecord):
 
   const baseConfig = getSttConfig();
   const results: SttBenchmarkResult[] = [];
+  const correction = getLatestSttCorrection(await readLocalEvents(getEventsPath()), audioSegment.sessionId, audioSegment.segmentId);
 
   for (const candidate of getSttBenchmarkCandidates(baseConfig)) {
     const config = {
@@ -404,6 +447,15 @@ async function runSttBenchmarkForAudioSegment(audioSegment: AudioSegmentRecord):
       transcript: sttResult.transcript,
       audioDurationSeconds: sttResult.audioDurationSeconds,
       transcriptionDurationMs,
+      score: correction
+        ? {
+            stage: "stt",
+            metric: "cer",
+            value: calculateCharacterErrorRate(sttResult.transcript, correction.correctedTranscript),
+            referenceTranscript: correction.correctedTranscript,
+            correctionCreatedAt: correction.correctionCreatedAt,
+          }
+        : null,
     };
 
     await appendEvent({

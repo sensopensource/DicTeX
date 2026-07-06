@@ -389,7 +389,7 @@ h2 {
 
 .benchmark-meta {
   display: grid;
-  grid-template-columns: minmax(4rem, 1fr) repeat(3, minmax(3.75rem, auto));
+  grid-template-columns: minmax(4rem, 1fr) repeat(4, minmax(3.75rem, auto));
   gap: 0.5rem;
   align-items: center;
   color: #8f8f8f;
