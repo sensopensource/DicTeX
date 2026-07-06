@@ -39,6 +39,19 @@ type AudioSegmentRecord = {
   audioRef: string;
 };
 
+type RecentSegment = {
+  createdAt: string | null;
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+  transcript: string;
+  sttEngine: string;
+  sttModel: string;
+  sttLanguage: string;
+  audioDurationSeconds: number | null;
+  transcriptionDurationMs: number | null;
+};
+
 type SttBenchmarkResult = {
   sessionId: string;
   segmentId: string;
@@ -67,6 +80,7 @@ type DictationApi = {
   openDataFolder: () => Promise<boolean>;
   openEventsLog: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
+  getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
   runLatestSttBenchmark?: () => Promise<SttBenchmarkResponse>;
 };
 
@@ -87,6 +101,9 @@ function App(): React.ReactElement {
   const [sttConfig, setSttConfig] = useState<SttConfig | null>(null);
   const [lastPasteState, setLastPasteState] = useState<"none" | "pasted" | "clipboard-only">("none");
   const [lastResult, setLastResult] = useState<TranscriptionResult | null>(null);
+  const [recentSegments, setRecentSegments] = useState<RecentSegment[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [benchmarkSource, setBenchmarkSource] = useState<AudioSegmentRecord | null>(null);
   const [benchmarkResults, setBenchmarkResults] = useState<SttBenchmarkResult[]>([]);
   const [benchmarkError, setBenchmarkError] = useState("");
@@ -119,6 +136,7 @@ function App(): React.ReactElement {
     void window.dictex.getSttConfig().then(setSttConfig).catch(() => {
       setNotice("Could not read STT config");
     });
+    void loadRecentSegments();
 
     return () => {
       removeToggleListener();
@@ -205,9 +223,28 @@ function App(): React.ReactElement {
       setLastResult(result);
       setLastPasteState(result.pastedToActiveApp ? "pasted" : "clipboard-only");
       setStatus("done");
+      void loadRecentSegments();
     } catch (transcriptionError) {
       setStatus("error");
       setError(transcriptionError instanceof Error ? transcriptionError.message : "Transcription failed");
+    }
+  }
+
+  async function loadRecentSegments(): Promise<void> {
+    if (typeof window.dictex.getRecentSegments !== "function") {
+      setHistoryError("Restart DicTeX to load the history preload API");
+      return;
+    }
+
+    setHistoryError("");
+    setIsLoadingHistory(true);
+
+    try {
+      setRecentSegments(await window.dictex.getRecentSegments(20));
+    } catch (historyLoadError) {
+      setHistoryError(historyLoadError instanceof Error ? historyLoadError.message : "Could not load recent segments");
+    } finally {
+      setIsLoadingHistory(false);
     }
   }
 
@@ -215,6 +252,11 @@ function App(): React.ReactElement {
     if (transcript) {
       await navigator.clipboard.writeText(transcript);
     }
+  }
+
+  async function copyHistoryTranscript(segment: RecentSegment): Promise<void> {
+    await navigator.clipboard.writeText(segment.transcript);
+    setNotice(`Copied ${segment.sessionId} / ${segment.segmentId}`);
   }
 
   async function openDataFolder(): Promise<void> {
@@ -315,6 +357,55 @@ function App(): React.ReactElement {
         <Metric label="Output" value={lastPasteState === "pasted" ? "pasted" : lastPasteState === "clipboard-only" ? "clipboard" : "-"} />
       </section>
 
+      <section className="panel history-panel" aria-busy={isLoadingHistory}>
+        <div className="history-header">
+          <div>
+            <h2>Recent segments</h2>
+            <p>{recentSegments.length > 0 ? `${recentSegments.length} local dictations` : "Local segment history"}</p>
+          </div>
+          <button
+            className="secondary-button"
+            disabled={isLoadingHistory || status === "recording" || status === "transcribing"}
+            onClick={() => void loadRecentSegments()}
+          >
+            {isLoadingHistory ? "Loading" : "Refresh"}
+          </button>
+        </div>
+
+        {historyError && <pre className="error">{historyError}</pre>}
+
+        {recentSegments.length === 0 && !historyError ? (
+          <p className="empty-state">No stored dictation segments found.</p>
+        ) : (
+          <div className="history-list">
+            {recentSegments.map((segment) => (
+              <article className="history-item" key={`${segment.sessionId}/${segment.segmentId}`}>
+                <div className="history-heading">
+                  <span title={segment.createdAt ?? undefined}>{formatTimestamp(segment.createdAt)}</span>
+                  <strong title={`${segment.sessionId} / ${segment.segmentId}`}>
+                    {segment.sessionId} / {segment.segmentId}
+                  </strong>
+                </div>
+
+                <p className="history-transcript">{segment.transcript || "-"}</p>
+
+                <div className="history-footer">
+                  <div className="history-meta">
+                    <span>{segment.sttModel}</span>
+                    <span>{segment.sttLanguage}</span>
+                    <span>{formatAudioDuration(segment.audioDurationSeconds)}</span>
+                    <span>{formatLatency(segment.transcriptionDurationMs)}</span>
+                  </div>
+                  <button className="secondary-button" disabled={!segment.transcript} onClick={() => void copyHistoryTranscript(segment)}>
+                    Copy
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="panel benchmark-panel" aria-busy={isBenchmarking}>
         <div className="benchmark-header">
           <div>
@@ -401,6 +492,28 @@ function Metric({ label, value }: { label: string; value: string }): React.React
 
 function formatAudioDuration(durationSeconds: number | null): string {
   return durationSeconds === null ? "-" : `${durationSeconds.toFixed(2)} s`;
+}
+
+function formatLatency(durationMs: number | null): string {
+  return durationMs === null ? "-" : `${durationMs} ms`;
+}
+
+function formatTimestamp(timestamp: string | null): string {
+  if (!timestamp) {
+    return "-";
+  }
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 createRoot(document.getElementById("root")!).render(

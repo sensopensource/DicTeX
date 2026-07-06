@@ -205,6 +205,108 @@ h2 {
   padding: 0.75rem;
 }
 
+.history-panel {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.75rem;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.history-header div {
+  min-width: 0;
+}
+
+.history-header p {
+  overflow: hidden;
+  margin: 0.15rem 0 0;
+  color: #8f8f8f;
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-list {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 22rem;
+  overflow: auto;
+  padding-right: 0.1rem;
+}
+
+.history-item {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.45rem;
+  padding: 0.6rem;
+  background: #101010;
+}
+
+.history-heading {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.history-heading span {
+  color: #8f8f8f;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.history-heading strong {
+  overflow: hidden;
+  color: #f4f4f4;
+  font-size: 0.74rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-transcript {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #d8d8d8;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.history-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+  color: #8f8f8f;
+  font-size: 0.7rem;
+}
+
+.history-meta span {
+  overflow: hidden;
+  max-width: 8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .benchmark-header {
   display: flex;
   align-items: center;
@@ -334,6 +436,12 @@ textarea {
   font-size: 0.78rem;
 }
 
+.empty-state {
+  margin: 0;
+  color: #8f8f8f;
+  font-size: 0.78rem;
+}
+
 @media (max-width: 680px) {
   .diagnostics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -358,6 +466,16 @@ textarea {
   .benchmark-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .history-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .history-heading,
+  .history-footer {
+    grid-template-columns: 1fr;
   }
 
   .benchmark-meta {

@@ -4,7 +4,12 @@ import { existsSync } from "node:fs";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getLatestAudioSegment as getLatestAudioSegmentFromEvents, readLocalEvents } from "./localEvents.js";
+import {
+  getLatestAudioSegment as getLatestAudioSegmentFromEvents,
+  readLocalEvents,
+  reconstructRecentSegments,
+  type ReconstructedSegment,
+} from "./localEvents.js";
 
 type TranscriptionResult = {
   transcript: string;
@@ -390,6 +395,11 @@ ipcMain.handle(
     };
   },
 );
+
+ipcMain.handle("history:get-recent-segments", async (_event, limit?: number): Promise<ReconstructedSegment[]> => {
+  const safeLimit = typeof limit === "number" && Number.isFinite(limit) ? Math.min(Math.max(Math.trunc(limit), 1), 50) : 20;
+  return reconstructRecentSegments(await readLocalEvents(getEventsPath()), safeLimit);
+});
 
 ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkResponse> => {
   const latestAudioSegment = await getLatestAudioSegment();
