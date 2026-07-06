@@ -11,6 +11,7 @@ type TranscriptionResult = {
   pastedToActiveApp: boolean;
   sessionId: string;
   segmentId: string;
+  audioRef: string;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;
@@ -52,6 +53,22 @@ type SttBenchmarkResult = {
 type SttBenchmarkResponse = {
   source: AudioSegmentRecord;
   results: SttBenchmarkResult[];
+};
+
+type SttCorrectionRequest = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string | null;
+  rawTranscript: string;
+  correctedTranscript: string;
+  correctionMethod?: "keyboard";
+};
+
+type SttCorrectionResponse = {
+  createdAt: string;
+  sessionId: string;
+  segmentId: string;
+  correctionMethod: "keyboard";
 };
 
 type EngineTranscriptionResult = {
@@ -413,6 +430,7 @@ ipcMain.handle(
       pastedToActiveApp,
       sessionId,
       segmentId,
+      audioRef,
       sttEngine: sttResult.sttEngine,
       sttModel: sttResult.sttModel,
       sttLanguage: sttResult.sttLanguage,
@@ -421,6 +439,37 @@ ipcMain.handle(
     };
   },
 );
+
+ipcMain.handle("corrections:save-stt", async (_event, correction: SttCorrectionRequest): Promise<SttCorrectionResponse> => {
+  if (!correction.sessionId || !correction.segmentId) {
+    throw new Error("Missing correction segment identity");
+  }
+
+  if (typeof correction.rawTranscript !== "string" || typeof correction.correctedTranscript !== "string") {
+    throw new Error("Correction transcripts must be strings");
+  }
+
+  const createdAt = new Date().toISOString();
+  const correctionMethod: "keyboard" = "keyboard";
+
+  await appendEvent({
+    event_type: "stt_correction",
+    created_at: createdAt,
+    session_id: correction.sessionId,
+    segment_id: correction.segmentId,
+    audio_ref: correction.audioRef,
+    raw_transcript: correction.rawTranscript,
+    corrected_transcript: correction.correctedTranscript,
+    correction_method: correctionMethod,
+  });
+
+  return {
+    createdAt,
+    sessionId: correction.sessionId,
+    segmentId: correction.segmentId,
+    correctionMethod,
+  };
+});
 
 ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkResponse> => {
   const latestAudioSegment = await getLatestAudioSegment();

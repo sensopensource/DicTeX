@@ -13,6 +13,7 @@ type TranscriptionResult = {
   pastedToActiveApp: boolean;
   sessionId: string;
   segmentId: string;
+  audioRef: string;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;
@@ -56,6 +57,22 @@ type SttBenchmarkResponse = {
   results: SttBenchmarkResult[];
 };
 
+type SttCorrectionRequest = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string | null;
+  rawTranscript: string;
+  correctedTranscript: string;
+  correctionMethod?: "keyboard";
+};
+
+type SttCorrectionResponse = {
+  createdAt: string;
+  sessionId: string;
+  segmentId: string;
+  correctionMethod: "keyboard";
+};
+
 type DictationApi = {
   transcribeAudio: (
     audioBytes: Uint8Array,
@@ -67,6 +84,7 @@ type DictationApi = {
   openDataFolder: () => Promise<boolean>;
   openEventsLog: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
+  saveSttCorrection?: (correction: SttCorrectionRequest) => Promise<SttCorrectionResponse>;
   runLatestSttBenchmark?: () => Promise<SttBenchmarkResponse>;
 };
 
@@ -83,6 +101,7 @@ function App(): React.ReactElement {
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [correctionNotice, setCorrectionNotice] = useState("");
   const [hotkeyStatus, setHotkeyStatus] = useState<HotkeyStatus | null>(null);
   const [sttConfig, setSttConfig] = useState<SttConfig | null>(null);
   const [lastPasteState, setLastPasteState] = useState<"none" | "pasted" | "clipboard-only">("none");
@@ -91,6 +110,7 @@ function App(): React.ReactElement {
   const [benchmarkResults, setBenchmarkResults] = useState<SttBenchmarkResult[]>([]);
   const [benchmarkError, setBenchmarkError] = useState("");
   const [isBenchmarking, setIsBenchmarking] = useState(false);
+  const [isSavingCorrection, setIsSavingCorrection] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const isStartingRef = useRef(false);
@@ -136,6 +156,7 @@ function App(): React.ReactElement {
     pendingTranscriptionOptionsRef.current = { trigger: "manual" };
     setError("");
     setNotice("");
+    setCorrectionNotice("");
     setStatus("recording");
     setTranscript("");
     setLastPasteState("none");
@@ -204,6 +225,7 @@ function App(): React.ReactElement {
       setTranscript(result.transcript);
       setLastResult(result);
       setLastPasteState(result.pastedToActiveApp ? "pasted" : "clipboard-only");
+      setCorrectionNotice("");
       setStatus("done");
     } catch (transcriptionError) {
       setStatus("error");
@@ -214,6 +236,37 @@ function App(): React.ReactElement {
   async function copyTranscript(): Promise<void> {
     if (transcript) {
       await navigator.clipboard.writeText(transcript);
+    }
+  }
+
+  async function saveSttCorrection(): Promise<void> {
+    if (!lastResult) {
+      setCorrectionNotice("No transcript segment to correct");
+      return;
+    }
+
+    if (typeof window.dictex.saveSttCorrection !== "function") {
+      setCorrectionNotice("Restart DicTeX to load the correction preload API");
+      return;
+    }
+
+    setCorrectionNotice("");
+    setIsSavingCorrection(true);
+
+    try {
+      const saved = await window.dictex.saveSttCorrection({
+        sessionId: lastResult.sessionId,
+        segmentId: lastResult.segmentId,
+        audioRef: lastResult.audioRef,
+        rawTranscript: lastResult.transcript,
+        correctedTranscript: transcript,
+        correctionMethod: "keyboard",
+      });
+      setCorrectionNotice(`Saved correction for ${saved.sessionId} / ${saved.segmentId}`);
+    } catch (saveError) {
+      setCorrectionNotice(saveError instanceof Error ? saveError.message : "Could not save correction");
+    } finally {
+      setIsSavingCorrection(false);
     }
   }
 
@@ -367,16 +420,27 @@ function App(): React.ReactElement {
         <textarea
           id="transcript"
           value={transcript}
-          onChange={(event) => setTranscript(event.target.value)}
+          onChange={(event) => {
+            setTranscript(event.target.value);
+            setCorrectionNotice("");
+          }}
           placeholder="Your transcript will appear here."
         />
 
         {error && <pre className="error">{error}</pre>}
         {notice && <p className="notice">{notice}</p>}
+        {correctionNotice && <p className="notice">{correctionNotice}</p>}
 
         <div className="actions">
           <button className="secondary-button" disabled={!transcript} onClick={copyTranscript}>
             Copy
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!lastResult || isSavingCorrection || status === "recording" || status === "transcribing"}
+            onClick={() => void saveSttCorrection()}
+          >
+            {isSavingCorrection ? "Saving" : "Save correction"}
           </button>
           <button className="secondary-button" onClick={openDataFolder}>
             Open data folder
