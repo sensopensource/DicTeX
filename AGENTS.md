@@ -466,7 +466,20 @@ the near-term goal:
 - #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`,
   Depends on #44. Phase 4; conditional on enough `acoustic`-tagged data.
 
-Startable now in parallel: #39 and #42.
+Open strategic-pivot roadmap (labels + hard deps):
+
+- #48 typed corrections (`correction_kind` on `stt_correction` + UI selector) —
+  `level:eleve` + `needs:high-review`, no dependency -> ready. Phase 1.
+- #49 normalizer module + personal dictionary (layer 1) — `level:eleve` +
+  `needs:high-review`, no hard dependency, but soft-conflicts with #48 on
+  shared files -> start after #48 merges. Phase 2.
+- #50 regex math-verbalization rules (layer 2) — `level:moyen`, Depends on #49.
+  Phase 2.
+
+Startable now in parallel: #48, #39, #42. Soft conflict: all three touch
+`app/src/main/index.ts` (the app is only four source files), so separate
+clones will merge-conflict — launch in parallel but merge sequentially and
+rebase.
 
 ## Product Decisions To Preserve
 
@@ -653,11 +666,12 @@ so the foundations the pivot relies on are in place.
 
 Priorities now follow the strategic pivot's phasing:
 
-1. **Phase 1 — typed correction data (next).** Add `correctionKind` to the
-   correction request and UI so we stop collecting unlabeled data. Highest
-   priority: without the tag the future datasets are unusable.
-2. **Phase 2 — code normalizer (layers 1 & 2).** Personal dictionary + regex
-   math-verbalization rules. Immediate rendering-quality gains, zero ML.
+1. **Phase 1 — typed correction data (next, issue #48).** Add `correctionKind`
+   to the correction request and UI so we stop collecting unlabeled data.
+   Highest priority: without the tag the future datasets are unusable.
+2. **Phase 2 — code normalizer (layers 1 & 2, issues #49 and #50).** Personal
+   dictionary + regex math-verbalization rules. Immediate rendering-quality
+   gains, zero ML.
 3. **Phase 3 — ML normalizer (layer 3).** After some usage, extract the
    `math_transform`-tagged dataset and fine-tune a small seq2seq model.
 4. **Phase 4 — STT acoustic fine-tuning.** Extract the `acoustic`-tagged
