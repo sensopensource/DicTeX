@@ -115,6 +115,7 @@ type SttBenchmarkScore = {
 type SttBenchmarkResponse = {
   source: AudioSegmentRecord;
   results: SttBenchmarkResult[];
+  diagnostics: string[];
 };
 
 type SttCorrectionRequest = {

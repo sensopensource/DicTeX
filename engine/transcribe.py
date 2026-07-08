@@ -15,7 +15,8 @@ if sys.platform == "win32":
     # cublas64_12.dll must be made discoverable ourselves when it's only
     # installed as the nvidia-cublas-cu12 pip package (no system CUDA Toolkit).
     # ctranslate2 loads it via a plain LoadLibraryW call, which only consults
-    # PATH, not directories registered through os.add_dll_directory.
+    # PATH, not directories registered through os.add_dll_directory. This runs
+    # before any provider imports faster-whisper, so it still applies.
     try:
         import nvidia.cublas
 
@@ -24,7 +25,7 @@ if sys.platform == "win32":
     except ImportError:
         pass
 
-from faster_whisper import WhisperModel
+from providers import DEFAULT_PROVIDER, ProviderUnavailable, get_provider
 
 
 DEFAULT_MODEL = "base"
@@ -50,26 +51,57 @@ def main() -> int:
 
     audio_size = audio_path.stat().st_size
 
+    provider_name = get_env("DICTEX_STT_PROVIDER", DEFAULT_PROVIDER)
     model_name = get_env("DICTEX_STT_MODEL", DEFAULT_MODEL)
     language = get_env("DICTEX_STT_LANGUAGE", DEFAULT_LANGUAGE)
     device = get_env("DICTEX_STT_DEVICE", DEFAULT_DEVICE)
     compute_type = get_env("DICTEX_STT_COMPUTE_TYPE", DEFAULT_COMPUTE_TYPE)
 
-    model = WhisperModel(model_name, device=device, compute_type=compute_type)
-    segments, info = model.transcribe(str(audio_path), language=language, vad_filter=True)
-    transcript = " ".join(segment.text.strip() for segment in segments).strip()
+    try:
+        provider = get_provider(provider_name)
+    except KeyError:
+        print(f"Unknown STT provider: {provider_name}", file=sys.stderr)
+        return 1
 
+    try:
+        result = provider.transcribe(
+            audio_path,
+            model=model_name,
+            language=language,
+            device=device,
+            compute_type=compute_type,
+        )
+    except ProviderUnavailable as exc:
+        # Optional provider whose deps/model files are absent: emit a quiet,
+        # parseable "unavailable" result and exit 0 so a benchmark run can skip
+        # it. faster-whisper dictation never reaches this — its dep is required.
+        print(
+            json.dumps(
+                {
+                    "available": False,
+                    "provider": provider_name,
+                    "model": model_name,
+                    "reason": str(exc),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0
+
+    # Success output. For faster-whisper this reproduces the original key set and
+    # order exactly, so existing flows are byte-for-byte unaffected; Vosk fills
+    # the same shape (language_probability is null, duration is derived).
     print(
         json.dumps(
             {
-                "transcript": transcript,
+                "transcript": result.transcript,
                 "audio_path": str(audio_path),
                 "audio_size": audio_size,
-                "stt_engine": "faster-whisper",
-                "stt_model": model_name,
-                "stt_language": info.language,
-                "stt_language_probability": info.language_probability,
-                "stt_duration": info.duration,
+                "stt_engine": result.stt_engine,
+                "stt_model": result.stt_model,
+                "stt_language": result.stt_language,
+                "stt_language_probability": result.language_probability,
+                "stt_duration": result.audio_duration_seconds,
             },
             ensure_ascii=False,
         )

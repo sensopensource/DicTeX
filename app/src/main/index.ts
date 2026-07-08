@@ -103,6 +103,9 @@ type SttBenchmarkResult = {
 type SttBenchmarkResponse = {
   source: AudioSegmentRecord;
   results: SttBenchmarkResult[];
+  /** Quiet notes for candidates skipped at runtime (e.g. an optional provider
+   * whose deps/model files are absent). Empty when every candidate ran. */
+  diagnostics: string[];
 };
 
 type SttBenchmarkScore = {
@@ -209,6 +212,20 @@ type PythonInvocation = {
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
+/**
+ * Thrown when a benchmark provider's dependencies or local model files are
+ * absent. The sidecar reports this as an `{"available": false}` result; the
+ * benchmark loop catches it to skip the candidate with a quiet diagnostic
+ * instead of failing the segment. Never raised on the faster-whisper dictation
+ * path, whose dependency is required.
+ */
+class ProviderUnavailableError extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+    this.name = "ProviderUnavailableError";
+  }
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..", "..", "..");
 const enginePath = path.join(repoRoot, "engine", "transcribe.py");
@@ -218,6 +235,15 @@ const defaultSttBenchmarkModels = ["tiny", "base", "small"];
 // The minimum models always offered in the UI selector. `large-v3-turbo` is the
 // current dictation model on GPU (see docs/development.md "GPU (CUDA) STT").
 const defaultSttModels = ["tiny", "base", "small", "large-v3-turbo"];
+// faster-whisper is the dictation engine and default benchmark provider; Vosk is
+// the second, benchmark-only provider (see docs/product-decisions.md). Provider
+// names match the Python sidecar registry and the candidate identity.
+const fasterWhisperProvider = "faster-whisper";
+const voskProvider = "vosk";
+// Vosk benchmark candidate model(s). A candidate is always registered so the
+// provider appears in the benchmark universe; it is skipped at runtime with a
+// quiet diagnostic when vosk or its model files are absent.
+const defaultVoskBenchmarkModels = ["vosk-model-small-fr-0.22"];
 
 let mainWindow: BrowserWindow | null = null;
 let globalHotkeyRegistered = false;
@@ -277,13 +303,40 @@ function getSttBenchmarkModels(): string[] {
   return unique.length > 0 ? unique : defaultSttBenchmarkModels;
 }
 
+function getVoskBenchmarkModels(): string[] {
+  const envValue = process.env.DICTEX_VOSK_BENCHMARK_MODELS;
+  if (envValue === undefined) {
+    return defaultVoskBenchmarkModels;
+  }
+
+  const parsed = envValue
+    .split(",")
+    .map((m) => m.trim())
+    .filter((m) => m.length > 0);
+
+  // An explicitly empty value disables Vosk candidates entirely; a set value
+  // replaces the default list.
+  return Array.from(new Set(parsed));
+}
+
 function getSttBenchmarkCandidates(config: SttConfig): BenchmarkCandidate[] {
-  return getSttBenchmarkModels().map((model) => ({
+  const fasterWhisper: BenchmarkCandidate[] = getSttBenchmarkModels().map((model) => ({
     stage: "stt",
-    provider: config.engine,
+    provider: fasterWhisperProvider,
     model,
     variant: `${config.device}-${config.computeType}-${config.language}`,
   }));
+
+  // Vosk is CPU-only and has no compute-type dimension, so its variant only
+  // carries the device and language to keep the candidate identity meaningful.
+  const vosk: BenchmarkCandidate[] = getVoskBenchmarkModels().map((model) => ({
+    stage: "stt",
+    provider: voskProvider,
+    model,
+    variant: `cpu-${config.language}`,
+  }));
+
+  return [...fasterWhisper, ...vosk];
 }
 
 function createWindow(): BrowserWindow {
@@ -527,6 +580,7 @@ function transcribeWithPython(audioPath: string, config: SttConfig = getSttConfi
         ...process.env,
         HF_HUB_DISABLE_SYMLINKS_WARNING: "1",
         PYTHONIOENCODING: "utf-8",
+        DICTEX_STT_PROVIDER: config.engine,
         DICTEX_STT_MODEL: config.model,
         DICTEX_STT_LANGUAGE: config.language,
         DICTEX_STT_DEVICE: config.device,
@@ -556,12 +610,24 @@ function transcribeWithPython(audioPath: string, config: SttConfig = getSttConfi
 
       try {
         const parsed = JSON.parse(stdout) as {
+          available?: unknown;
+          reason?: unknown;
           transcript?: unknown;
           stt_engine?: unknown;
           stt_model?: unknown;
           stt_language?: unknown;
           stt_duration?: unknown;
         };
+        if (parsed.available === false) {
+          // Optional provider with absent deps/model files. Signal the caller to
+          // skip this candidate quietly rather than treating it as a failure.
+          reject(
+            new ProviderUnavailableError(
+              typeof parsed.reason === "string" ? parsed.reason : "provider unavailable",
+            ),
+          );
+          return;
+        }
         if (typeof parsed.transcript !== "string") {
           reject(new Error("Transcription process returned no transcript"));
           return;
@@ -620,16 +686,32 @@ async function runSttBenchmarkForAudioSegment(
 
   const baseConfig = getSttConfig();
   const results: SttBenchmarkResult[] = [];
+  const diagnostics: string[] = [];
   const loadedEvents = events ?? (await readLocalEvents(getEventsPath()));
   const correction = getLatestSttCorrection(loadedEvents, audioSegment.sessionId, audioSegment.segmentId);
 
   for (const candidate of getSttBenchmarkCandidates(baseConfig)) {
     const config = {
       ...baseConfig,
+      engine: candidate.provider,
       model: candidate.model,
     };
     const transcriptionStartedAt = Date.now();
-    const sttResult = await transcribeWithPython(audioPath, config);
+    let sttResult: EngineTranscriptionResult;
+    try {
+      sttResult = await transcribeWithPython(audioPath, config);
+    } catch (error) {
+      if (error instanceof ProviderUnavailableError) {
+        // Optional provider not installed / model files missing: skip it
+        // quietly. No event is appended, so this candidate simply does not
+        // appear in the results — never blocking faster-whisper candidates.
+        const note = `${candidate.provider}/${candidate.model} unavailable: ${error.reason}`;
+        console.warn(`[benchmark] ${note}`);
+        diagnostics.push(note);
+        continue;
+      }
+      throw error;
+    }
     const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
     const result: SttBenchmarkResult = {
       sessionId: audioSegment.sessionId,
@@ -692,6 +774,7 @@ async function runSttBenchmarkForAudioSegment(
   return {
     source: audioSegment,
     results,
+    diagnostics,
   };
 }
 
