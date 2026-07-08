@@ -57,6 +57,18 @@ export type SttCorrectionEvent = {
   correction_method?: string;
 };
 
+export type SttBenchmarkSetSplit = "train_candidate_pool" | "validation" | "test_frozen";
+
+export type SttBenchmarkSetMembershipEvent = {
+  event_type: "stt_benchmark_set_membership";
+  session_id: string;
+  segment_id: string;
+  created_at?: string;
+  audio_ref?: string | null;
+  split: SttBenchmarkSetSplit;
+  reason?: string;
+};
+
 export type UnknownLocalEvent = {
   event_type: string;
   [key: string]: unknown;
@@ -67,6 +79,7 @@ export type LocalEvent =
   | SttResultEvent
   | SttBenchmarkResultEvent
   | SttCorrectionEvent
+  | SttBenchmarkSetMembershipEvent
   | UnknownLocalEvent;
 
 export type ReconstructedSegment = {
@@ -83,6 +96,8 @@ export type ReconstructedSegment = {
   correctedTranscript: string | null;
   correctionCreatedAt: string | null;
   correctionMethod: string | null;
+  benchmarkSetSplit: SttBenchmarkSetSplit | null;
+  benchmarkSetCreatedAt: string | null;
 };
 
 export type SegmentSttCorrection = {
@@ -105,8 +120,11 @@ type SegmentDraft = {
   correctedTranscript: string | null;
   correctionCreatedAt: string | null;
   correctionMethod: string | null;
+  benchmarkSetSplit: SttBenchmarkSetSplit | null;
+  benchmarkSetCreatedAt: string | null;
   lastEventIndex: number;
   lastCorrectionEventIndex: number | null;
+  lastBenchmarkSetEventIndex: number | null;
 };
 
 export async function readLocalEvents(eventsPath: string): Promise<LocalEvent[]> {
@@ -175,7 +193,12 @@ export function reconstructRecentSegments(events: LocalEvent[], limit = 20): Rec
   const segments = new Map<string, SegmentDraft>();
 
   events.forEach((event, eventIndex) => {
-    if (!isAudioSegmentEvent(event) && !isSttResultEvent(event) && !isSttCorrectionEvent(event)) {
+    if (
+      !isAudioSegmentEvent(event) &&
+      !isSttResultEvent(event) &&
+      !isSttCorrectionEvent(event) &&
+      !isSttBenchmarkSetMembershipEvent(event)
+    ) {
       return;
     }
 
@@ -211,6 +234,15 @@ export function reconstructRecentSegments(events: LocalEvent[], limit = 20): Rec
       }
     }
 
+    if (isSttBenchmarkSetMembershipEvent(event)) {
+      if (draft.lastBenchmarkSetEventIndex === null || eventIndex > draft.lastBenchmarkSetEventIndex) {
+        draft.audioRef = getString(event.audio_ref) ?? draft.audioRef;
+        draft.benchmarkSetSplit = event.split;
+        draft.benchmarkSetCreatedAt = getString(event.created_at);
+        draft.lastBenchmarkSetEventIndex = eventIndex;
+      }
+    }
+
     segments.set(key, draft);
   });
 
@@ -234,6 +266,8 @@ export function reconstructRecentSegments(events: LocalEvent[], limit = 20): Rec
       correctedTranscript: segment.correctedTranscript,
       correctionCreatedAt: segment.correctionCreatedAt,
       correctionMethod: segment.correctionMethod,
+      benchmarkSetSplit: segment.benchmarkSetSplit,
+      benchmarkSetCreatedAt: segment.benchmarkSetCreatedAt,
     }));
 }
 
@@ -252,8 +286,11 @@ function createSegmentDraft(sessionId: string, segmentId: string, eventIndex: nu
     correctedTranscript: null,
     correctionCreatedAt: null,
     correctionMethod: null,
+    benchmarkSetSplit: null,
+    benchmarkSetCreatedAt: null,
     lastEventIndex: eventIndex,
     lastCorrectionEventIndex: null,
+    lastBenchmarkSetEventIndex: null,
   };
 }
 
@@ -299,4 +336,17 @@ function isSttCorrectionEvent(event: LocalEvent): event is SttCorrectionEvent {
     typeof event.raw_transcript === "string" &&
     typeof event.corrected_transcript === "string"
   );
+}
+
+function isSttBenchmarkSetMembershipEvent(event: LocalEvent): event is SttBenchmarkSetMembershipEvent {
+  return (
+    event.event_type === "stt_benchmark_set_membership" &&
+    typeof event.session_id === "string" &&
+    typeof event.segment_id === "string" &&
+    isSttBenchmarkSetSplit(event.split)
+  );
+}
+
+function isSttBenchmarkSetSplit(value: unknown): value is SttBenchmarkSetSplit {
+  return value === "train_candidate_pool" || value === "validation" || value === "test_frozen";
 }

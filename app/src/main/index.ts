@@ -10,6 +10,7 @@ import {
   readLocalEvents,
   reconstructRecentSegments,
   type ReconstructedSegment,
+  type SttBenchmarkSetSplit,
 } from "./localEvents.js";
 
 type TranscriptionResult = {
@@ -109,6 +110,20 @@ type SttCorrectionResponse = {
   sessionId: string;
   segmentId: string;
   correctionMethod: "keyboard";
+};
+
+type SttBenchmarkSetMembershipRequest = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string | null;
+  split: SttBenchmarkSetSplit;
+};
+
+type SttBenchmarkSetMembershipResponse = {
+  createdAt: string;
+  sessionId: string;
+  segmentId: string;
+  split: SttBenchmarkSetSplit;
 };
 
 type EngineTranscriptionResult = {
@@ -294,6 +309,10 @@ function resolveDataRef(portableRef: string): string {
   }
 
   return targetPath;
+}
+
+function isSttBenchmarkSetSplit(value: unknown): value is SttBenchmarkSetSplit {
+  return value === "train_candidate_pool" || value === "validation" || value === "test_frozen";
 }
 
 async function appendEvent(event: Record<string, JsonValue>): Promise<void> {
@@ -646,6 +665,51 @@ ipcMain.handle("corrections:save-stt", async (_event, correction: SttCorrectionR
     correctionMethod,
   };
 });
+
+ipcMain.handle(
+  "benchmark-set:mark-stt",
+  async (_event, membership: SttBenchmarkSetMembershipRequest): Promise<SttBenchmarkSetMembershipResponse> => {
+    if (!membership || typeof membership.sessionId !== "string" || typeof membership.segmentId !== "string") {
+      throw new Error("Missing benchmark set segment identity");
+    }
+
+    if (membership.audioRef !== null && typeof membership.audioRef !== "string") {
+      throw new Error("Invalid benchmark set audio reference");
+    }
+
+    if (!isSttBenchmarkSetSplit(membership.split)) {
+      throw new Error("Invalid STT benchmark set split");
+    }
+
+    const latestCorrection = getLatestSttCorrection(
+      await readLocalEvents(getEventsPath()),
+      membership.sessionId,
+      membership.segmentId,
+    );
+    if (!latestCorrection) {
+      throw new Error("Correct the transcript before adding it to an STT benchmark set");
+    }
+
+    const createdAt = new Date().toISOString();
+
+    await appendEvent({
+      event_type: "stt_benchmark_set_membership",
+      created_at: createdAt,
+      session_id: membership.sessionId,
+      segment_id: membership.segmentId,
+      audio_ref: membership.audioRef,
+      split: membership.split,
+      reason: "manual",
+    });
+
+    return {
+      createdAt,
+      sessionId: membership.sessionId,
+      segmentId: membership.segmentId,
+      split: membership.split,
+    };
+  },
+);
 
 ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkResponse> => {
   const latestAudioSegment = await getLatestAudioSegment();

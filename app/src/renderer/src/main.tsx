@@ -59,7 +59,11 @@ type RecentSegment = {
   correctedTranscript: string | null;
   correctionCreatedAt: string | null;
   correctionMethod: string | null;
+  benchmarkSetSplit: SttBenchmarkSetSplit | null;
+  benchmarkSetCreatedAt: string | null;
 };
+
+type SttBenchmarkSetSplit = "train_candidate_pool" | "validation" | "test_frozen";
 
 type BenchmarkStage =
   | "stt"
@@ -122,6 +126,20 @@ type SttCorrectionResponse = {
   correctionMethod: "keyboard";
 };
 
+type SttBenchmarkSetMembershipRequest = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string | null;
+  split: SttBenchmarkSetSplit;
+};
+
+type SttBenchmarkSetMembershipResponse = {
+  createdAt: string;
+  sessionId: string;
+  segmentId: string;
+  split: SttBenchmarkSetSplit;
+};
+
 type HistoryCorrectionTarget = {
   sessionId: string;
   segmentId: string;
@@ -143,6 +161,9 @@ type DictationApi = {
   getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
   getSegmentAudio?: (audioSegment: AudioSegmentRecord) => Promise<AudioSegmentPlayback>;
   saveSttCorrection?: (correction: SttCorrectionRequest) => Promise<SttCorrectionResponse>;
+  markSttBenchmarkSetMembership?: (
+    membership: SttBenchmarkSetMembershipRequest,
+  ) => Promise<SttBenchmarkSetMembershipResponse>;
   runLatestSttBenchmark?: () => Promise<SttBenchmarkResponse>;
   runSegmentSttBenchmark?: (audioSegment: AudioSegmentRecord) => Promise<SttBenchmarkResponse>;
 };
@@ -177,6 +198,7 @@ function App(): React.ReactElement {
   const [isBenchmarking, setIsBenchmarking] = useState(false);
   const [benchmarkTargetKey, setBenchmarkTargetKey] = useState<string | null>(null);
   const [isSavingCorrection, setIsSavingCorrection] = useState(false);
+  const [benchmarkSetTargetKey, setBenchmarkSetTargetKey] = useState<string | null>(null);
   const [historyCorrectionTarget, setHistoryCorrectionTarget] = useState<HistoryCorrectionTarget | null>(null);
   const [historyCorrectionDraft, setHistoryCorrectionDraft] = useState("");
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -550,6 +572,38 @@ function App(): React.ReactElement {
     }
   }
 
+  async function markSttBenchmarkSetMembership(segment: RecentSegment, split: SttBenchmarkSetSplit): Promise<void> {
+    if (typeof window.dictex.markSttBenchmarkSetMembership !== "function") {
+      setHistoryError("Restart DicTeX to load the benchmark set preload API");
+      return;
+    }
+
+    if (!segment.correctedTranscript) {
+      setHistoryError("Correct the transcript before adding it to an STT benchmark set");
+      return;
+    }
+
+    const segmentKey = getSegmentKey(segment);
+    setHistoryError("");
+    setNotice("");
+    setBenchmarkSetTargetKey(segmentKey);
+
+    try {
+      const marked = await window.dictex.markSttBenchmarkSetMembership({
+        sessionId: segment.sessionId,
+        segmentId: segment.segmentId,
+        audioRef: segment.audioRef,
+        split,
+      });
+      setNotice(`Marked ${marked.sessionId} / ${marked.segmentId} as ${formatBenchmarkSetSplit(marked.split)}`);
+      void loadRecentSegments();
+    } catch (markError) {
+      setHistoryError(markError instanceof Error ? markError.message : "Could not mark benchmark set membership");
+    } finally {
+      setBenchmarkSetTargetKey(null);
+    }
+  }
+
   const statusLabel =
     status === "done" && lastPasteState === "pasted"
       ? "pasted"
@@ -659,6 +713,11 @@ function App(): React.ReactElement {
                     <span>{formatAudioDuration(segment.audioDurationSeconds)}</span>
                     <span>{formatLatency(segment.transcriptionDurationMs)}</span>
                     {segment.correctionMethod && <span>{segment.correctionMethod}</span>}
+                    {segment.benchmarkSetSplit && (
+                      <span className="benchmark-set-state" title={segment.benchmarkSetCreatedAt ?? undefined}>
+                        {formatBenchmarkSetSplit(segment.benchmarkSetSplit)}
+                      </span>
+                    )}
                   </div>
                   <div className="history-actions">
                     <button
@@ -685,6 +744,29 @@ function App(): React.ReactElement {
                         Copy corrected
                       </button>
                     )}
+                    <select
+                      aria-label={`STT benchmark set split for ${segment.sessionId} / ${segment.segmentId}`}
+                      className="secondary-select"
+                      disabled={
+                        !segment.correctedTranscript ||
+                        typeof window.dictex.markSttBenchmarkSetMembership !== "function" ||
+                        benchmarkSetTargetKey === getSegmentKey(segment) ||
+                        status === "recording" ||
+                        status === "transcribing"
+                      }
+                      value={segment.benchmarkSetSplit ?? ""}
+                      onChange={(event) => {
+                        const split = event.currentTarget.value;
+                        if (isSttBenchmarkSetSplit(split)) {
+                          void markSttBenchmarkSetMembership(segment, split);
+                        }
+                      }}
+                    >
+                      <option value="">Set split</option>
+                      <option value="train_candidate_pool">Train pool</option>
+                      <option value="validation">Validation</option>
+                      <option value="test_frozen">Test frozen</option>
+                    </select>
                     <button
                       className="secondary-button"
                       disabled={isSavingCorrection || status === "recording" || status === "transcribing"}
@@ -886,6 +968,22 @@ function formatBenchmarkCandidateKey(result: SttBenchmarkResult): string {
 
 function formatScore(score: SttBenchmarkScore): string {
   return `${score.metric.toUpperCase()} ${(score.value * 100).toFixed(1)}%`;
+}
+
+function formatBenchmarkSetSplit(split: SttBenchmarkSetSplit): string {
+  if (split === "train_candidate_pool") {
+    return "train pool";
+  }
+
+  if (split === "test_frozen") {
+    return "test frozen";
+  }
+
+  return "validation";
+}
+
+function isSttBenchmarkSetSplit(value: string): value is SttBenchmarkSetSplit {
+  return value === "train_candidate_pool" || value === "validation" || value === "test_frozen";
 }
 
 function getSegmentKey(segment: Pick<RecentSegment, "sessionId" | "segmentId">): string {
