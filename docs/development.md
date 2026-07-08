@@ -105,6 +105,7 @@ cd app
 18. Without touching `rules.json`, dictate "deux plus trois" spoken as digits (e.g. "2 plus 3") and confirm the inserted text shows `2 + 3` from the shipped default rules alone. Then dictate an ordinary sentence containing "plus" or "moins" outside a math context (e.g. "je suis de plus en plus fatigué") and confirm it is inserted unchanged. Click `Open rules`, break the JSON on purpose, and confirm the next dictation inserts the (still dictionary-normalized) text unchanged by regex rules with a quiet `Normalizer:` diagnostic instead of failing.
 19. In the `STT model` selector (controls panel), pick a different model. Confirm the `Model` diagnostic reflects it, dictate a phrase, and confirm the `stt_result` event records the chosen model. Restart the app and confirm the selector still shows the chosen model (persisted in `data/settings.json`). Corrupt `settings.json` and confirm the app still starts and dictates using the env var / default `base`.
 20. In the `Candidate summary` panel, after summarizing a split, type a selection reason and click `Select` on one candidate's row. Confirm a `Selected` badge appears on that row, the banner above the table shows the selected candidate and reason, an `stt_candidate_selection` event was appended to the events log, and selecting a different candidate updates the banner/badge without removing the earlier event.
+21. With Vosk not installed, click `Benchmark latest` and confirm faster-whisper results still appear and no Vosk `stt_benchmark_result` event is appended (the skip is a quiet `[benchmark] vosk/... unavailable` console warning only). Then install Vosk and set `DICTEX_VOSK_MODEL_DIR` (see "Second STT provider (Vosk)"), benchmark a corrected segment, and confirm a `stt_benchmark_result` with `provider:"vosk"`, `stt_engine:"vosk"`, a latency, and a CER score is appended alongside the faster-whisper ones, and that the candidate summary lists the Vosk candidate on its own row.
 
 ## Run
 
@@ -232,6 +233,47 @@ $env:DICTEX_PYTHON="C:\Users\souid\DicTeX\.venv\Scripts\python.exe"
 ```
 
 In development, the Electron app automatically uses the repository `.venv` Python when it exists.
+
+### Second STT provider (Vosk)
+
+The Python sidecar has a small provider abstraction (`engine/providers/`):
+`faster-whisper` is the dictation engine and default benchmark provider; **Vosk**
+is a second, benchmark-only provider (a different, Kaldi-based engine family —
+see `docs/product-decisions.md`). Vosk is fully optional: without it installed,
+dictation and faster-whisper benchmarking are unchanged, and the Vosk candidate
+is skipped with a quiet diagnostic.
+
+To enable Vosk benchmark candidates:
+
+1. Install the optional dependency:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m pip install --use-feature=truststore -r engine\requirements-vosk.txt
+   ```
+
+2. Download a French Vosk model (e.g. `vosk-model-small-fr-0.22` from
+   <https://alphacephei.com/vosk/models>), unzip it, and point
+   `DICTEX_VOSK_MODEL_DIR` at the directory that holds the model folder:
+
+   ```powershell
+   $env:DICTEX_VOSK_MODEL_DIR="C:\path\to\vosk-models"
+   # so C:\path\to\vosk-models\vosk-model-small-fr-0.22\ exists
+   ```
+
+Relevant env vars:
+
+```text
+DICTEX_STT_PROVIDER          selects the sidecar provider (default faster-whisper)
+DICTEX_VOSK_MODEL_DIR        base directory holding unpacked Vosk model folders
+DICTEX_VOSK_BENCHMARK_MODELS comma-separated Vosk model names to benchmark
+                             (default vosk-model-small-fr-0.22; empty disables)
+```
+
+Model resolution is local-only and never downloads: the sidecar uses `model` as
+a path if it exists, else `DICTEX_VOSK_MODEL_DIR/<model>`, else the candidate is
+reported unavailable. Vosk needs 16 kHz mono PCM and does not decode compressed
+audio, so the sidecar decodes stored segments with PyAV (already installed by
+faster-whisper) — no extra decode dependency.
 
 ## Local STT Data
 

@@ -176,6 +176,47 @@ Future candidates may belong to other stages, such as normalization, segment cla
 
 Do not treat a Whisper STT transcript and a Claude or Qwen math-transform output as the same kind of benchmark artifact. They may share benchmark metadata, but their stage defines what output is being evaluated.
 
+### Second local STT provider (Vosk)
+
+The STT benchmark universe must not stay "Whisper base vs Whisper small". To make
+it genuinely multi-provider, a second local STT engine was added as a
+benchmark-only candidate behind a small provider abstraction in the Python
+sidecar (`engine/providers/`): `faster-whisper` is the first provider, **Vosk**
+the second.
+
+Why Vosk:
+
+- Different engine family (Kaldi/DNN-HMM), not another Whisper flavour, so the
+  benchmark compares real alternatives instead of variants of one model.
+- Fully local and offline; pip-installable wheel on Windows with no compilation.
+- French acoustic models are available (e.g. `vosk-model-small-fr-0.22`), and it
+  is CPU-friendly and lightweight.
+
+Rejected alternatives:
+
+- **whisper.cpp** — still Whisper (same family), and the Windows path needs a
+  compiled binary / build toolchain, contrary to the pip-only local setup.
+- **Moonshine** — English-only today; the product is French-first.
+- **NeMo / other large toolkits** — heavy dependency footprint and not
+  CPU-lightweight, disproportionate for a benchmark-only candidate.
+
+Constraints kept:
+
+- Benchmark-only. `faster-whisper` remains the dictation engine; switching the
+  dictation engine would be its own issue, justified by the candidate selection
+  report.
+- Optional at runtime. If the `vosk` package or the local model files are
+  absent, the Vosk candidate is skipped with a quiet diagnostic; dictation and
+  faster-whisper benchmarking are never blocked.
+- Candidate identity is unchanged: `stage="stt"`, `provider="vosk"`,
+  `model=<vosk model name>`, `variant="cpu-<language>"` (Vosk is CPU-only, so no
+  compute-type dimension). Vosk expects 16 kHz mono PCM and does not decode
+  compressed audio, so the sidecar decodes stored segments with PyAV (already a
+  faster-whisper dependency) — no new decode dependency.
+
+Setup and env vars are documented in `docs/development.md`
+("Second STT provider (Vosk)").
+
 ## Math Parsing Decisions
 
 Math parsing is not part of the current working loop yet.

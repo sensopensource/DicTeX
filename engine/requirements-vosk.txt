@@ -1,0 +1,9 @@
+# Optional: second local STT provider (Vosk) for the benchmark candidate
+# universe. Not required for dictation or faster-whisper benchmarking — install
+# only to benchmark the Vosk provider. Audio decoding reuses PyAV, already
+# pulled in by faster-whisper, so no extra decode dependency is needed.
+#
+# Install (see docs/development.md "Second STT provider (Vosk)"):
+#   .\.venv\Scripts\python.exe -m pip install --use-feature=truststore -r engine\requirements-vosk.txt
+# Then download a French Vosk model and point DICTEX_VOSK_MODEL_DIR at its folder.
+vosk==0.3.45
