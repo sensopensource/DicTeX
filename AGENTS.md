@@ -492,30 +492,59 @@ GPU STT (no issue, direct docs+engine commit):
   `nvidia-cublas-cu12` pip package on Windows, enabling
   `DICTEX_STT_DEVICE=cuda`; setup documented in `docs/development.md`.
 
+Issue #50 / PR #62:
+
+- Added the regex math-verbalization rules layer (layer 2) to the normalizer.
+  Pivot Phase 2, layers 1 & 2 now done.
+- Merged.
+
+Issue #57:
+
+- Select the active STT model from the UI. Already implemented in the renderer
+  (model selector in the controls panel, `main.tsx`); the shell refactor #63
+  keeps it on the Home view. Closed as done.
+
 Open roadmap (labels + hard deps). Per the strategic pivot, STT fine-tuning is
 deferred to Phase 4, so #44/#45 are Phase-4 prep, not the near-term goal:
 
 - #43 candidate selection report — `level:moyen` + `needs:high-review`,
   Depends on #40 (done) -> ready.
 - #44 export corrected datasets — `level:eleve`, Depends on #43. Phase 4 prep;
-  export should also split by `correctionKind`.
+  export should split by `correctionKind` AND read all correction events of a
+  segment (a segment can carry chained acoustic + math_transform corrections
+  from the enrichment tool #66), not just the latest.
 - #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`,
   Depends on #44. Phase 4; conditional on enough `acoustic`-tagged data.
-- #50 regex math-verbalization rules (layer 2) — `level:moyen`,
-  Depends on #49 (done) -> ready. Pivot Phase 2.
-- #57 select active STT model from the UI — `level:moyen`, no dependency ->
-  ready.
-- #58 select benchmark candidates from the UI — `level:moyen`, Depends on #57
-  (reuses its settings-file mechanism). Also adds `large-v3-turbo` (the model
-  actually used for dictation on this machine) to the default candidate list.
+- #58 select benchmark candidates from the UI — `level:moyen`. Kept as-is; its
+  intent is covered by the Benchmark view refactor #64. Also would add
+  `large-v3-turbo` to the default candidate list.
 - #59 second local STT provider in the benchmark universe — `level:eleve` +
   `needs:high-review`, no hard dependency -> ready; mostly Python sidecar, so
   low soft-conflict with the app-side issues.
 
-Startable now in parallel: #50, #43, #57, #59. Soft conflict: #50/#43/#57 all
-touch the same app source files, so separate clones will merge-conflict —
-launch in parallel but merge sequentially and rebase. #59 is mostly `engine/`
-and conflicts little with the others.
+UI refactor track (3 task-focused views — see UI Direction). Shell first;
+everything else rebases on it:
+
+- #63 UI shell: 3-view navigation (Home/Benchmark/Dataset) + collapsible
+  history — `level:moyen`, no dependency -> ready. Keystone.
+- #64 Benchmark view: compare 1-3 chosen candidates + dataset selector —
+  `level:moyen`, Depends on #63. Covers the intent of #58.
+- #65 Benchmark view: integrate candidate summary + error analysis —
+  `level:moyen`, Depends on #63. Covers the intent of #43.
+- #66 Dataset enrichment view: two-layer audio->text capture — `level:eleve` +
+  `needs:high-review`, Depends on #63. Writes two chained `stt_correction`
+  events (acoustic + math_transform) to keep the datasets separable.
+
+Launch waves:
+
+- Wave 1: #63 alone (keystone). In parallel, independent track: #59.
+- Wave 2 (after #63 merges): #64, #65, #66 — #64/#65 touch the same Benchmark
+  view (merge sequentially + rebase, #65 after #64); #66 is mostly the new
+  Dataset view.
+- #43 (report logic) stays valid; its presentation is folded into #65.
+
+Soft conflict: all renderer issues touch `app/src/renderer/src/main.tsx` — use
+separate clones, merge sequentially and rebase. #59 is mostly `engine/`.
 
 ## Product Decisions To Preserve
 
@@ -571,6 +600,15 @@ Avoid:
 - big decorative typography;
 - generic AI SaaS dashboard feel;
 - broad settings pages too early.
+
+Navigation (sanctioned by the UI refactor, issues #63-#66): a **small number of
+task-focused views** is allowed — Home, Benchmark, Dataset (enrichment) — reached
+from big entry buttons on Home, with a back-to-home control in each view. This is
+a deliberate exception to "one compact screen", but the compact, sober,
+minimal-color, clear-state feel MUST hold *within* each view. Do not let the
+multi-view shell drift into a SaaS dashboard, a decorative hero, or broad
+settings pages. Keep dictation + last transcript + correction on Home; the
+Benchmark and Dataset views host only their own task.
 
 Useful visible information:
 
@@ -639,6 +677,26 @@ Prefer extending the existing `stt_correction` event with `correctionKind` over
 inventing separate event types. The `train_candidate_pool` / `validation` /
 `test_frozen` split is kept and read alongside `correctionKind` to build each
 dataset.
+
+Two-layer dataset enrichment (issue #66): to keep the acoustic (STT) and
+math_transform (normalizer) datasets separable, the enrichment tool captures two
+layers for one recorded segment and writes **two chained `stt_correction`
+events** — no new event type:
+
+1. `correction_kind = "acoustic"`: `raw_transcript` = raw STT output,
+   `corrected_transcript` = acoustically-correct literal transcript (notation
+   still verbal). Feeds the acoustic dataset paired with the segment audio.
+2. `correction_kind = "math_transform"`: `raw_transcript` = the literal-correct
+   transcript, `corrected_transcript` = normalized notation. Feeds the
+   normalizer dataset as a text->text pair (no audio).
+
+A single fully-normalized pasted text would collapse both transformations and
+make the datasets non-separable — so the stage is encoded by which layer is
+filled, not by one blended tag. Consequence: a segment can carry more than one
+correction event. `reconstructRecentSegments` keeps latest-event-wins for
+history display, but **dataset extraction (#44) must read all correction events
+of a segment**, not just the last. `correctionKind` still applies as a single
+tag for quick inline corrections (short, single-purpose).
 
 ## Benchmark Vision
 
@@ -730,9 +788,9 @@ Priorities now follow the strategic pivot's phasing:
 1. **Phase 1 — typed correction data (done, issue #48 / PR #52).**
    `correctionKind` is now required on every new correction; unlabeled data is
    no longer collected.
-2. **Phase 2 — code normalizer (layers 1 & 2, issues #49 and #50) — next.**
-   Personal dictionary + regex math-verbalization rules. Immediate
-   rendering-quality gains, zero ML.
+2. **Phase 2 — code normalizer (layers 1 & 2, issues #49 / PR #55 and #50 /
+   PR #62) — done.** Personal dictionary + regex math-verbalization rules
+   landed; rendering-quality gains with zero ML.
 3. **Phase 3 — ML normalizer (layer 3).** After some usage, extract the
    `math_transform`-tagged dataset and fine-tune a small seq2seq model.
 4. **Phase 4 — STT acoustic fine-tuning.** Extract the `acoustic`-tagged
