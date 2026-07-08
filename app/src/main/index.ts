@@ -6,11 +6,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   getLatestAudioSegment as getLatestAudioSegmentFromEvents,
+  getLatestSttCandidateSelection,
   getLatestSttCorrection,
   getSttBenchmarkSetSegments,
   isCorrectionKind,
   readLocalEvents,
   reconstructRecentSegments,
+  type BenchmarkCandidateIdentity,
   type CorrectionKind,
   type LocalEvent,
   type ReconstructedSegment,
@@ -141,6 +143,17 @@ type SttBenchmarkSetMembershipResponse = {
   sessionId: string;
   segmentId: string;
   split: SttBenchmarkSetSplit;
+};
+
+type SttCandidateSelectionRequest = {
+  candidate: BenchmarkCandidateIdentity;
+  selectionReason: string;
+};
+
+type SttCandidateSelectionResponse = {
+  createdAt: string;
+  candidate: BenchmarkCandidateIdentity;
+  selectionReason: string;
 };
 
 type SttBenchmarkSetRunRequest = {
@@ -1002,6 +1015,60 @@ ipcMain.handle(
     return summarizeSttBenchmarkResultsByCandidate(events, request.split);
   },
 );
+
+ipcMain.handle(
+  "candidate-selection:save-stt",
+  async (_event, request: SttCandidateSelectionRequest): Promise<SttCandidateSelectionResponse> => {
+    const candidate = request?.candidate;
+    if (
+      !candidate ||
+      typeof candidate.stage !== "string" ||
+      typeof candidate.provider !== "string" ||
+      typeof candidate.model !== "string" ||
+      (candidate.variant !== null && typeof candidate.variant !== "undefined" && typeof candidate.variant !== "string")
+    ) {
+      throw new Error("Invalid STT candidate identity");
+    }
+
+    if (typeof request.selectionReason !== "string" || request.selectionReason.trim() === "") {
+      throw new Error("Selection reason is required");
+    }
+
+    const createdAt = new Date().toISOString();
+    const selectionReason = request.selectionReason.trim();
+    const variant = candidate.variant ?? null;
+
+    await appendEvent({
+      event_type: "stt_candidate_selection",
+      created_at: createdAt,
+      stage: candidate.stage,
+      provider: candidate.provider,
+      model: candidate.model,
+      variant,
+      selection_reason: selectionReason,
+    });
+
+    return {
+      createdAt,
+      candidate: { stage: candidate.stage, provider: candidate.provider, model: candidate.model, variant },
+      selectionReason,
+    };
+  },
+);
+
+ipcMain.handle("candidate-selection:get-latest-stt", async (): Promise<SttCandidateSelectionResponse | null> => {
+  const events = await readLocalEvents(getEventsPath());
+  const selection = getLatestSttCandidateSelection(events);
+  if (!selection) {
+    return null;
+  }
+
+  return {
+    createdAt: selection.createdAt ?? "",
+    candidate: selection.candidate,
+    selectionReason: selection.selectionReason ?? "",
+  };
+});
 
 ipcMain.handle("diagnostics:open-data-folder", async (): Promise<boolean> => {
   const dataRoot = getDataRoot();

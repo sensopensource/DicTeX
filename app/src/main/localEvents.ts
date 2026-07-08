@@ -100,6 +100,16 @@ export type SttBenchmarkSetMembershipEvent = {
   reason?: string;
 };
 
+export type SttCandidateSelectionEvent = {
+  event_type: "stt_candidate_selection";
+  created_at?: string;
+  stage: string;
+  provider: string;
+  model: string;
+  variant?: string | null;
+  selection_reason?: string | null;
+};
+
 export type UnknownLocalEvent = {
   event_type: string;
   [key: string]: unknown;
@@ -111,6 +121,7 @@ export type LocalEvent =
   | SttBenchmarkResultEvent
   | SttCorrectionEvent
   | SttBenchmarkSetMembershipEvent
+  | SttCandidateSelectionEvent
   | NormalizationResultEvent
   | UnknownLocalEvent;
 
@@ -167,6 +178,12 @@ export type SttScoredBenchmarkResult = {
   scoreMetric: string | null;
   scoreValue: number | null;
   referenceTranscript: string | null;
+};
+
+export type SttCandidateSelection = {
+  createdAt: string | null;
+  candidate: BenchmarkCandidateIdentity;
+  selectionReason: string | null;
 };
 
 type SegmentDraft = {
@@ -412,6 +429,29 @@ function getBenchmarkCandidateIdentity(event: SttBenchmarkResultEvent): Benchmar
   return { stage, provider, model, variant: getString(event.variant) };
 }
 
+/**
+ * Returns the currently selected base STT candidate: the latest
+ * stt_candidate_selection event, latest-event-wins like every other append-only
+ * marker in this file. Returns null when no selection has ever been recorded.
+ */
+export function getLatestSttCandidateSelection(events: LocalEvent[]): SttCandidateSelection | null {
+  let latestSelection: SttCandidateSelection | null = null;
+
+  for (const event of events) {
+    if (!isSttCandidateSelectionEvent(event)) {
+      continue;
+    }
+
+    latestSelection = {
+      createdAt: getString(event.created_at),
+      candidate: { stage: event.stage, provider: event.provider, model: event.model, variant: getString(event.variant) },
+      selectionReason: getString(event.selection_reason),
+    };
+  }
+
+  return latestSelection;
+}
+
 export function reconstructRecentSegments(events: LocalEvent[], limit = 20): ReconstructedSegment[] {
   const segments = new Map<string, SegmentDraft>();
 
@@ -606,6 +646,15 @@ function isSttBenchmarkSetMembershipEvent(event: LocalEvent): event is SttBenchm
     typeof event.session_id === "string" &&
     typeof event.segment_id === "string" &&
     isSttBenchmarkSetSplit(event.split)
+  );
+}
+
+function isSttCandidateSelectionEvent(event: LocalEvent): event is SttCandidateSelectionEvent {
+  return (
+    event.event_type === "stt_candidate_selection" &&
+    typeof event.stage === "string" &&
+    typeof event.provider === "string" &&
+    typeof event.model === "string"
   );
 }
 
