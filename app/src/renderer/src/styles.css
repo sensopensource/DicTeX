@@ -322,11 +322,48 @@ h2 {
   -webkit-line-clamp: 2;
 }
 
+.history-normalized-transcript {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #9fc7a6;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .history-footer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.5rem;
   align-items: center;
+}
+
+.normalized-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #2f3a30;
+  border-radius: 8px;
+  background: #1a211b;
+}
+
+.normalized-preview-label {
+  color: #9fc7a6;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.normalized-preview-text {
+  margin: 0;
+  color: #e8e8e8;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .history-meta {
