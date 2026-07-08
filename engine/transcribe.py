@@ -10,6 +10,20 @@ try:
 except ImportError:
     pass
 
+if sys.platform == "win32":
+    # The Windows ctranslate2 CUDA wheel bundles cuDNN but not cuBLAS, so
+    # cublas64_12.dll must be made discoverable ourselves when it's only
+    # installed as the nvidia-cublas-cu12 pip package (no system CUDA Toolkit).
+    # ctranslate2 loads it via a plain LoadLibraryW call, which only consults
+    # PATH, not directories registered through os.add_dll_directory.
+    try:
+        import nvidia.cublas
+
+        bin_dir = str(Path(nvidia.cublas.__path__[0]) / "bin")
+        os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+    except ImportError:
+        pass
+
 from faster_whisper import WhisperModel
 
 

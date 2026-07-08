@@ -167,6 +167,32 @@ cd app
 ..\scripts\npm.cmd run dev
 ```
 
+### GPU (CUDA) STT
+
+To run STT on an NVIDIA GPU instead of CPU:
+
+```powershell
+$env:DICTEX_STT_MODEL="large-v3-turbo"
+$env:DICTEX_STT_DEVICE="cuda"
+$env:DICTEX_STT_COMPUTE_TYPE="float16"
+cd app
+..\scripts\npm.cmd run dev
+```
+
+The Windows `ctranslate2` CUDA wheel bundles cuDNN but not cuBLAS. If the
+machine has no system-wide CUDA Toolkit install, `cublas64_12.dll` will be
+missing and transcription fails with
+`RuntimeError: Library cublas64_12.dll is not found or cannot be loaded`.
+Install it via pip instead of the full CUDA Toolkit:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install --use-feature=truststore nvidia-cublas-cu12 nvidia-cudnn-cu12
+```
+
+`engine/transcribe.py` prepends that package's `bin` directory to `PATH` at
+startup on Windows, so no manual `PATH` changes are needed after installing
+it.
+
 On Windows, if Python is not available through `py -3.11`, set:
 
 ```powershell
