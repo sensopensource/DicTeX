@@ -234,6 +234,8 @@ contextBridge.exposeInMainWorld("dictex", {
   openDictionaryFile: () => ipcRenderer.invoke("diagnostics:open-dictionary") as Promise<boolean>,
   getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
   getSttBenchmarkModels: () => ipcRenderer.invoke("diagnostics:get-stt-benchmark-models") as Promise<string[]>,
+  getSttModels: () => ipcRenderer.invoke("diagnostics:get-stt-models") as Promise<string[]>,
+  setSttModel: (model: string) => ipcRenderer.invoke("settings:set-stt-model", model) as Promise<SttConfig>,
   getRecentSegments: (limit = 20) => ipcRenderer.invoke("history:get-recent-segments", limit) as Promise<RecentSegment[]>,
   getSegmentAudio: (audioSegment: AudioSegmentRecord) =>
     ipcRenderer.invoke("audio:get-segment", audioSegment) as Promise<AudioSegmentPlayback>,
