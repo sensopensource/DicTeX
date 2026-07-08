@@ -7,8 +7,10 @@ import { fileURLToPath } from "node:url";
 import {
   getLatestAudioSegment as getLatestAudioSegmentFromEvents,
   getLatestSttCorrection,
+  isCorrectionKind,
   readLocalEvents,
   reconstructRecentSegments,
+  type CorrectionKind,
   type ReconstructedSegment,
   type SttBenchmarkSetSplit,
 } from "./localEvents.js";
@@ -102,6 +104,7 @@ type SttCorrectionRequest = {
   audioRef: string | null;
   rawTranscript: string;
   correctedTranscript: string;
+  correctionKind: CorrectionKind;
   correctionMethod?: "keyboard";
 };
 
@@ -109,6 +112,7 @@ type SttCorrectionResponse = {
   createdAt: string;
   sessionId: string;
   segmentId: string;
+  correctionKind: CorrectionKind;
   correctionMethod: "keyboard";
 };
 
@@ -644,8 +648,13 @@ ipcMain.handle("corrections:save-stt", async (_event, correction: SttCorrectionR
     throw new Error("Correction transcripts must be strings");
   }
 
+  if (!isCorrectionKind(correction.correctionKind)) {
+    throw new Error("Correction kind must be acoustic, math_transform, normalization, or rephrasing");
+  }
+
   const createdAt = new Date().toISOString();
   const correctionMethod: "keyboard" = "keyboard";
+  const correctionKind = correction.correctionKind;
 
   await appendEvent({
     event_type: "stt_correction",
@@ -656,12 +665,14 @@ ipcMain.handle("corrections:save-stt", async (_event, correction: SttCorrectionR
     raw_transcript: correction.rawTranscript,
     corrected_transcript: correction.correctedTranscript,
     correction_method: correctionMethod,
+    correction_kind: correctionKind,
   });
 
   return {
     createdAt,
     sessionId: correction.sessionId,
     segmentId: correction.segmentId,
+    correctionKind,
     correctionMethod,
   };
 });
