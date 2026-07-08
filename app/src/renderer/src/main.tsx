@@ -1786,7 +1786,10 @@ function BenchmarkView({
         <div className="benchmark-header">
           <div>
             <h2>Candidate summary</h2>
-            <p>Compare STT candidates over {formatBenchmarkSetSplit(batchSplit)}. CER/WER: lower is better.</p>
+            <p>
+              Compare {selectedBenchmarkModels.length > 0 ? selectedBenchmarkModels.join(", ") : "checked candidates"} over{" "}
+              {formatBenchmarkSetSplit(batchSplit)}. CER/WER: lower is better.
+            </p>
           </div>
           <button
             className="secondary-button"
@@ -1811,6 +1814,10 @@ function BenchmarkView({
             : "No base STT candidate selected yet. The highest-quality candidate is not always best if latency is poor — compare mean latency before selecting."}
         </p>
 
+        {!candidateSummary && (
+          <p className="empty-state">Run analysis above, or summarize by candidate, to see per-candidate scores.</p>
+        )}
+
         {candidateSummary && candidateSummary.split !== batchSplit && (
           <p className="empty-state">
             Showing {formatBenchmarkSetSplit(candidateSummary.split)}; select the split again and re-run to refresh.
@@ -1819,6 +1826,10 @@ function BenchmarkView({
 
         {candidateSummary && candidateSummary.totalSegments === 0 && (
           <p className="empty-state">No corrected segments in {formatBenchmarkSetSplit(candidateSummary.split)} yet.</p>
+        )}
+
+        {candidateSummary && candidateSummary.totalSegments > 0 && candidateSummary.candidates.length === 0 && (
+          <p className="empty-state">No candidate results match the checked candidates above yet.</p>
         )}
 
         {candidateSummary && candidateSummary.candidates.length > 0 && (
@@ -1887,15 +1898,17 @@ function BenchmarkView({
         )}
       </section>
 
-      {errorAnalysis.length > 0 && (
-        <section className="panel error-analysis-panel">
-          <div className="benchmark-header">
-            <div>
-              <h2>Error analysis</h2>
-              <p>Heuristic diagnostics from the last benchmark set run, not a training signal</p>
-            </div>
+      <section className="panel error-analysis-panel">
+        <div className="benchmark-header">
+          <div>
+            <h2>Error analysis</h2>
+            <p>Heuristic diagnostics from the last benchmark set run, not a training signal</p>
           </div>
+        </div>
 
+        {errorAnalysis.length === 0 ? (
+          <p className="empty-state">Run analysis above to see per-candidate error diagnostics.</p>
+        ) : (
           <div className="error-analysis-candidates">
             {errorAnalysis.map((analysis) => (
               <article className="error-analysis-candidate" key={analysis.candidateKey}>
@@ -1922,8 +1935,8 @@ function BenchmarkView({
               </article>
             ))}
           </div>
-        </section>
-      )}
+        )}
+      </section>
     </>
   );
 }
