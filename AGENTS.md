@@ -448,38 +448,46 @@ Issue #38:
   `test_frozen`, with latest-event-wins derivation.
 - Completed.
 
-Open STT benchmark -> selection roadmap (labels + hard deps). Per the strategic
-pivot, STT fine-tuning is deferred to Phase 4, so #44/#45 are Phase-4 prep, not
-the near-term goal:
+Issue #42 / PR #51:
 
-- #39 benchmark candidates over corrected set — `level:tres-eleve`,
-  Depends on #38 (done) -> ready.
-- #40 summarize results by candidate — `level:moyen`, Depends on #39.
-- #41 lightweight error analysis — `level:moyen` + `needs:high-review`,
-  Depends on #39.
-- #42 configurable faster-whisper candidates — `level:faible`, no dependency ->
+- Made faster-whisper STT benchmark candidates configurable via
+  `DICTEX_STT_BENCHMARK_MODELS`.
+- Merged.
+
+Issue #48 / PR #52:
+
+- Added typed corrections: required `correction_kind`
+  (acoustic / math_transform / normalization / rephrasing) on `stt_correction`
+  events, mandatory UI selector on both correction paths, untyped legacy
+  events surface as null.
+- Merged. Pivot Phase 1 done.
+
+Issue #39 / PR #53:
+
+- Benchmarked STT candidates over the corrected benchmark set.
+- Merged.
+
+Open roadmap (labels + hard deps). Per the strategic pivot, STT fine-tuning is
+deferred to Phase 4, so #44/#45 are Phase-4 prep, not the near-term goal:
+
+- #40 summarize results by candidate — `level:moyen`, Depends on #39 (done) ->
   ready.
+- #41 lightweight error analysis — `level:moyen` + `needs:high-review`,
+  Depends on #39 (done) -> ready.
 - #43 candidate selection report — `level:moyen` + `needs:high-review`,
   Depends on #40.
 - #44 export corrected datasets — `level:eleve`, Depends on #43. Phase 4 prep;
   export should also split by `correctionKind`.
 - #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`,
   Depends on #44. Phase 4; conditional on enough `acoustic`-tagged data.
-
-Open strategic-pivot roadmap (labels + hard deps):
-
-- #48 typed corrections (`correction_kind` on `stt_correction` + UI selector) —
-  `level:eleve` + `needs:high-review`, no dependency -> ready. Phase 1.
 - #49 normalizer module + personal dictionary (layer 1) — `level:eleve` +
-  `needs:high-review`, no hard dependency, but soft-conflicts with #48 on
-  shared files -> start after #48 merges. Phase 2.
+  `needs:high-review`, no hard dependency -> ready. Pivot Phase 2.
 - #50 regex math-verbalization rules (layer 2) — `level:moyen`, Depends on #49.
-  Phase 2.
+  Pivot Phase 2.
 
-Startable now in parallel: #48, #39, #42. Soft conflict: all three touch
-`app/src/main/index.ts` (the app is only four source files), so separate
-clones will merge-conflict — launch in parallel but merge sequentially and
-rebase.
+Startable now in parallel: #49, #40, #41. Soft conflict: all three touch the
+same app source files (the app is only four source files), so separate clones
+will merge-conflict — launch in parallel but merge sequentially and rebase.
 
 ## Product Decisions To Preserve
 
@@ -650,7 +658,8 @@ DICTEX_STT_DEVICE=cpu
 DICTEX_STT_COMPUTE_TYPE=int8
 ```
 
-Current STT benchmark candidates:
+Current STT benchmark candidates (defaults, configurable via
+`DICTEX_STT_BENCHMARK_MODELS` since PR #51):
 
 - faster-whisper/tiny
 - faster-whisper/base
@@ -666,12 +675,12 @@ so the foundations the pivot relies on are in place.
 
 Priorities now follow the strategic pivot's phasing:
 
-1. **Phase 1 — typed correction data (next, issue #48).** Add `correctionKind`
-   to the correction request and UI so we stop collecting unlabeled data.
-   Highest priority: without the tag the future datasets are unusable.
-2. **Phase 2 — code normalizer (layers 1 & 2, issues #49 and #50).** Personal
-   dictionary + regex math-verbalization rules. Immediate rendering-quality
-   gains, zero ML.
+1. **Phase 1 — typed correction data (done, issue #48 / PR #52).**
+   `correctionKind` is now required on every new correction; unlabeled data is
+   no longer collected.
+2. **Phase 2 — code normalizer (layers 1 & 2, issues #49 and #50) — next.**
+   Personal dictionary + regex math-verbalization rules. Immediate
+   rendering-quality gains, zero ML.
 3. **Phase 3 — ML normalizer (layer 3).** After some usage, extract the
    `math_transform`-tagged dataset and fine-tune a small seq2seq model.
 4. **Phase 4 — STT acoustic fine-tuning.** Extract the `acoustic`-tagged
