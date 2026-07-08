@@ -46,6 +46,8 @@ export type SttBenchmarkResultEvent = {
   transcription_duration_ms?: number;
 };
 
+export type CorrectionKind = "acoustic" | "math_transform" | "normalization" | "rephrasing";
+
 export type SttCorrectionEvent = {
   event_type: "stt_correction";
   session_id: string;
@@ -55,6 +57,7 @@ export type SttCorrectionEvent = {
   raw_transcript: string;
   corrected_transcript: string;
   correction_method?: string;
+  correction_kind?: CorrectionKind;
 };
 
 export type SttBenchmarkSetSplit = "train_candidate_pool" | "validation" | "test_frozen";
@@ -96,6 +99,7 @@ export type ReconstructedSegment = {
   correctedTranscript: string | null;
   correctionCreatedAt: string | null;
   correctionMethod: string | null;
+  correctionKind: CorrectionKind | null;
   benchmarkSetSplit: SttBenchmarkSetSplit | null;
   benchmarkSetCreatedAt: string | null;
 };
@@ -104,6 +108,7 @@ export type SegmentSttCorrection = {
   correctedTranscript: string;
   correctionCreatedAt: string | null;
   correctionMethod: string | null;
+  correctionKind: CorrectionKind | null;
 };
 
 type SegmentDraft = {
@@ -120,6 +125,7 @@ type SegmentDraft = {
   correctedTranscript: string | null;
   correctionCreatedAt: string | null;
   correctionMethod: string | null;
+  correctionKind: CorrectionKind | null;
   benchmarkSetSplit: SttBenchmarkSetSplit | null;
   benchmarkSetCreatedAt: string | null;
   lastEventIndex: number;
@@ -182,6 +188,7 @@ export function getLatestSttCorrection(
         correctedTranscript: event.corrected_transcript,
         correctionCreatedAt: getString(event.created_at),
         correctionMethod: getString(event.correction_method),
+        correctionKind: getCorrectionKind(event.correction_kind),
       };
     }
   }
@@ -230,6 +237,7 @@ export function reconstructRecentSegments(events: LocalEvent[], limit = 20): Rec
         draft.correctedTranscript = event.corrected_transcript;
         draft.correctionCreatedAt = getString(event.created_at);
         draft.correctionMethod = getString(event.correction_method) ?? "unknown";
+        draft.correctionKind = getCorrectionKind(event.correction_kind);
         draft.lastCorrectionEventIndex = eventIndex;
       }
     }
@@ -266,6 +274,7 @@ export function reconstructRecentSegments(events: LocalEvent[], limit = 20): Rec
       correctedTranscript: segment.correctedTranscript,
       correctionCreatedAt: segment.correctionCreatedAt,
       correctionMethod: segment.correctionMethod,
+      correctionKind: segment.correctionKind,
       benchmarkSetSplit: segment.benchmarkSetSplit,
       benchmarkSetCreatedAt: segment.benchmarkSetCreatedAt,
     }));
@@ -286,6 +295,7 @@ function createSegmentDraft(sessionId: string, segmentId: string, eventIndex: nu
     correctedTranscript: null,
     correctionCreatedAt: null,
     correctionMethod: null,
+    correctionKind: null,
     benchmarkSetSplit: null,
     benchmarkSetCreatedAt: null,
     lastEventIndex: eventIndex,
@@ -300,6 +310,19 @@ function getSegmentKey(sessionId: string, segmentId: string): string {
 
 function getString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+export function isCorrectionKind(value: unknown): value is CorrectionKind {
+  return (
+    value === "acoustic" ||
+    value === "math_transform" ||
+    value === "normalization" ||
+    value === "rephrasing"
+  );
+}
+
+function getCorrectionKind(value: unknown): CorrectionKind | null {
+  return isCorrectionKind(value) ? value : null;
 }
 
 function getNumber(value: unknown): number | null {
