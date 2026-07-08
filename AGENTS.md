@@ -504,7 +504,8 @@ deferred to Phase 4, so #44/#45 are Phase-4 prep, not the near-term goal:
 - #57 select active STT model from the UI — `level:moyen`, no dependency ->
   ready.
 - #58 select benchmark candidates from the UI — `level:moyen`, Depends on #57
-  (reuses its settings-file mechanism).
+  (reuses its settings-file mechanism). Also adds `large-v3-turbo` (the model
+  actually used for dictation on this machine) to the default candidate list.
 - #59 second local STT provider in the benchmark universe — `level:eleve` +
   `needs:high-review`, no hard dependency -> ready; mostly Python sidecar, so
   low soft-conflict with the app-side issues.
@@ -711,7 +712,10 @@ Current STT benchmark candidates (defaults, configurable via
 - faster-whisper/base
 - faster-whisper/small
 
-These are current candidates, not the final benchmark universe.
+These are current candidates, not the final benchmark universe. The model
+actually used for dictation on this machine is faster-whisper/large-v3-turbo
+on GPU; #58 adds it to the default candidate list (until then, include it via
+`DICTEX_STT_BENCHMARK_MODELS=tiny,base,small,large-v3-turbo`).
 
 ## Next Product Priorities
 
