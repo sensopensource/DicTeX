@@ -21,7 +21,7 @@ import {
 import { calculateCharacterErrorRate } from "./sttScoring.js";
 import { summarizeSttBenchmarkResultsByCandidate, type SttBenchmarkCandidateSummaryResponse } from "./benchmarkSummary.js";
 import { readAppSettings, writeAppSettings } from "./settings.js";
-import { normalizeTranscript, type NormalizationResult } from "./normalizer.js";
+import { normalizeTranscript, DEFAULT_RULES, type NormalizationResult } from "./normalizer.js";
 
 type TranscriptionResult = {
   /** Raw STT output. Kept as the correction base; `stt_result.stt_output` mirrors it. */
@@ -414,6 +414,10 @@ function getDictionaryPath(): string {
   return path.join(getNormalizerDir(), "dictionary.json");
 }
 
+function getRulesPath(): string {
+  return path.join(getNormalizerDir(), "rules.json");
+}
+
 // Seeded on first open. Empty `entries` keeps dictation byte-identical (empty by
 // default); the ignored `_comment`/`_example` keys document the format in place.
 const emptyDictionaryTemplate = `${JSON.stringify(
@@ -422,6 +426,20 @@ const emptyDictionaryTemplate = `${JSON.stringify(
     _comment: "Literal, case-sensitive substring replacements applied in order. Add entries below.",
     _example: { from: "dic tex", to: "DicTeX" },
     entries: [],
+  },
+  null,
+  2,
+)}\n`;
+
+// Seeded on first open with the shipped default rule set (unlike the empty
+// dictionary template) so regex normalization is useful out of the box. Rules
+// apply in file order; the ignored `_comment` key documents the format in place.
+const defaultRulesTemplate = `${JSON.stringify(
+  {
+    version: 1,
+    _comment:
+      'Ordered regex rules applied after the personal dictionary. "pattern" is a Unicode-aware JS regex source (matched with forced "g"/"u" flags plus any "flags" given here); "replacement" may reference capture groups via $1, $2, .... A pattern that does not match leaves the text untouched.',
+    rules: DEFAULT_RULES,
   },
   null,
   2,
@@ -730,6 +748,7 @@ ipcMain.handle(
     // in a separate append-only normalization_result event.
     const normalization = await normalizeTranscript(sttResult.transcript, {
       dictionaryPath: getDictionaryPath(),
+      rulesPath: getRulesPath(),
     });
 
     await appendEvent({
@@ -1098,6 +1117,19 @@ ipcMain.handle("diagnostics:open-dictionary", async (): Promise<boolean> => {
     await writeFile(dictionaryPath, emptyDictionaryTemplate, { encoding: "utf8" });
   }
   const error = await shell.openPath(dictionaryPath);
+  return error.length === 0;
+});
+
+ipcMain.handle("diagnostics:open-rules", async (): Promise<boolean> => {
+  const normalizerDir = getNormalizerDir();
+  await mkdir(normalizerDir, { recursive: true });
+  const rulesPath = getRulesPath();
+  if (!existsSync(rulesPath)) {
+    // Seed with the shipped default rule set, not an empty file, so the layer
+    // is useful out of the box and the user can see/edit the starter rules.
+    await writeFile(rulesPath, defaultRulesTemplate, { encoding: "utf8" });
+  }
+  const error = await shell.openPath(rulesPath);
   return error.length === 0;
 });
 

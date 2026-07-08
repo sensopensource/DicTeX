@@ -264,6 +264,7 @@ type DictationApi = {
   openDataFolder: () => Promise<boolean>;
   openEventsLog: () => Promise<boolean>;
   openDictionaryFile?: () => Promise<boolean>;
+  openRulesFile?: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
   getSttBenchmarkModels?: () => Promise<string[]>;
   getSttModels?: () => Promise<string[]>;
@@ -704,6 +705,20 @@ function App(): React.ReactElement {
       setNotice(opened ? "Opened normalizer dictionary" : "Could not open normalizer dictionary");
     } catch (openError) {
       setNotice(openError instanceof Error ? openError.message : "Could not open normalizer dictionary");
+    }
+  }
+
+  async function openRulesFile(): Promise<void> {
+    if (typeof window.dictex.openRulesFile !== "function") {
+      setNotice("Restart DicTeX to load the rules preload API");
+      return;
+    }
+
+    try {
+      const opened = await window.dictex.openRulesFile();
+      setNotice(opened ? "Opened normalizer rules" : "Could not open normalizer rules");
+    } catch (openError) {
+      setNotice(openError instanceof Error ? openError.message : "Could not open normalizer rules");
     }
   }
 
@@ -1528,6 +1543,13 @@ function App(): React.ReactElement {
             onClick={openDictionaryFile}
           >
             Open dictionary
+          </button>
+          <button
+            className="secondary-button"
+            disabled={typeof window.dictex.openRulesFile !== "function"}
+            onClick={openRulesFile}
+          >
+            Open rules
           </button>
         </div>
       </section>

@@ -102,8 +102,9 @@ cd app
 15. Add one or more corrected segments to a benchmark set split, then in the `Benchmark set` panel pick `Test frozen` or `Validation` and click `Run set benchmark`. Confirm the progress counts (queued/running/done/failed) advance, one `stt_benchmark_result` per candidate is appended for each set segment, and a single failing segment is reported without aborting the run.
 16. In the `Candidate summary` panel, click `Summarize by candidate` for the same split. Confirm one row per STT candidate (`stage:provider/model (variant)`) with segment count, mean/median CER, mean/median WER, mean latency, and a missing-result count, and that the summary is labeled with the split it was computed from.
 17. Click `Open dictionary`, add an entry like `{"from":"dic tex","to":"DicTeX"}`, save the file, then dictate a phrase containing "dic tex". Confirm the clipboard/pasted text and the `Inserted (normalized)` line show `DicTeX`, the `Last transcript (raw)` textarea still shows the raw STT output, and a `normalization_result` event was appended while `stt_result.stt_output` kept the raw transcript. Break the JSON on purpose and confirm the next dictation still inserts the raw text with a quiet `Normalizer:` diagnostic instead of failing.
-18. In the `STT model` selector (controls panel), pick a different model. Confirm the `Model` diagnostic reflects it, dictate a phrase, and confirm the `stt_result` event records the chosen model. Restart the app and confirm the selector still shows the chosen model (persisted in `data/settings.json`). Corrupt `settings.json` and confirm the app still starts and dictates using the env var / default `base`.
-19. In the `Candidate summary` panel, after summarizing a split, type a selection reason and click `Select` on one candidate's row. Confirm a `Selected` badge appears on that row, the banner above the table shows the selected candidate and reason, an `stt_candidate_selection` event was appended to the events log, and selecting a different candidate updates the banner/badge without removing the earlier event.
+18. Without touching `rules.json`, dictate "deux plus trois" spoken as digits (e.g. "2 plus 3") and confirm the inserted text shows `2 + 3` from the shipped default rules alone. Then dictate an ordinary sentence containing "plus" or "moins" outside a math context (e.g. "je suis de plus en plus fatigué") and confirm it is inserted unchanged. Click `Open rules`, break the JSON on purpose, and confirm the next dictation inserts the (still dictionary-normalized) text unchanged by regex rules with a quiet `Normalizer:` diagnostic instead of failing.
+19. In the `STT model` selector (controls panel), pick a different model. Confirm the `Model` diagnostic reflects it, dictate a phrase, and confirm the `stt_result` event records the chosen model. Restart the app and confirm the selector still shows the chosen model (persisted in `data/settings.json`). Corrupt `settings.json` and confirm the app still starts and dictates using the env var / default `base`.
+20. In the `Candidate summary` panel, after summarizing a split, type a selection reason and click `Select` on one candidate's row. Confirm a `Selected` badge appears on that row, the banner above the table shows the selected candidate and reason, an `stt_candidate_selection` event was appended to the events log, and selecting a different candidate updates the banner/badge without removing the earlier event.
 
 ## Run
 
@@ -244,6 +245,7 @@ data/
       seg_0001.webm
   normalizer/
     dictionary.json
+    rules.json
 ```
 
 Each dictation writes at least two events:
@@ -329,9 +331,10 @@ automatically.
 ## Normalization Pipeline
 
 Before the transcript is copied/pasted, DicTeX runs it through an ordered
-text-to-text normalization pipeline (strategic pivot, Phase 2). Layer 1 is a
-deterministic personal dictionary; layers 2 (regex rules) and 3 (seq2seq model)
-are added in later issues without reshaping the interface.
+text-to-text normalization pipeline (strategic pivot, Phase 2): the personal
+dictionary (layer 1) runs first, then the regex math-verbalization rules
+(layer 2). Layer 3 (seq2seq model) is added in a later issue without
+reshaping the interface.
 
 The personal dictionary is a user-editable JSON file. Empty by default; a
 missing or invalid file degrades to passthrough (byte-identical output) with a
@@ -350,13 +353,43 @@ Entries are literal, case-sensitive substring replacements applied in file
 order. Malformed individual entries are skipped (with a diagnostic) while valid
 entries still apply.
 
+The regex rules layer runs after the dictionary. Unlike the dictionary, it
+ships a small default set of conservative French math-verbalization rules that
+applies out of the box, even before the rules file exists. Use the `Open
+rules` button to create/open it; the seeded file contains the shipped
+defaults, editable in place.
+
+```text
+data/normalizer/rules.json
+```
+
+```json
+{"version":1,"rules":[{"pattern":"...","replacement":"$1²","flags":"i"}]}
+```
+
+Each rule's `pattern` is a Unicode-aware JS regex source (always matched with
+forced `g`/`u` flags, plus any `flags` given); `replacement` may reference
+capture groups (`$1`, `$2`, ...). Rules apply in file order. Every default
+rule requires a real operand (a run of digits, or a single Unicode letter
+standing for a variable) on both sides of the keyword, and rejects a match
+where that operand is glued to a surrounding letter/digit — this is what keeps
+prose like "de plus en plus" or "je suis moins fatigué" untouched, since
+"plus"/"moins" only convert between two such operands. The default set
+covers: "x au carré" -> `x²`, "x au cube" -> `x³`, "x puissance n" -> `x^n`
+(caret notation, since there is no general Unicode superscript), "racine
+(carrée) de x" -> `√x`, "x égal(e) y" -> `x = y`, "plus grand/petit que" ->
+`>`/`<`, and "plus"/"moins"/"fois"/"divisé par" -> `+`/`-`/`×`/`/`. A malformed
+rules file (bad JSON or shape) disables the whole layer with a passthrough and
+a quiet diagnostic; a malformed individual rule (e.g. invalid regex) is
+skipped the same way individual dictionary entries are.
+
 The raw `stt_result` event is left untouched. Each dictation appends a separate
 append-only `normalization_result` event recording the input, the final output,
 and every layer's output, so a wrong insertion can be attributed to a specific
 layer:
 
 ```json
-{"event_type":"normalization_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","input_transcript":"dic tex","output_transcript":"DicTeX","passthrough":false,"layers":[{"layer":"personal_dictionary","input":"dic tex","output":"DicTeX","applied":true,"diagnostics":[]}],"diagnostics":[]}
+{"event_type":"normalization_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","input_transcript":"x au carré","output_transcript":"x²","passthrough":false,"layers":[{"layer":"personal_dictionary","input":"x au carré","output":"x au carré","applied":false,"diagnostics":[]},{"layer":"regex_rules","input":"x au carré","output":"x²","applied":true,"diagnostics":[]}],"diagnostics":[]}
 ```
 
 History shows the raw transcript; the normalized inserted text is shown
