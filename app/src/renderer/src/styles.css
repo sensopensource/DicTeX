@@ -461,6 +461,129 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.batch-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.batch-progress {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.batch-progress-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.batch-count {
+  border: 1px solid #2a2a2a;
+  border-radius: 0.4rem;
+  padding: 0.28rem 0.5rem;
+  color: #b8b8b8;
+  background: #101010;
+  font-size: 0.72rem;
+}
+
+.batch-count-done {
+  border-color: #275b37;
+  color: #93e0a8;
+}
+
+.batch-count-failed {
+  border-color: #713030;
+  color: #ff9a9a;
+}
+
+.batch-current {
+  overflow: hidden;
+  margin: 0;
+  color: #8f8f8f;
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-last {
+  margin: 0;
+  color: #93e0a8;
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
+.batch-last-failed {
+  color: #ff9a9a;
+}
+
+.batch-outcomes {
+  display: grid;
+  gap: 0.4rem;
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.batch-outcome {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.45rem;
+  padding: 0.5rem 0.6rem;
+  background: #101010;
+}
+
+.batch-outcome-failed {
+  border-color: #713030;
+}
+
+.batch-outcome-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.batch-outcome-heading strong {
+  overflow: hidden;
+  color: #f4f4f4;
+  font-size: 0.74rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-outcome-state {
+  border: 1px solid #275b37;
+  border-radius: 999px;
+  padding: 0.16rem 0.4rem;
+  color: #93e0a8;
+  font-size: 0.62rem;
+  font-style: normal;
+  text-transform: uppercase;
+}
+
+.batch-outcome-state-failed {
+  border-color: #713030;
+  color: #ff9a9a;
+}
+
+.batch-outcome-meta {
+  margin: 0;
+  color: #8f8f8f;
+  font-size: 0.74rem;
+}
+
+.batch-outcome-error {
+  margin: 0;
+  color: #ffb5b5;
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
 .transcript-label {
   color: #8f8f8f;
   font-size: 0.72rem;

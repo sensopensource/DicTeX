@@ -140,6 +140,40 @@ type SttBenchmarkSetMembershipResponse = {
   split: SttBenchmarkSetSplit;
 };
 
+type SttBenchmarkSetSegmentOutcome = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+  status: "done" | "failed";
+  error: string | null;
+  results: SttBenchmarkResult[];
+};
+
+type SttBenchmarkSetRunResponse = {
+  split: SttBenchmarkSetSplit;
+  total: number;
+  done: number;
+  failed: number;
+  outcomes: SttBenchmarkSetSegmentOutcome[];
+};
+
+type SttBenchmarkSetProgress = {
+  split: SttBenchmarkSetSplit;
+  total: number;
+  queued: number;
+  running: number;
+  done: number;
+  failed: number;
+  current: { sessionId: string; segmentId: string } | null;
+  lastOutcome: {
+    sessionId: string;
+    segmentId: string;
+    status: "done" | "failed";
+    error: string | null;
+    resultCount: number;
+  } | null;
+};
+
 type HistoryCorrectionTarget = {
   sessionId: string;
   segmentId: string;
@@ -166,6 +200,8 @@ type DictationApi = {
   ) => Promise<SttBenchmarkSetMembershipResponse>;
   runLatestSttBenchmark?: () => Promise<SttBenchmarkResponse>;
   runSegmentSttBenchmark?: (audioSegment: AudioSegmentRecord) => Promise<SttBenchmarkResponse>;
+  runSetSttBenchmark?: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkSetRunResponse>;
+  onBatchBenchmarkProgress?: (callback: (progress: SttBenchmarkSetProgress) => void) => () => void;
 };
 
 declare global {
@@ -197,6 +233,11 @@ function App(): React.ReactElement {
   const [benchmarkError, setBenchmarkError] = useState("");
   const [isBenchmarking, setIsBenchmarking] = useState(false);
   const [benchmarkTargetKey, setBenchmarkTargetKey] = useState<string | null>(null);
+  const [batchSplit, setBatchSplit] = useState<SttBenchmarkSetSplit>("test_frozen");
+  const [batchProgress, setBatchProgress] = useState<SttBenchmarkSetProgress | null>(null);
+  const [batchOutcomes, setBatchOutcomes] = useState<SttBenchmarkSetSegmentOutcome[]>([]);
+  const [batchError, setBatchError] = useState("");
+  const [isRunningBatch, setIsRunningBatch] = useState(false);
   const [isSavingCorrection, setIsSavingCorrection] = useState(false);
   const [benchmarkSetTargetKey, setBenchmarkSetTargetKey] = useState<string | null>(null);
   const [historyCorrectionTarget, setHistoryCorrectionTarget] = useState<HistoryCorrectionTarget | null>(null);
@@ -228,6 +269,10 @@ function App(): React.ReactElement {
       void startRecording();
     });
     const removeHotkeyStatusListener = window.dictex.onHotkeyStatus(setHotkeyStatus);
+    const removeBatchProgressListener =
+      typeof window.dictex.onBatchBenchmarkProgress === "function"
+        ? window.dictex.onBatchBenchmarkProgress(setBatchProgress)
+        : undefined;
     void window.dictex.getSttConfig().then(setSttConfig).catch(() => {
       setNotice("Could not read STT config");
     });
@@ -236,6 +281,7 @@ function App(): React.ReactElement {
     return () => {
       removeToggleListener();
       removeHotkeyStatusListener();
+      removeBatchProgressListener?.();
       stopAudioPlayback();
     };
   }, []);
@@ -572,6 +618,31 @@ function App(): React.ReactElement {
     }
   }
 
+  async function runSetSttBenchmark(): Promise<void> {
+    if (typeof window.dictex.runSetSttBenchmark !== "function") {
+      setBatchError("Restart DicTeX to load the benchmark set preload API");
+      return;
+    }
+
+    setBatchError("");
+    setNotice("");
+    setBatchOutcomes([]);
+    setBatchProgress(null);
+    setIsRunningBatch(true);
+
+    try {
+      const response = await window.dictex.runSetSttBenchmark(batchSplit);
+      setBatchOutcomes(response.outcomes);
+      setNotice(
+        `Benchmarked ${formatBenchmarkSetSplit(response.split)}: ${response.done} done, ${response.failed} failed of ${response.total}`,
+      );
+    } catch (runError) {
+      setBatchError(runError instanceof Error ? runError.message : "Benchmark set run failed");
+    } finally {
+      setIsRunningBatch(false);
+    }
+  }
+
   async function markSttBenchmarkSetMembership(segment: RecentSegment, split: SttBenchmarkSetSplit): Promise<void> {
     if (typeof window.dictex.markSttBenchmarkSetMembership !== "function") {
       setHistoryError("Restart DicTeX to load the benchmark set preload API");
@@ -779,6 +850,7 @@ function App(): React.ReactElement {
                       disabled={
                         typeof window.dictex.runSegmentSttBenchmark !== "function" ||
                         isBenchmarking ||
+                        isRunningBatch ||
                         status === "recording" ||
                         status === "transcribing"
                       }
@@ -849,6 +921,7 @@ function App(): React.ReactElement {
             disabled={
               typeof window.dictex.runLatestSttBenchmark !== "function" ||
               isBenchmarking ||
+              isRunningBatch ||
               status === "recording" ||
               status === "transcribing"
             }
@@ -876,6 +949,110 @@ function App(): React.ReactElement {
                   {result.score && <span title={`Reference: ${result.score.referenceTranscript}`}>{formatScore(result.score)}</span>}
                 </div>
                 <p>{result.transcript || "-"}</p>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="panel benchmark-panel" aria-busy={isRunningBatch}>
+        <div className="benchmark-header">
+          <div>
+            <h2>Benchmark set</h2>
+            <p>Run STT candidates over every corrected {formatBenchmarkSetSplit(batchSplit)} segment</p>
+          </div>
+          <div className="batch-controls">
+            <select
+              aria-label="STT benchmark set split to run"
+              className="secondary-select"
+              disabled={isRunningBatch || isBenchmarking || status === "recording" || status === "transcribing"}
+              value={batchSplit}
+              onChange={(event) => {
+                const split = event.currentTarget.value;
+                if (isSttBenchmarkSetSplit(split)) {
+                  setBatchSplit(split);
+                }
+              }}
+            >
+              <option value="test_frozen">Test frozen</option>
+              <option value="validation">Validation</option>
+            </select>
+            <button
+              className="secondary-button"
+              disabled={
+                typeof window.dictex.runSetSttBenchmark !== "function" ||
+                isRunningBatch ||
+                isBenchmarking ||
+                status === "recording" ||
+                status === "transcribing"
+              }
+              onClick={() => void runSetSttBenchmark()}
+            >
+              {typeof window.dictex.runSetSttBenchmark !== "function"
+                ? "Restart app"
+                : isRunningBatch
+                  ? "Running"
+                  : "Run set benchmark"}
+            </button>
+          </div>
+        </div>
+
+        {batchError && <pre className="error">{batchError}</pre>}
+
+        {batchProgress && (
+          <div className="batch-progress">
+            <div className="batch-progress-counts">
+              <span className="batch-count">Total {batchProgress.total}</span>
+              <span className="batch-count">Queued {batchProgress.queued}</span>
+              <span className="batch-count">Running {batchProgress.running}</span>
+              <span className="batch-count batch-count-done">Done {batchProgress.done}</span>
+              <span className="batch-count batch-count-failed">Failed {batchProgress.failed}</span>
+            </div>
+            {batchProgress.current && (
+              <p className="batch-current" title={`${batchProgress.current.sessionId} / ${batchProgress.current.segmentId}`}>
+                Running {batchProgress.current.sessionId} / {batchProgress.current.segmentId}
+              </p>
+            )}
+            {batchProgress.lastOutcome && (
+              <p className={batchProgress.lastOutcome.status === "failed" ? "batch-last batch-last-failed" : "batch-last"}>
+                {batchProgress.lastOutcome.status === "failed"
+                  ? `Failed ${batchProgress.lastOutcome.sessionId} / ${batchProgress.lastOutcome.segmentId}: ${batchProgress.lastOutcome.error ?? "error"}`
+                  : `Done ${batchProgress.lastOutcome.sessionId} / ${batchProgress.lastOutcome.segmentId} (${batchProgress.lastOutcome.resultCount} candidates)`}
+              </p>
+            )}
+          </div>
+        )}
+
+        {batchProgress && batchProgress.total === 0 && !isRunningBatch && (
+          <p className="empty-state">No corrected segments in {formatBenchmarkSetSplit(batchSplit)} yet.</p>
+        )}
+
+        {batchOutcomes.length > 0 && (
+          <div className="batch-outcomes">
+            {batchOutcomes.map((outcome) => (
+              <article
+                className={outcome.status === "failed" ? "batch-outcome batch-outcome-failed" : "batch-outcome"}
+                key={`${outcome.sessionId}/${outcome.segmentId}`}
+              >
+                <div className="batch-outcome-heading">
+                  <strong title={`${outcome.sessionId} / ${outcome.segmentId}`}>
+                    {outcome.sessionId} / {outcome.segmentId}
+                  </strong>
+                  <em
+                    className={
+                      outcome.status === "failed" ? "batch-outcome-state batch-outcome-state-failed" : "batch-outcome-state"
+                    }
+                  >
+                    {outcome.status}
+                  </em>
+                </div>
+                {outcome.status === "failed" ? (
+                  <p className="batch-outcome-error">{outcome.error ?? "Benchmark failed"}</p>
+                ) : (
+                  <p className="batch-outcome-meta">
+                    {outcome.results.length} candidates{formatBatchOutcomeScore(outcome)}
+                  </p>
+                )}
               </article>
             ))}
           </div>
@@ -968,6 +1145,18 @@ function formatBenchmarkCandidateKey(result: SttBenchmarkResult): string {
 
 function formatScore(score: SttBenchmarkScore): string {
   return `${score.metric.toUpperCase()} ${(score.value * 100).toFixed(1)}%`;
+}
+
+function formatBatchOutcomeScore(outcome: SttBenchmarkSetSegmentOutcome): string {
+  const scores = outcome.results
+    .map((result) => result.score)
+    .filter((score): score is SttBenchmarkScore => score !== null);
+  if (scores.length === 0) {
+    return "";
+  }
+
+  const bestCer = Math.min(...scores.map((score) => score.value));
+  return ` · best CER ${(bestCer * 100).toFixed(1)}%`;
 }
 
 function formatBenchmarkSetSplit(split: SttBenchmarkSetSplit): string {
