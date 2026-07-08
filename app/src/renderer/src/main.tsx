@@ -158,6 +158,7 @@ type DictationApi = {
   openDataFolder: () => Promise<boolean>;
   openEventsLog: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
+  getSttBenchmarkModels?: () => Promise<string[]>;
   getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
   getSegmentAudio?: (audioSegment: AudioSegmentRecord) => Promise<AudioSegmentPlayback>;
   saveSttCorrection?: (correction: SttCorrectionRequest) => Promise<SttCorrectionResponse>;
@@ -196,6 +197,7 @@ function App(): React.ReactElement {
   const [benchmarkResults, setBenchmarkResults] = useState<SttBenchmarkResult[]>([]);
   const [benchmarkError, setBenchmarkError] = useState("");
   const [isBenchmarking, setIsBenchmarking] = useState(false);
+  const [benchmarkModels, setBenchmarkModels] = useState<string[]>([]);
   const [benchmarkTargetKey, setBenchmarkTargetKey] = useState<string | null>(null);
   const [isSavingCorrection, setIsSavingCorrection] = useState(false);
   const [benchmarkSetTargetKey, setBenchmarkSetTargetKey] = useState<string | null>(null);
@@ -231,6 +233,11 @@ function App(): React.ReactElement {
     void window.dictex.getSttConfig().then(setSttConfig).catch(() => {
       setNotice("Could not read STT config");
     });
+    if (typeof window.dictex.getSttBenchmarkModels === "function") {
+      void window.dictex.getSttBenchmarkModels().then(setBenchmarkModels).catch(() => {
+        // Silently fail if benchmark models cannot be fetched; default UI behavior is fine
+      });
+    }
     void loadRecentSegments();
 
     return () => {
@@ -843,6 +850,9 @@ function App(): React.ReactElement {
             <p title={benchmarkSource ? `${benchmarkSource.sessionId} / ${benchmarkSource.segmentId}` : undefined}>
               {benchmarkSource ? `${benchmarkSource.sessionId} / ${benchmarkSource.segmentId}` : "Latest audio segment"}
             </p>
+            {benchmarkModels.length > 0 && (
+              <p className="benchmark-models">Models: {benchmarkModels.join(", ")}</p>
+            )}
           </div>
           <button
             className="secondary-button"
