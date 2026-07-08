@@ -255,6 +255,8 @@ type DictationApi = {
   openDictionaryFile?: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
   getSttBenchmarkModels?: () => Promise<string[]>;
+  getSttModels?: () => Promise<string[]>;
+  setSttModel?: (model: string) => Promise<SttConfig>;
   getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
   getSegmentAudio?: (audioSegment: AudioSegmentRecord) => Promise<AudioSegmentPlayback>;
   saveSttCorrection?: (correction: SttCorrectionRequest) => Promise<SttCorrectionResponse>;
@@ -284,6 +286,8 @@ function App(): React.ReactElement {
   const [correctionNotice, setCorrectionNotice] = useState("");
   const [hotkeyStatus, setHotkeyStatus] = useState<HotkeyStatus | null>(null);
   const [sttConfig, setSttConfig] = useState<SttConfig | null>(null);
+  const [availableSttModels, setAvailableSttModels] = useState<string[]>([]);
+  const [isSettingSttModel, setIsSettingSttModel] = useState(false);
   const [lastPasteState, setLastPasteState] = useState<"none" | "pasted" | "clipboard-only">("none");
   const [lastResult, setLastResult] = useState<TranscriptionResult | null>(null);
   const [recentSegments, setRecentSegments] = useState<RecentSegment[]>([]);
@@ -347,6 +351,11 @@ function App(): React.ReactElement {
     void window.dictex.getSttConfig().then(setSttConfig).catch(() => {
       setNotice("Could not read STT config");
     });
+    if (typeof window.dictex.getSttModels === "function") {
+      void window.dictex.getSttModels().then(setAvailableSttModels).catch(() => {
+        // Selector is optional; without the list the visible config line still shows the active model.
+      });
+    }
     if (typeof window.dictex.getSttBenchmarkModels === "function") {
       void window.dictex.getSttBenchmarkModels().then(setBenchmarkModels).catch(() => {
         // Silently fail if benchmark models cannot be fetched; default UI behavior is fine
@@ -676,6 +685,29 @@ function App(): React.ReactElement {
     }
   }
 
+  async function changeSttModel(model: string): Promise<void> {
+    if (typeof window.dictex.setSttModel !== "function") {
+      setNotice("Restart DicTeX to load the STT model preload API");
+      return;
+    }
+
+    if (!model || model === sttConfig?.model) {
+      return;
+    }
+
+    setIsSettingSttModel(true);
+
+    try {
+      const updated = await window.dictex.setSttModel(model);
+      setSttConfig(updated);
+      setNotice(`STT model set to ${updated.model} (applies to the next dictation)`);
+    } catch (modelError) {
+      setNotice(modelError instanceof Error ? modelError.message : "Could not set STT model");
+    } finally {
+      setIsSettingSttModel(false);
+    }
+  }
+
   async function runLatestSttBenchmark(): Promise<void> {
     if (typeof window.dictex.runLatestSttBenchmark !== "function") {
       setBenchmarkError("Restart DicTeX to load the benchmark preload API");
@@ -844,6 +876,32 @@ function App(): React.ReactElement {
           <span className={hotkeyStatus === null ? "signal-muted" : hotkeyStatus.registered ? "signal-good" : "signal-bad"}>
             {hotkeyStatus === null ? "checking" : hotkeyStatus.registered ? "registered" : "not registered"}
           </span>
+        </div>
+
+        <div className="shortcut-row">
+          <span>STT model</span>
+          <select
+            aria-label="Active STT model"
+            className="secondary-select"
+            disabled={
+              typeof window.dictex.setSttModel !== "function" ||
+              isSettingSttModel ||
+              status === "recording" ||
+              status === "transcribing"
+            }
+            value={sttConfig?.model ?? ""}
+            onChange={(event) => void changeSttModel(event.currentTarget.value)}
+          >
+            {sttConfig?.model && !availableSttModels.includes(sttConfig.model) && (
+              <option value={sttConfig.model}>{sttConfig.model}</option>
+            )}
+            {availableSttModels.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
+          </select>
+          <span className="signal-muted">{isSettingSttModel ? "saving" : "next dictation"}</span>
         </div>
       </section>
 

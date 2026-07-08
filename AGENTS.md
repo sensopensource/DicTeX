@@ -125,6 +125,8 @@ Important runtime files:
 ```text
 C:\Users\souid\AppData\Roaming\dictex-app\data\events.jsonl
 C:\Users\souid\AppData\Roaming\dictex-app\data\audio\
+C:\Users\souid\AppData\Roaming\dictex-app\data\normalizer\dictionary.json
+C:\Users\souid\AppData\Roaming\dictex-app\data\settings.json
 ```
 
 ## Development Commands

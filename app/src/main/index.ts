@@ -18,6 +18,7 @@ import {
 } from "./localEvents.js";
 import { calculateCharacterErrorRate } from "./sttScoring.js";
 import { summarizeSttBenchmarkResultsByCandidate, type SttBenchmarkCandidateSummaryResponse } from "./benchmarkSummary.js";
+import { readAppSettings, writeAppSettings } from "./settings.js";
 import { normalizeTranscript, type NormalizationResult } from "./normalizer.js";
 
 type TranscriptionResult = {
@@ -201,19 +202,50 @@ const enginePath = path.join(repoRoot, "engine", "transcribe.py");
 const sessionId = `session_${new Date().toISOString().replace(/\D/g, "")}`;
 const globalHotkey = "Super+Alt+Space";
 const defaultSttBenchmarkModels = ["tiny", "base", "small"];
+// The minimum models always offered in the UI selector. `large-v3-turbo` is the
+// current dictation model on GPU (see docs/development.md "GPU (CUDA) STT").
+const defaultSttModels = ["tiny", "base", "small", "large-v3-turbo"];
 
 let mainWindow: BrowserWindow | null = null;
 let globalHotkeyRegistered = false;
 let segmentCounter = 0;
+// STT model chosen from the UI and persisted in settings.json. Null means "no UI
+// choice", so the env var / default applies. Loaded at startup before the window.
+let activeSttModelOverride: string | null = null;
+
+function getSttModel(): string {
+  // Precedence: saved UI choice > DICTEX_STT_MODEL env var > built-in default.
+  return activeSttModelOverride || process.env.DICTEX_STT_MODEL || "base";
+}
 
 function getSttConfig(): SttConfig {
   return {
     engine: "faster-whisper",
-    model: process.env.DICTEX_STT_MODEL || "base",
+    model: getSttModel(),
     language: process.env.DICTEX_STT_LANGUAGE || "fr",
     device: process.env.DICTEX_STT_DEVICE || "cpu",
     computeType: process.env.DICTEX_STT_COMPUTE_TYPE || "int8",
   };
+}
+
+/**
+ * Models offered in the UI selector: the minimum core set, plus the benchmark
+ * candidate universe (from DICTEX_STT_BENCHMARK_MODELS when set) so dictation and
+ * benchmark stay consistent, plus the active model so it is always selectable.
+ */
+function getAvailableSttModels(): string[] {
+  const models: string[] = [];
+  const add = (model: string): void => {
+    if (model && !models.includes(model)) {
+      models.push(model);
+    }
+  };
+
+  defaultSttModels.forEach(add);
+  getSttBenchmarkModels().forEach(add);
+  add(getSttModel());
+
+  return models;
 }
 
 function getSttBenchmarkModels(): string[] {
@@ -346,6 +378,23 @@ function getEventsPath(): string {
 
 function getNormalizerDir(): string {
   return path.join(getDataRoot(), "normalizer");
+}
+
+function getSettingsPath(): string {
+  return path.join(getDataRoot(), "settings.json");
+}
+
+/**
+ * Load persisted settings at startup and apply the saved STT model, if any.
+ * Malformed settings degrade to defaults with a quiet console diagnostic; they
+ * never block startup or dictation.
+ */
+async function loadPersistedSettings(): Promise<void> {
+  const { settings, diagnostics } = await readAppSettings(getSettingsPath());
+  activeSttModelOverride = settings.sttModel;
+  for (const diagnostic of diagnostics) {
+    console.warn(`[settings] ${diagnostic}`);
+  }
 }
 
 function getDictionaryPath(): string {
@@ -989,7 +1038,25 @@ ipcMain.handle("diagnostics:get-stt-config", (): SttConfig => getSttConfig());
 
 ipcMain.handle("diagnostics:get-stt-benchmark-models", (): string[] => getSttBenchmarkModels());
 
-app.whenReady().then(() => {
+ipcMain.handle("diagnostics:get-stt-models", (): string[] => getAvailableSttModels());
+
+ipcMain.handle("settings:set-stt-model", async (_event, model: unknown): Promise<SttConfig> => {
+  if (typeof model !== "string" || model.trim().length === 0) {
+    throw new Error("STT model must be a non-empty string");
+  }
+
+  const nextModel = model.trim();
+  activeSttModelOverride = nextModel;
+  // Persist so the choice survives a restart. Applies only to subsequent
+  // dictations; any in-flight transcription already captured its own config.
+  await writeAppSettings(getSettingsPath(), { sttModel: nextModel });
+
+  return getSttConfig();
+});
+
+app.whenReady().then(async () => {
+  // Apply the persisted STT model before the window loads its config.
+  await loadPersistedSettings();
   createWindow();
   registerGlobalHotkey();
 

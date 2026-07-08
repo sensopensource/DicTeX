@@ -102,6 +102,7 @@ cd app
 15. Add one or more corrected segments to a benchmark set split, then in the `Benchmark set` panel pick `Test frozen` or `Validation` and click `Run set benchmark`. Confirm the progress counts (queued/running/done/failed) advance, one `stt_benchmark_result` per candidate is appended for each set segment, and a single failing segment is reported without aborting the run.
 16. In the `Candidate summary` panel, click `Summarize by candidate` for the same split. Confirm one row per STT candidate (`stage:provider/model (variant)`) with segment count, mean/median CER, mean/median WER, mean latency, and a missing-result count, and that the summary is labeled with the split it was computed from.
 17. Click `Open dictionary`, add an entry like `{"from":"dic tex","to":"DicTeX"}`, save the file, then dictate a phrase containing "dic tex". Confirm the clipboard/pasted text and the `Inserted (normalized)` line show `DicTeX`, the `Last transcript (raw)` textarea still shows the raw STT output, and a `normalization_result` event was appended while `stt_result.stt_output` kept the raw transcript. Break the JSON on purpose and confirm the next dictation still inserts the raw text with a quiet `Normalizer:` diagnostic instead of failing.
+18. In the `STT model` selector (controls panel), pick a different model. Confirm the `Model` diagnostic reflects it, dictate a phrase, and confirm the `stt_result` event records the chosen model. Restart the app and confirm the selector still shows the chosen model (persisted in `data/settings.json`). Corrupt `settings.json` and confirm the app still starts and dictates using the env var / default `base`.
 
 ## Run
 
@@ -166,6 +167,35 @@ $env:DICTEX_STT_LANGUAGE="fr"
 cd app
 ..\scripts\npm.cmd run dev
 ```
+
+### Selecting the STT model from the UI
+
+The active STT model can also be chosen at runtime from the compact selector in
+the controls panel (models: `tiny`, `base`, `small`, `large-v3-turbo`, plus any
+`DICTEX_STT_BENCHMARK_MODELS` entries). The choice applies to subsequent
+dictations; in-flight transcriptions are unaffected.
+
+The selection is persisted in a small local settings file under the Electron
+`userData` data directory:
+
+```text
+data/settings.json
+```
+
+```json
+{"sttModel":"large-v3-turbo"}
+```
+
+It is a minimal flat JSON object. Model precedence is:
+
+```text
+saved UI choice (settings.json) > DICTEX_STT_MODEL env var > built-in default (base)
+```
+
+A missing or malformed `settings.json` never crashes the app or blocks
+dictation: it degrades to the env var / default with a quiet console
+diagnostic. `stt_result` events keep recording the model actually used per
+segment.
 
 ### GPU (CUDA) STT
 
