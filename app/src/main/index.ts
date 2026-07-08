@@ -18,9 +18,17 @@ import {
 } from "./localEvents.js";
 import { calculateCharacterErrorRate } from "./sttScoring.js";
 import { summarizeSttBenchmarkResultsByCandidate, type SttBenchmarkCandidateSummaryResponse } from "./benchmarkSummary.js";
+import { normalizeTranscript, type NormalizationResult } from "./normalizer.js";
 
 type TranscriptionResult = {
+  /** Raw STT output. Kept as the correction base; `stt_result.stt_output` mirrors it. */
   transcript: string;
+  /** Normalized text — this is what was copied to the clipboard / pasted. */
+  normalizedTranscript: string;
+  /** True when normalization changed the text (normalized differs from raw). */
+  normalizationApplied: boolean;
+  /** Quiet diagnostics from the normalizer (e.g. malformed dictionary). */
+  normalizationDiagnostics: string[];
   copiedToClipboard: boolean;
   pastedToActiveApp: boolean;
   sessionId: string;
@@ -336,6 +344,39 @@ function getEventsPath(): string {
   return path.join(getDataRoot(), "events.jsonl");
 }
 
+function getNormalizerDir(): string {
+  return path.join(getDataRoot(), "normalizer");
+}
+
+function getDictionaryPath(): string {
+  return path.join(getNormalizerDir(), "dictionary.json");
+}
+
+// Seeded on first open. Empty `entries` keeps dictation byte-identical (empty by
+// default); the ignored `_comment`/`_example` keys document the format in place.
+const emptyDictionaryTemplate = `${JSON.stringify(
+  {
+    version: 1,
+    _comment: "Literal, case-sensitive substring replacements applied in order. Add entries below.",
+    _example: { from: "dic tex", to: "DicTeX" },
+    entries: [],
+  },
+  null,
+  2,
+)}\n`;
+
+// Layer 1 of the normalization pipeline records each layer's output on the event
+// so a wrong insertion can be attributed to a specific layer (see AGENTS.md).
+function toNormalizationLayerRecords(normalization: NormalizationResult): JsonValue {
+  return normalization.layers.map((layer) => ({
+    layer: layer.layer,
+    input: layer.input,
+    output: layer.output,
+    applied: layer.applied,
+    diagnostics: layer.diagnostics,
+  }));
+}
+
 function getAudioExtension(mimeType: string): string {
   if (mimeType.includes("webm")) {
     return "webm";
@@ -622,14 +663,38 @@ ipcMain.handle(
       transcription_duration_ms: transcriptionDurationMs,
     });
 
-    clipboard.writeText(sttResult.transcript);
+    // Normalize the raw transcript before insertion. The raw stt_result above is
+    // left untouched; the normalized output and every layer's output are recorded
+    // in a separate append-only normalization_result event.
+    const normalization = await normalizeTranscript(sttResult.transcript, {
+      dictionaryPath: getDictionaryPath(),
+    });
+
+    await appendEvent({
+      event_type: "normalization_result",
+      session_id: sessionId,
+      segment_id: segmentId,
+      created_at: new Date().toISOString(),
+      audio_ref: audioRef,
+      input_transcript: normalization.input,
+      output_transcript: normalization.output,
+      passthrough: normalization.passthrough,
+      layers: toNormalizationLayerRecords(normalization),
+      diagnostics: normalization.diagnostics,
+    });
+
+    const insertedTranscript = normalization.output;
+    clipboard.writeText(insertedTranscript);
     const pastedToActiveApp =
-      options.autoPaste === true && sttResult.transcript.trim().length > 0
+      options.autoPaste === true && insertedTranscript.trim().length > 0
         ? await pasteClipboardIntoActiveApp()
         : false;
 
     return {
       transcript: sttResult.transcript,
+      normalizedTranscript: insertedTranscript,
+      normalizationApplied: !normalization.passthrough,
+      normalizationDiagnostics: normalization.diagnostics,
       copiedToClipboard: true,
       pastedToActiveApp,
       sessionId,
@@ -904,6 +969,19 @@ ipcMain.handle("diagnostics:open-events-log", async (): Promise<boolean> => {
     await writeFile(eventsPath, "", { encoding: "utf8" });
   }
   const error = await shell.openPath(eventsPath);
+  return error.length === 0;
+});
+
+ipcMain.handle("diagnostics:open-dictionary", async (): Promise<boolean> => {
+  const normalizerDir = getNormalizerDir();
+  await mkdir(normalizerDir, { recursive: true });
+  const dictionaryPath = getDictionaryPath();
+  if (!existsSync(dictionaryPath)) {
+    // Seed a self-documenting starter file so the user can edit rather than guess
+    // the format. The example entry is inert unless the user says "dic tex".
+    await writeFile(dictionaryPath, emptyDictionaryTemplate, { encoding: "utf8" });
+  }
+  const error = await shell.openPath(dictionaryPath);
   return error.length === 0;
 });
 

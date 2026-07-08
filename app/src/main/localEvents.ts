@@ -53,6 +53,27 @@ export type SttBenchmarkResultEvent = {
   score_reference_transcript?: string | null;
 };
 
+export type NormalizationLayerRecord = {
+  layer: string;
+  input: string;
+  output: string;
+  applied: boolean;
+  diagnostics?: string[];
+};
+
+export type NormalizationResultEvent = {
+  event_type: "normalization_result";
+  session_id: string;
+  segment_id: string;
+  created_at?: string;
+  audio_ref?: string | null;
+  input_transcript: string;
+  output_transcript: string;
+  passthrough?: boolean;
+  layers?: NormalizationLayerRecord[];
+  diagnostics?: string[];
+};
+
 export type CorrectionKind = "acoustic" | "math_transform" | "normalization" | "rephrasing";
 
 export type SttCorrectionEvent = {
@@ -90,6 +111,7 @@ export type LocalEvent =
   | SttBenchmarkResultEvent
   | SttCorrectionEvent
   | SttBenchmarkSetMembershipEvent
+  | NormalizationResultEvent
   | UnknownLocalEvent;
 
 export type ReconstructedSegment = {
@@ -98,6 +120,8 @@ export type ReconstructedSegment = {
   segmentId: string;
   audioRef: string;
   transcript: string;
+  normalizedTranscript: string | null;
+  normalizationCreatedAt: string | null;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;
@@ -151,6 +175,8 @@ type SegmentDraft = {
   segmentId: string;
   audioRef: string | null;
   transcript: string | null;
+  normalizedTranscript: string | null;
+  normalizationCreatedAt: string | null;
   sttEngine: string | null;
   sttModel: string | null;
   sttLanguage: string | null;
@@ -165,6 +191,7 @@ type SegmentDraft = {
   lastEventIndex: number;
   lastCorrectionEventIndex: number | null;
   lastBenchmarkSetEventIndex: number | null;
+  lastNormalizationEventIndex: number | null;
 };
 
 export async function readLocalEvents(eventsPath: string): Promise<LocalEvent[]> {
@@ -393,7 +420,8 @@ export function reconstructRecentSegments(events: LocalEvent[], limit = 20): Rec
       !isAudioSegmentEvent(event) &&
       !isSttResultEvent(event) &&
       !isSttCorrectionEvent(event) &&
-      !isSttBenchmarkSetMembershipEvent(event)
+      !isSttBenchmarkSetMembershipEvent(event) &&
+      !isNormalizationResultEvent(event)
     ) {
       return;
     }
@@ -440,6 +468,15 @@ export function reconstructRecentSegments(events: LocalEvent[], limit = 20): Rec
       }
     }
 
+    if (isNormalizationResultEvent(event)) {
+      if (draft.lastNormalizationEventIndex === null || eventIndex > draft.lastNormalizationEventIndex) {
+        draft.audioRef = getString(event.audio_ref) ?? draft.audioRef;
+        draft.normalizedTranscript = event.output_transcript;
+        draft.normalizationCreatedAt = getString(event.created_at);
+        draft.lastNormalizationEventIndex = eventIndex;
+      }
+    }
+
     segments.set(key, draft);
   });
 
@@ -455,6 +492,8 @@ export function reconstructRecentSegments(events: LocalEvent[], limit = 20): Rec
       segmentId: segment.segmentId,
       audioRef: segment.audioRef,
       transcript: segment.transcript,
+      normalizedTranscript: segment.normalizedTranscript,
+      normalizationCreatedAt: segment.normalizationCreatedAt,
       sttEngine: segment.sttEngine ?? "unknown",
       sttModel: segment.sttModel ?? "unknown",
       sttLanguage: segment.sttLanguage ?? "unknown",
@@ -476,6 +515,8 @@ function createSegmentDraft(sessionId: string, segmentId: string, eventIndex: nu
     segmentId,
     audioRef: null,
     transcript: null,
+    normalizedTranscript: null,
+    normalizationCreatedAt: null,
     sttEngine: null,
     sttModel: null,
     sttLanguage: null,
@@ -490,6 +531,7 @@ function createSegmentDraft(sessionId: string, segmentId: string, eventIndex: nu
     lastEventIndex: eventIndex,
     lastCorrectionEventIndex: null,
     lastBenchmarkSetEventIndex: null,
+    lastNormalizationEventIndex: null,
   };
 }
 
@@ -564,6 +606,15 @@ function isSttBenchmarkSetMembershipEvent(event: LocalEvent): event is SttBenchm
     typeof event.session_id === "string" &&
     typeof event.segment_id === "string" &&
     isSttBenchmarkSetSplit(event.split)
+  );
+}
+
+function isNormalizationResultEvent(event: LocalEvent): event is NormalizationResultEvent {
+  return (
+    event.event_type === "normalization_result" &&
+    typeof event.session_id === "string" &&
+    typeof event.segment_id === "string" &&
+    typeof (event as NormalizationResultEvent).output_transcript === "string"
   );
 }
 

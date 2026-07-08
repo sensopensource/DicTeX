@@ -586,6 +586,15 @@ Current STT corrections use separate event types and must not overwrite history:
 {"event_type":"stt_correction","created_at":"2026-07-05T00:00:00.000Z","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","raw_transcript":"...","corrected_transcript":"...","correction_method":"keyboard"}
 ```
 
+Each dictation also appends a normalization record (pivot Phase 2, layer 1).
+The raw `stt_result` is left untouched; the normalized output is what gets
+inserted, and each layer's output is preserved so a wrong insertion is
+attributable to a specific layer:
+
+```json
+{"event_type":"normalization_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","input_transcript":"dic tex","output_transcript":"DicTeX","passthrough":false,"layers":[{"layer":"personal_dictionary","input":"dic tex","output":"DicTeX","applied":true,"diagnostics":[]}],"diagnostics":[]}
+```
+
 Corrections stay append-only and must not overwrite history.
 
 Future correction typing (from the strategic pivot): tag each correction with a

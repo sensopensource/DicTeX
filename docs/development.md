@@ -101,6 +101,7 @@ cd app
 14. Benchmark a selected history segment and confirm results are associated with that segment id.
 15. Add one or more corrected segments to a benchmark set split, then in the `Benchmark set` panel pick `Test frozen` or `Validation` and click `Run set benchmark`. Confirm the progress counts (queued/running/done/failed) advance, one `stt_benchmark_result` per candidate is appended for each set segment, and a single failing segment is reported without aborting the run.
 16. In the `Candidate summary` panel, click `Summarize by candidate` for the same split. Confirm one row per STT candidate (`stage:provider/model (variant)`) with segment count, mean/median CER, mean/median WER, mean latency, and a missing-result count, and that the summary is labeled with the split it was computed from.
+17. Click `Open dictionary`, add an entry like `{"from":"dic tex","to":"DicTeX"}`, save the file, then dictate a phrase containing "dic tex". Confirm the clipboard/pasted text and the `Inserted (normalized)` line show `DicTeX`, the `Last transcript (raw)` textarea still shows the raw STT output, and a `normalization_result` event was appended while `stt_result.stt_output` kept the raw transcript. Break the JSON on purpose and confirm the next dictation still inserts the raw text with a quiet `Normalizer:` diagnostic instead of failing.
 
 ## Run
 
@@ -184,6 +185,8 @@ data/
   audio/
     session_<timestamp>/
       seg_0001.webm
+  normalizer/
+    dictionary.json
 ```
 
 Each dictation writes at least two events:
@@ -242,3 +245,39 @@ Per candidate it reports:
 Only the STT stage is scored today; the summary is STT-only by construction
 because it groups by `stage`, so a future `math_transform` or `normalization`
 candidate would summarize separately once that stage starts scoring results.
+
+## Normalization Pipeline
+
+Before the transcript is copied/pasted, DicTeX runs it through an ordered
+text-to-text normalization pipeline (strategic pivot, Phase 2). Layer 1 is a
+deterministic personal dictionary; layers 2 (regex rules) and 3 (seq2seq model)
+are added in later issues without reshaping the interface.
+
+The personal dictionary is a user-editable JSON file. Empty by default; a
+missing or invalid file degrades to passthrough (byte-identical output) with a
+quiet diagnostic, never a crash or a blocked dictation. Use the `Open
+dictionary` button to create/open it.
+
+```text
+data/normalizer/dictionary.json
+```
+
+```json
+{"version":1,"entries":[{"from":"dic tex","to":"DicTeX"}]}
+```
+
+Entries are literal, case-sensitive substring replacements applied in file
+order. Malformed individual entries are skipped (with a diagnostic) while valid
+entries still apply.
+
+The raw `stt_result` event is left untouched. Each dictation appends a separate
+append-only `normalization_result` event recording the input, the final output,
+and every layer's output, so a wrong insertion can be attributed to a specific
+layer:
+
+```json
+{"event_type":"normalization_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","input_transcript":"dic tex","output_transcript":"DicTeX","passthrough":false,"layers":[{"layer":"personal_dictionary","input":"dic tex","output":"DicTeX","applied":true,"diagnostics":[]}],"diagnostics":[]}
+```
+
+History shows the raw transcript; the normalized inserted text is shown
+distinctly when it differs.

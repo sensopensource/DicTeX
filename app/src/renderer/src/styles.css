@@ -322,11 +322,48 @@ h2 {
   -webkit-line-clamp: 2;
 }
 
+.history-normalized-transcript {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #9fc7a6;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .history-footer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.5rem;
   align-items: center;
+}
+
+.normalized-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #2f3a30;
+  border-radius: 8px;
+  background: #1a211b;
+}
+
+.normalized-preview-label {
+  color: #9fc7a6;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.normalized-preview-text {
+  margin: 0;
+  color: #e8e8e8;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .history-meta {
@@ -611,6 +648,73 @@ h2 {
 
 .summary-table td {
   color: #f4f4f4;
+}
+
+.error-analysis-candidates {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 22rem;
+  overflow: auto;
+}
+
+.error-analysis-candidate {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.45rem;
+  padding: 0.6rem;
+  background: #101010;
+}
+
+.error-analysis-candidate strong {
+  overflow: hidden;
+  color: #f4f4f4;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.error-category-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.error-category-badge {
+  border: 1px solid #6b5a1f;
+  border-radius: 999px;
+  padding: 0.16rem 0.45rem;
+  color: #e0c675;
+  font-size: 0.66rem;
+}
+
+.error-examples {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.error-example {
+  display: grid;
+  gap: 0.15rem;
+  border-top: 1px solid #202020;
+  padding-top: 0.35rem;
+}
+
+.error-example-heading {
+  color: #d8d8d8;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.error-example-detail {
+  color: #8f8f8f;
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
 }
 
 .transcript-label {
