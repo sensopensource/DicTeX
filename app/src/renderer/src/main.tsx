@@ -140,6 +140,13 @@ type SttBenchmarkSetMembershipResponse = {
   split: SttBenchmarkSetSplit;
 };
 
+type HistoryCorrectionTarget = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+  rawTranscript: string;
+};
+
 type DictationApi = {
   transcribeAudio: (
     audioBytes: Uint8Array,
@@ -192,6 +199,8 @@ function App(): React.ReactElement {
   const [benchmarkTargetKey, setBenchmarkTargetKey] = useState<string | null>(null);
   const [isSavingCorrection, setIsSavingCorrection] = useState(false);
   const [benchmarkSetTargetKey, setBenchmarkSetTargetKey] = useState<string | null>(null);
+  const [historyCorrectionTarget, setHistoryCorrectionTarget] = useState<HistoryCorrectionTarget | null>(null);
+  const [historyCorrectionDraft, setHistoryCorrectionDraft] = useState("");
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const isStartingRef = useRef(false);
@@ -246,6 +255,8 @@ function App(): React.ReactElement {
     setTranscript("");
     setLastPasteState("none");
     setLastResult(null);
+    setHistoryCorrectionTarget(null);
+    setHistoryCorrectionDraft("");
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -439,6 +450,51 @@ function App(): React.ReactElement {
         correctionMethod: "keyboard",
       });
       setCorrectionNotice(`Saved correction for ${saved.sessionId} / ${saved.segmentId}`);
+      void loadRecentSegments();
+    } catch (saveError) {
+      setCorrectionNotice(saveError instanceof Error ? saveError.message : "Could not save correction");
+    } finally {
+      setIsSavingCorrection(false);
+    }
+  }
+
+  function startHistoryCorrection(segment: RecentSegment): void {
+    setHistoryCorrectionTarget({
+      sessionId: segment.sessionId,
+      segmentId: segment.segmentId,
+      audioRef: segment.audioRef,
+      rawTranscript: segment.transcript,
+    });
+    setHistoryCorrectionDraft(segment.correctedTranscript ?? segment.transcript);
+    setCorrectionNotice("");
+    setNotice(`Correction target ${segment.sessionId} / ${segment.segmentId}`);
+  }
+
+  async function saveHistoryCorrection(): Promise<void> {
+    if (!historyCorrectionTarget) {
+      return;
+    }
+
+    if (typeof window.dictex.saveSttCorrection !== "function") {
+      setCorrectionNotice("Restart DicTeX to load the correction preload API");
+      return;
+    }
+
+    setCorrectionNotice("");
+    setIsSavingCorrection(true);
+
+    try {
+      const saved = await window.dictex.saveSttCorrection({
+        sessionId: historyCorrectionTarget.sessionId,
+        segmentId: historyCorrectionTarget.segmentId,
+        audioRef: historyCorrectionTarget.audioRef,
+        rawTranscript: historyCorrectionTarget.rawTranscript,
+        correctedTranscript: historyCorrectionDraft,
+        correctionMethod: "keyboard",
+      });
+      setCorrectionNotice(`Saved correction for ${saved.sessionId} / ${saved.segmentId}`);
+      setHistoryCorrectionTarget(null);
+      setHistoryCorrectionDraft("");
       void loadRecentSegments();
     } catch (saveError) {
       setCorrectionNotice(saveError instanceof Error ? saveError.message : "Could not save correction");
@@ -713,6 +769,13 @@ function App(): React.ReactElement {
                     </select>
                     <button
                       className="secondary-button"
+                      disabled={isSavingCorrection || status === "recording" || status === "transcribing"}
+                      onClick={() => startHistoryCorrection(segment)}
+                    >
+                      Correct
+                    </button>
+                    <button
+                      className="secondary-button"
                       disabled={
                         typeof window.dictex.runSegmentSttBenchmark !== "function" ||
                         isBenchmarking ||
@@ -730,6 +793,48 @@ function App(): React.ReactElement {
           </div>
         )}
       </section>
+
+      {historyCorrectionTarget && (
+        <section className="panel correction-panel">
+          <div className="correction-header">
+            <div>
+              <h2>STT correction</h2>
+              <p title={`${historyCorrectionTarget.sessionId} / ${historyCorrectionTarget.segmentId}`}>
+                {historyCorrectionTarget.sessionId} / {historyCorrectionTarget.segmentId}
+              </p>
+            </div>
+            <button
+              className="secondary-button"
+              disabled={isSavingCorrection}
+              onClick={() => {
+                setHistoryCorrectionTarget(null);
+                setHistoryCorrectionDraft("");
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+
+          <p className="correction-raw">Raw: {historyCorrectionTarget.rawTranscript || "-"}</p>
+          <textarea
+            value={historyCorrectionDraft}
+            onChange={(event) => {
+              setHistoryCorrectionDraft(event.target.value);
+              setCorrectionNotice("");
+            }}
+            aria-label="Corrected transcript"
+          />
+          <div className="actions">
+            <button
+              className="secondary-button"
+              disabled={isSavingCorrection || historyCorrectionDraft.length === 0}
+              onClick={() => void saveHistoryCorrection()}
+            >
+              {isSavingCorrection ? "Saving" : "Save correction"}
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="panel benchmark-panel" aria-busy={isBenchmarking}>
         <div className="benchmark-header">
