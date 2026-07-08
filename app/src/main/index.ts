@@ -146,7 +146,7 @@ const repoRoot = path.resolve(__dirname, "..", "..", "..");
 const enginePath = path.join(repoRoot, "engine", "transcribe.py");
 const sessionId = `session_${new Date().toISOString().replace(/\D/g, "")}`;
 const globalHotkey = "Super+Alt+Space";
-const sttBenchmarkCandidateModels = ["tiny", "base", "small"];
+const defaultSttBenchmarkModels = ["tiny", "base", "small"];
 
 let mainWindow: BrowserWindow | null = null;
 let globalHotkeyRegistered = false;
@@ -162,8 +162,24 @@ function getSttConfig(): SttConfig {
   };
 }
 
+function getSttBenchmarkModels(): string[] {
+  const envValue = process.env.DICTEX_STT_BENCHMARK_MODELS;
+  if (!envValue) {
+    return defaultSttBenchmarkModels;
+  }
+
+  const parsed = envValue
+    .split(",")
+    .map((m) => m.trim())
+    .filter((m) => m.length > 0);
+
+  const unique = Array.from(new Set(parsed));
+
+  return unique.length > 0 ? unique : defaultSttBenchmarkModels;
+}
+
 function getSttBenchmarkCandidates(config: SttConfig): BenchmarkCandidate[] {
-  return sttBenchmarkCandidateModels.map((model) => ({
+  return getSttBenchmarkModels().map((model) => ({
     stage: "stt",
     provider: config.engine,
     model,
@@ -752,6 +768,8 @@ ipcMain.handle("diagnostics:open-events-log", async (): Promise<boolean> => {
 });
 
 ipcMain.handle("diagnostics:get-stt-config", (): SttConfig => getSttConfig());
+
+ipcMain.handle("diagnostics:get-stt-benchmark-models", (): string[] => getSttBenchmarkModels());
 
 app.whenReady().then(() => {
   createWindow();
