@@ -103,6 +103,7 @@ cd app
 16. In the `Candidate summary` panel, click `Summarize by candidate` for the same split. Confirm one row per STT candidate (`stage:provider/model (variant)`) with segment count, mean/median CER, mean/median WER, mean latency, and a missing-result count, and that the summary is labeled with the split it was computed from.
 17. Click `Open dictionary`, add an entry like `{"from":"dic tex","to":"DicTeX"}`, save the file, then dictate a phrase containing "dic tex". Confirm the clipboard/pasted text and the `Inserted (normalized)` line show `DicTeX`, the `Last transcript (raw)` textarea still shows the raw STT output, and a `normalization_result` event was appended while `stt_result.stt_output` kept the raw transcript. Break the JSON on purpose and confirm the next dictation still inserts the raw text with a quiet `Normalizer:` diagnostic instead of failing.
 18. In the `STT model` selector (controls panel), pick a different model. Confirm the `Model` diagnostic reflects it, dictate a phrase, and confirm the `stt_result` event records the chosen model. Restart the app and confirm the selector still shows the chosen model (persisted in `data/settings.json`). Corrupt `settings.json` and confirm the app still starts and dictates using the env var / default `base`.
+19. In the `Candidate summary` panel, after summarizing a split, type a selection reason and click `Select` on one candidate's row. Confirm a `Selected` badge appears on that row, the banner above the table shows the selected candidate and reason, an `stt_candidate_selection` event was appended to the events log, and selecting a different candidate updates the banner/badge without removing the earlier event.
 
 ## Run
 
@@ -301,6 +302,29 @@ Per candidate it reports:
 Only the STT stage is scored today; the summary is STT-only by construction
 because it groups by `stage`, so a future `math_transform` or `normalization`
 candidate would summarize separately once that stage starts scoring results.
+
+## STT Candidate Selection
+
+The `Candidate summary` panel also lets the user mark which STT candidate is
+the currently selected base model, so that choice does not have to live only
+in memory or in `DICTEX_STT_MODEL`. Selection is manual: choosing the
+highest-quality candidate blindly can be wrong if it is much slower, so the
+panel keeps mean latency visible next to CER/WER when picking one.
+
+Enter a reason and click `Select` (or `Reselect`) on a candidate's row in the
+summary table. This appends an `stt_candidate_selection` event; it never
+overwrites or removes prior selections, so the full selection history stays in
+`events.jsonl`. The panel reads the latest such event (latest-event-wins, same
+rule as every other append-only marker in this file) to show which candidate
+is currently selected.
+
+```json
+{"event_type":"stt_candidate_selection","created_at":"2026-07-08T00:00:00.000Z","stage":"stt","provider":"faster-whisper","model":"base","variant":"cpu-int8-fr","selection_reason":"best quality/latency tradeoff on test_frozen"}
+```
+
+This is a manual record for the user's own reference; it does not change
+`DICTEX_STT_MODEL` or any other runtime config, and DicTeX does not act on it
+automatically.
 
 ## Normalization Pipeline
 

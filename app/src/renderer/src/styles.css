@@ -625,6 +625,28 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.reason-input {
+  flex: 1;
+  min-width: 16rem;
+  border: 1px solid #303030;
+  border-radius: 0.45rem;
+  padding: 0.5rem 0.6rem;
+  color: #d8d8d8;
+  background: #1c1c1c;
+  font-size: 0.78rem;
+}
+
+.selected-badge {
+  margin-left: 0.4rem;
+  border: 1px solid #2f6b3f;
+  border-radius: 999px;
+  padding: 0.1rem 0.4rem;
+  color: #8fe0a4;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .summary-table {
   width: 100%;
   border-collapse: collapse;
