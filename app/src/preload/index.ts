@@ -232,6 +232,7 @@ contextBridge.exposeInMainWorld("dictex", {
   openDataFolder: () => ipcRenderer.invoke("diagnostics:open-data-folder") as Promise<boolean>,
   openEventsLog: () => ipcRenderer.invoke("diagnostics:open-events-log") as Promise<boolean>,
   openDictionaryFile: () => ipcRenderer.invoke("diagnostics:open-dictionary") as Promise<boolean>,
+  openRulesFile: () => ipcRenderer.invoke("diagnostics:open-rules") as Promise<boolean>,
   getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
   getSttBenchmarkModels: () => ipcRenderer.invoke("diagnostics:get-stt-benchmark-models") as Promise<string[]>,
   getRecentSegments: (limit = 20) => ipcRenderer.invoke("history:get-recent-segments", limit) as Promise<RecentSegment[]>,
