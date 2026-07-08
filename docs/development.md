@@ -99,6 +99,7 @@ cd app
 12. Click `Open data folder` and confirm the stored audio file exists under `data/audio/session_.../`.
 13. Click `Benchmark latest` and confirm `tiny`, `base`, and `small` STT results appear and `stt_benchmark_result` events are appended.
 14. Benchmark a selected history segment and confirm results are associated with that segment id.
+15. Add one or more corrected segments to a benchmark set split, then in the `Benchmark set` panel pick `Test frozen` or `Validation` and click `Run set benchmark`. Confirm the progress counts (queued/running/done/failed) advance, one `stt_benchmark_result` per candidate is appended for each set segment, and a single failing segment is reported without aborting the run.
 
 ## Run
 

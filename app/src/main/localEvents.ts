@@ -111,6 +111,15 @@ export type SegmentSttCorrection = {
   correctionKind: CorrectionKind | null;
 };
 
+export type SttBenchmarkSetSegment = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+  split: SttBenchmarkSetSplit;
+  benchmarkSetCreatedAt: string | null;
+  hasCorrection: boolean;
+};
+
 type SegmentDraft = {
   createdAt: string | null;
   sessionId: string;
@@ -194,6 +203,96 @@ export function getLatestSttCorrection(
   }
 
   return latestCorrection;
+}
+
+type BenchmarkSetSegmentDraft = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string | null;
+  split: SttBenchmarkSetSplit | null;
+  benchmarkSetCreatedAt: string | null;
+  lastMembershipEventIndex: number;
+  hasCorrection: boolean;
+};
+
+/**
+ * Returns every segment whose latest benchmark-set membership resolves to `split`,
+ * with a resolvable audio reference, in a deterministic order (session id then
+ * segment id). Membership is latest-event-wins, matching reconstructRecentSegments,
+ * so a segment moved between splits only appears under its current split.
+ */
+export function getSttBenchmarkSetSegments(
+  events: LocalEvent[],
+  split: SttBenchmarkSetSplit,
+): SttBenchmarkSetSegment[] {
+  const drafts = new Map<string, BenchmarkSetSegmentDraft>();
+
+  events.forEach((event, eventIndex) => {
+    if (
+      !isAudioSegmentEvent(event) &&
+      !isSttResultEvent(event) &&
+      !isSttCorrectionEvent(event) &&
+      !isSttBenchmarkSetMembershipEvent(event)
+    ) {
+      return;
+    }
+
+    const key = getSegmentKey(event.session_id, event.segment_id);
+    const draft =
+      drafts.get(key) ??
+      ({
+        sessionId: event.session_id,
+        segmentId: event.segment_id,
+        audioRef: null,
+        split: null,
+        benchmarkSetCreatedAt: null,
+        lastMembershipEventIndex: -1,
+        hasCorrection: false,
+      } satisfies BenchmarkSetSegmentDraft);
+
+    if (isAudioSegmentEvent(event)) {
+      draft.audioRef = event.audio_ref;
+    }
+
+    if (isSttResultEvent(event)) {
+      draft.audioRef = getString(event.audio_ref) ?? draft.audioRef;
+    }
+
+    if (isSttCorrectionEvent(event)) {
+      draft.hasCorrection = true;
+    }
+
+    if (isSttBenchmarkSetMembershipEvent(event) && eventIndex > draft.lastMembershipEventIndex) {
+      draft.split = event.split;
+      draft.benchmarkSetCreatedAt = getString(event.created_at);
+      draft.audioRef = getString(event.audio_ref) ?? draft.audioRef;
+      draft.lastMembershipEventIndex = eventIndex;
+    }
+
+    drafts.set(key, draft);
+  });
+
+  return Array.from(drafts.values())
+    .filter((draft): draft is BenchmarkSetSegmentDraft & { audioRef: string; split: SttBenchmarkSetSplit } => {
+      return draft.split === split && typeof draft.audioRef === "string";
+    })
+    .sort((left, right) => {
+      if (left.sessionId !== right.sessionId) {
+        return left.sessionId < right.sessionId ? -1 : 1;
+      }
+      if (left.segmentId === right.segmentId) {
+        return 0;
+      }
+      return left.segmentId < right.segmentId ? -1 : 1;
+    })
+    .map((draft) => ({
+      sessionId: draft.sessionId,
+      segmentId: draft.segmentId,
+      audioRef: draft.audioRef,
+      split: draft.split,
+      benchmarkSetCreatedAt: draft.benchmarkSetCreatedAt,
+      hasCorrection: draft.hasCorrection,
+    }));
 }
 
 export function reconstructRecentSegments(events: LocalEvent[], limit = 20): ReconstructedSegment[] {

@@ -7,10 +7,12 @@ import { fileURLToPath } from "node:url";
 import {
   getLatestAudioSegment as getLatestAudioSegmentFromEvents,
   getLatestSttCorrection,
+  getSttBenchmarkSetSegments,
   isCorrectionKind,
   readLocalEvents,
   reconstructRecentSegments,
   type CorrectionKind,
+  type LocalEvent,
   type ReconstructedSegment,
   type SttBenchmarkSetSplit,
 } from "./localEvents.js";
@@ -130,6 +132,44 @@ type SttBenchmarkSetMembershipResponse = {
   split: SttBenchmarkSetSplit;
 };
 
+type SttBenchmarkSetRunRequest = {
+  split: SttBenchmarkSetSplit;
+};
+
+type SttBenchmarkSetSegmentOutcome = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+  status: "done" | "failed";
+  error: string | null;
+  results: SttBenchmarkResult[];
+};
+
+type SttBenchmarkSetRunResponse = {
+  split: SttBenchmarkSetSplit;
+  total: number;
+  done: number;
+  failed: number;
+  outcomes: SttBenchmarkSetSegmentOutcome[];
+};
+
+type SttBenchmarkSetProgress = {
+  split: SttBenchmarkSetSplit;
+  total: number;
+  queued: number;
+  running: number;
+  done: number;
+  failed: number;
+  current: { sessionId: string; segmentId: string } | null;
+  lastOutcome: {
+    sessionId: string;
+    segmentId: string;
+    status: "done" | "failed";
+    error: string | null;
+    resultCount: number;
+  } | null;
+};
+
 type EngineTranscriptionResult = {
   transcript: string;
   sttEngine: string;
@@ -233,6 +273,14 @@ function sendHotkeyStatus(): void {
     accelerator: "Win+Alt+Space",
     registered: globalHotkeyRegistered,
   });
+}
+
+function sendBatchBenchmarkProgress(progress: SttBenchmarkSetProgress): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send("benchmark:set-progress", progress);
 }
 
 function registerGlobalHotkey(): void {
@@ -477,7 +525,10 @@ function calculateEditDistance(left: string, right: string): number {
   return previousRow[right.length];
 }
 
-async function runSttBenchmarkForAudioSegment(audioSegment: AudioSegmentRecord): Promise<SttBenchmarkResponse> {
+async function runSttBenchmarkForAudioSegment(
+  audioSegment: AudioSegmentRecord,
+  events?: LocalEvent[],
+): Promise<SttBenchmarkResponse> {
   const audioPath = resolveDataRef(audioSegment.audioRef);
   if (!existsSync(audioPath)) {
     throw new Error(`Audio segment file not found: ${audioSegment.audioRef}`);
@@ -485,7 +536,8 @@ async function runSttBenchmarkForAudioSegment(audioSegment: AudioSegmentRecord):
 
   const baseConfig = getSttConfig();
   const results: SttBenchmarkResult[] = [];
-  const correction = getLatestSttCorrection(await readLocalEvents(getEventsPath()), audioSegment.sessionId, audioSegment.segmentId);
+  const loadedEvents = events ?? (await readLocalEvents(getEventsPath()));
+  const correction = getLatestSttCorrection(loadedEvents, audioSegment.sessionId, audioSegment.segmentId);
 
   for (const candidate of getSttBenchmarkCandidates(baseConfig)) {
     const config = {
@@ -759,6 +811,108 @@ ipcMain.handle("benchmark:run-segment-stt", async (_event, audioSegment: AudioSe
 
   return runSttBenchmarkForAudioSegment(audioSegment);
 });
+
+ipcMain.handle(
+  "benchmark:run-set-stt",
+  async (_event, request: SttBenchmarkSetRunRequest): Promise<SttBenchmarkSetRunResponse> => {
+    if (!request || !isSttBenchmarkSetSplit(request.split)) {
+      throw new Error("Invalid STT benchmark set split");
+    }
+
+    const split = request.split;
+    // Read the event log once so every segment scores against the same correction
+    // snapshot and appended benchmark results cannot shift later lookups.
+    const events = await readLocalEvents(getEventsPath());
+    const segments = getSttBenchmarkSetSegments(events, split);
+    const total = segments.length;
+
+    let queued = total;
+    let running = 0;
+    let done = 0;
+    let failed = 0;
+    const outcomes: SttBenchmarkSetSegmentOutcome[] = [];
+
+    sendBatchBenchmarkProgress({ split, total, queued, running, done, failed, current: null, lastOutcome: null });
+
+    for (const segment of segments) {
+      queued -= 1;
+      running = 1;
+      sendBatchBenchmarkProgress({
+        split,
+        total,
+        queued,
+        running,
+        done,
+        failed,
+        current: { sessionId: segment.sessionId, segmentId: segment.segmentId },
+        lastOutcome: null,
+      });
+
+      try {
+        const response = await runSttBenchmarkForAudioSegment(
+          { sessionId: segment.sessionId, segmentId: segment.segmentId, audioRef: segment.audioRef },
+          events,
+        );
+        running = 0;
+        done += 1;
+        outcomes.push({
+          sessionId: segment.sessionId,
+          segmentId: segment.segmentId,
+          audioRef: segment.audioRef,
+          status: "done",
+          error: null,
+          results: response.results,
+        });
+        sendBatchBenchmarkProgress({
+          split,
+          total,
+          queued,
+          running,
+          done,
+          failed,
+          current: null,
+          lastOutcome: {
+            sessionId: segment.sessionId,
+            segmentId: segment.segmentId,
+            status: "done",
+            error: null,
+            resultCount: response.results.length,
+          },
+        });
+      } catch (error) {
+        running = 0;
+        failed += 1;
+        const message = error instanceof Error ? error.message : "Benchmark failed";
+        outcomes.push({
+          sessionId: segment.sessionId,
+          segmentId: segment.segmentId,
+          audioRef: segment.audioRef,
+          status: "failed",
+          error: message,
+          results: [],
+        });
+        sendBatchBenchmarkProgress({
+          split,
+          total,
+          queued,
+          running,
+          done,
+          failed,
+          current: null,
+          lastOutcome: {
+            sessionId: segment.sessionId,
+            segmentId: segment.segmentId,
+            status: "failed",
+            error: message,
+            resultCount: 0,
+          },
+        });
+      }
+    }
+
+    return { split, total, done, failed, outcomes };
+  },
+);
 
 ipcMain.handle("diagnostics:open-data-folder", async (): Promise<boolean> => {
   const dataRoot = getDataRoot();
