@@ -588,6 +588,31 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+
+.summary-table th,
+.summary-table td {
+  border-bottom: 1px solid #2a2a2a;
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.summary-table th {
+  color: #8f8f8f;
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+}
+
+.summary-table td {
+  color: #f4f4f4;
+}
+
 .transcript-label {
   color: #8f8f8f;
   font-size: 0.72rem;
