@@ -209,6 +209,17 @@ type SttBenchmarkCandidateSummaryResponse = {
   candidates: SttBenchmarkCandidateSummary[];
 };
 
+type SttCandidateSelectionRequest = {
+  candidate: BenchmarkCandidateIdentity;
+  selectionReason: string;
+};
+
+type SttCandidateSelectionResponse = {
+  createdAt: string;
+  candidate: BenchmarkCandidateIdentity;
+  selectionReason: string;
+};
+
 type SttErrorCategory =
   | "empty_output"
   | "high_cer"
@@ -256,6 +267,8 @@ type DictationApi = {
   openRulesFile?: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
   getSttBenchmarkModels?: () => Promise<string[]>;
+  getSttModels?: () => Promise<string[]>;
+  setSttModel?: (model: string) => Promise<SttConfig>;
   getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
   getSegmentAudio?: (audioSegment: AudioSegmentRecord) => Promise<AudioSegmentPlayback>;
   saveSttCorrection?: (correction: SttCorrectionRequest) => Promise<SttCorrectionResponse>;
@@ -267,6 +280,8 @@ type DictationApi = {
   runSetSttBenchmark?: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkSetRunResponse>;
   onBatchBenchmarkProgress?: (callback: (progress: SttBenchmarkSetProgress) => void) => () => void;
   summarizeSttBenchmarkSet?: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkCandidateSummaryResponse>;
+  selectSttCandidate?: (request: SttCandidateSelectionRequest) => Promise<SttCandidateSelectionResponse>;
+  getLatestSttCandidateSelection?: () => Promise<SttCandidateSelectionResponse | null>;
 };
 
 declare global {
@@ -285,6 +300,8 @@ function App(): React.ReactElement {
   const [correctionNotice, setCorrectionNotice] = useState("");
   const [hotkeyStatus, setHotkeyStatus] = useState<HotkeyStatus | null>(null);
   const [sttConfig, setSttConfig] = useState<SttConfig | null>(null);
+  const [availableSttModels, setAvailableSttModels] = useState<string[]>([]);
+  const [isSettingSttModel, setIsSettingSttModel] = useState(false);
   const [lastPasteState, setLastPasteState] = useState<"none" | "pasted" | "clipboard-only">("none");
   const [lastResult, setLastResult] = useState<TranscriptionResult | null>(null);
   const [recentSegments, setRecentSegments] = useState<RecentSegment[]>([]);
@@ -307,6 +324,10 @@ function App(): React.ReactElement {
   const [candidateSummary, setCandidateSummary] = useState<SttBenchmarkCandidateSummaryResponse | null>(null);
   const [summaryError, setSummaryError] = useState("");
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const [currentSelection, setCurrentSelection] = useState<SttCandidateSelectionResponse | null>(null);
+  const [selectionReasonDraft, setSelectionReasonDraft] = useState("");
+  const [selectionError, setSelectionError] = useState("");
+  const [isSelectingCandidateKey, setIsSelectingCandidateKey] = useState("");
   const [isSavingCorrection, setIsSavingCorrection] = useState(false);
   const [correctionKind, setCorrectionKind] = useState<CorrectionKind | "">("");
   const [benchmarkSetTargetKey, setBenchmarkSetTargetKey] = useState<string | null>(null);
@@ -348,9 +369,19 @@ function App(): React.ReactElement {
     void window.dictex.getSttConfig().then(setSttConfig).catch(() => {
       setNotice("Could not read STT config");
     });
+    if (typeof window.dictex.getSttModels === "function") {
+      void window.dictex.getSttModels().then(setAvailableSttModels).catch(() => {
+        // Selector is optional; without the list the visible config line still shows the active model.
+      });
+    }
     if (typeof window.dictex.getSttBenchmarkModels === "function") {
       void window.dictex.getSttBenchmarkModels().then(setBenchmarkModels).catch(() => {
         // Silently fail if benchmark models cannot be fetched; default UI behavior is fine
+      });
+    }
+    if (typeof window.dictex.getLatestSttCandidateSelection === "function") {
+      void window.dictex.getLatestSttCandidateSelection().then(setCurrentSelection).catch(() => {
+        // Silently fail if the current selection cannot be fetched; the panel just shows none selected
       });
     }
     void loadRecentSegments();
@@ -691,6 +722,29 @@ function App(): React.ReactElement {
     }
   }
 
+  async function changeSttModel(model: string): Promise<void> {
+    if (typeof window.dictex.setSttModel !== "function") {
+      setNotice("Restart DicTeX to load the STT model preload API");
+      return;
+    }
+
+    if (!model || model === sttConfig?.model) {
+      return;
+    }
+
+    setIsSettingSttModel(true);
+
+    try {
+      const updated = await window.dictex.setSttModel(model);
+      setSttConfig(updated);
+      setNotice(`STT model set to ${updated.model} (applies to the next dictation)`);
+    } catch (modelError) {
+      setNotice(modelError instanceof Error ? modelError.message : "Could not set STT model");
+    } finally {
+      setIsSettingSttModel(false);
+    }
+  }
+
   async function runLatestSttBenchmark(): Promise<void> {
     if (typeof window.dictex.runLatestSttBenchmark !== "function") {
       setBenchmarkError("Restart DicTeX to load the benchmark preload API");
@@ -785,6 +839,35 @@ function App(): React.ReactElement {
     }
   }
 
+  async function selectCandidate(candidate: BenchmarkCandidateIdentity): Promise<void> {
+    if (typeof window.dictex.selectSttCandidate !== "function") {
+      setSelectionError("Restart DicTeX to load the candidate selection preload API");
+      return;
+    }
+
+    if (selectionReasonDraft.trim() === "") {
+      setSelectionError("Enter a selection reason before marking a candidate selected");
+      return;
+    }
+
+    const candidateKey = formatCandidateIdentityKey(candidate);
+    setSelectionError("");
+    setIsSelectingCandidateKey(candidateKey);
+
+    try {
+      const selection = await window.dictex.selectSttCandidate({
+        candidate,
+        selectionReason: selectionReasonDraft.trim(),
+      });
+      setCurrentSelection(selection);
+      setSelectionReasonDraft("");
+    } catch (selectionSaveError) {
+      setSelectionError(selectionSaveError instanceof Error ? selectionSaveError.message : "Could not save candidate selection");
+    } finally {
+      setIsSelectingCandidateKey("");
+    }
+  }
+
   async function markSttBenchmarkSetMembership(segment: RecentSegment, split: SttBenchmarkSetSplit): Promise<void> {
     if (typeof window.dictex.markSttBenchmarkSetMembership !== "function") {
       setHistoryError("Restart DicTeX to load the benchmark set preload API");
@@ -859,6 +942,32 @@ function App(): React.ReactElement {
           <span className={hotkeyStatus === null ? "signal-muted" : hotkeyStatus.registered ? "signal-good" : "signal-bad"}>
             {hotkeyStatus === null ? "checking" : hotkeyStatus.registered ? "registered" : "not registered"}
           </span>
+        </div>
+
+        <div className="shortcut-row">
+          <span>STT model</span>
+          <select
+            aria-label="Active STT model"
+            className="secondary-select"
+            disabled={
+              typeof window.dictex.setSttModel !== "function" ||
+              isSettingSttModel ||
+              status === "recording" ||
+              status === "transcribing"
+            }
+            value={sttConfig?.model ?? ""}
+            onChange={(event) => void changeSttModel(event.currentTarget.value)}
+          >
+            {sttConfig?.model && !availableSttModels.includes(sttConfig.model) && (
+              <option value={sttConfig.model}>{sttConfig.model}</option>
+            )}
+            {availableSttModels.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
+          </select>
+          <span className="signal-muted">{isSettingSttModel ? "saving" : "next dictation"}</span>
         </div>
       </section>
 
@@ -1246,6 +1355,14 @@ function App(): React.ReactElement {
 
         {summaryError && <pre className="error">{summaryError}</pre>}
 
+        <p className="empty-state">
+          {currentSelection
+            ? `Selected base candidate: ${formatCandidateIdentity(currentSelection.candidate)} — ${currentSelection.selectionReason}${
+                currentSelection.createdAt ? ` (${formatTimestamp(currentSelection.createdAt)})` : ""
+              }. The highest-quality candidate is not always best if latency is poor — compare mean latency before selecting.`
+            : "No base STT candidate selected yet. The highest-quality candidate is not always best if latency is poor — compare mean latency before selecting."}
+        </p>
+
         {candidateSummary && candidateSummary.split !== batchSplit && (
           <p className="empty-state">
             Showing {formatBenchmarkSetSplit(candidateSummary.split)}; select the split again and re-run to refresh.
@@ -1257,34 +1374,71 @@ function App(): React.ReactElement {
         )}
 
         {candidateSummary && candidateSummary.candidates.length > 0 && (
-          <table className="summary-table">
-            <thead>
-              <tr>
-                <th>Candidate</th>
-                <th>Segments</th>
-                <th>Mean CER</th>
-                <th>Median CER</th>
-                <th>Mean WER</th>
-                <th>Median WER</th>
-                <th>Mean latency</th>
-                <th>Missing</th>
-              </tr>
-            </thead>
-            <tbody>
-              {candidateSummary.candidates.map((summary) => (
-                <tr key={formatCandidateIdentityKey(summary.candidate)}>
-                  <td title={formatCandidateIdentityKey(summary.candidate)}>{formatCandidateIdentity(summary.candidate)}</td>
-                  <td>{summary.resultCount}</td>
-                  <td>{formatRatePercent(summary.meanCer)}</td>
-                  <td>{formatRatePercent(summary.medianCer)}</td>
-                  <td>{formatRatePercent(summary.meanWer)}</td>
-                  <td>{formatRatePercent(summary.medianWer)}</td>
-                  <td>{formatLatency(summary.meanLatencyMs === null ? null : Math.round(summary.meanLatencyMs))}</td>
-                  <td>{summary.missingCount}</td>
+          <>
+            <div className="actions">
+              <input
+                aria-label="Candidate selection reason"
+                className="reason-input"
+                placeholder="Selection reason (e.g. best quality/latency tradeoff on test_frozen)"
+                value={selectionReasonDraft}
+                onChange={(event) => {
+                  setSelectionReasonDraft(event.target.value);
+                  setSelectionError("");
+                }}
+              />
+            </div>
+
+            {selectionError && <pre className="error">{selectionError}</pre>}
+
+            <table className="summary-table">
+              <thead>
+                <tr>
+                  <th>Candidate</th>
+                  <th>Segments</th>
+                  <th>Mean CER</th>
+                  <th>Median CER</th>
+                  <th>Mean WER</th>
+                  <th>Median WER</th>
+                  <th>Mean latency</th>
+                  <th>Missing</th>
+                  <th>Selection</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {candidateSummary.candidates.map((summary) => {
+                  const candidateKey = formatCandidateIdentityKey(summary.candidate);
+                  const isSelected = currentSelection !== null && formatCandidateIdentityKey(currentSelection.candidate) === candidateKey;
+
+                  return (
+                    <tr key={candidateKey}>
+                      <td title={candidateKey}>
+                        {formatCandidateIdentity(summary.candidate)}
+                        {isSelected && <span className="selected-badge">Selected</span>}
+                      </td>
+                      <td>{summary.resultCount}</td>
+                      <td>{formatRatePercent(summary.meanCer)}</td>
+                      <td>{formatRatePercent(summary.medianCer)}</td>
+                      <td>{formatRatePercent(summary.meanWer)}</td>
+                      <td>{formatRatePercent(summary.medianWer)}</td>
+                      <td>{formatLatency(summary.meanLatencyMs === null ? null : Math.round(summary.meanLatencyMs))}</td>
+                      <td>{summary.missingCount}</td>
+                      <td>
+                        <button
+                          className="secondary-button"
+                          disabled={
+                            typeof window.dictex.selectSttCandidate !== "function" || isSelectingCandidateKey === candidateKey
+                          }
+                          onClick={() => void selectCandidate(summary.candidate)}
+                        >
+                          {isSelectingCandidateKey === candidateKey ? "Saving" : isSelected ? "Reselect" : "Select"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </>
         )}
       </section>
 

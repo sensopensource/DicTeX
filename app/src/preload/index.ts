@@ -208,6 +208,17 @@ type SttBenchmarkCandidateSummaryResponse = {
   candidates: SttBenchmarkCandidateSummary[];
 };
 
+type SttCandidateSelectionRequest = {
+  candidate: BenchmarkCandidateIdentity;
+  selectionReason: string;
+};
+
+type SttCandidateSelectionResponse = {
+  createdAt: string;
+  candidate: BenchmarkCandidateIdentity;
+  selectionReason: string;
+};
+
 contextBridge.exposeInMainWorld("dictex", {
   transcribeAudio: (audioBytes: Uint8Array, mimeType: string, options: TranscriptionOptions = {}) =>
     ipcRenderer.invoke("dictation:transcribe", audioBytes, mimeType, options) as Promise<TranscriptionResponse>,
@@ -235,6 +246,8 @@ contextBridge.exposeInMainWorld("dictex", {
   openRulesFile: () => ipcRenderer.invoke("diagnostics:open-rules") as Promise<boolean>,
   getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
   getSttBenchmarkModels: () => ipcRenderer.invoke("diagnostics:get-stt-benchmark-models") as Promise<string[]>,
+  getSttModels: () => ipcRenderer.invoke("diagnostics:get-stt-models") as Promise<string[]>,
+  setSttModel: (model: string) => ipcRenderer.invoke("settings:set-stt-model", model) as Promise<SttConfig>,
   getRecentSegments: (limit = 20) => ipcRenderer.invoke("history:get-recent-segments", limit) as Promise<RecentSegment[]>,
   getSegmentAudio: (audioSegment: AudioSegmentRecord) =>
     ipcRenderer.invoke("audio:get-segment", audioSegment) as Promise<AudioSegmentPlayback>,
@@ -249,6 +262,10 @@ contextBridge.exposeInMainWorld("dictex", {
     ipcRenderer.invoke("benchmark:run-set-stt", { split }) as Promise<SttBenchmarkSetRunResponse>,
   summarizeSttBenchmarkSet: (split: SttBenchmarkSetSplit) =>
     ipcRenderer.invoke("benchmark-set:summarize-stt", { split }) as Promise<SttBenchmarkCandidateSummaryResponse>,
+  selectSttCandidate: (request: SttCandidateSelectionRequest) =>
+    ipcRenderer.invoke("candidate-selection:save-stt", request) as Promise<SttCandidateSelectionResponse>,
+  getLatestSttCandidateSelection: () =>
+    ipcRenderer.invoke("candidate-selection:get-latest-stt") as Promise<SttCandidateSelectionResponse | null>,
   onBatchBenchmarkProgress: (callback: (progress: SttBenchmarkSetProgress) => void) => {
     const listener = (_event: IpcRendererEvent, progress: SttBenchmarkSetProgress) => {
       callback(progress);
