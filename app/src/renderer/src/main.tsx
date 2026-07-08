@@ -292,7 +292,10 @@ declare global {
 
 type Status = "idle" | "recording" | "transcribing" | "done" | "error";
 
+type View = "home" | "benchmark" | "dataset";
+
 function App(): React.ReactElement {
+  const [view, setView] = useState<View>("home");
   const [status, setStatus] = useState<Status>("idle");
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState("");
@@ -900,6 +903,37 @@ function App(): React.ReactElement {
     }
   }
 
+  function handleTranscriptChange(value: string): void {
+    setTranscript(value);
+    setCorrectionNotice("");
+  }
+
+  function handleCorrectionKindChange(kind: CorrectionKind | ""): void {
+    setCorrectionKind(kind);
+    setCorrectionNotice("");
+  }
+
+  function handleHistoryCorrectionDraftChange(value: string): void {
+    setHistoryCorrectionDraft(value);
+    setCorrectionNotice("");
+  }
+
+  function handleHistoryCorrectionKindChange(kind: CorrectionKind | ""): void {
+    setHistoryCorrectionKind(kind);
+    setCorrectionNotice("");
+  }
+
+  function cancelHistoryCorrection(): void {
+    setHistoryCorrectionTarget(null);
+    setHistoryCorrectionDraft("");
+    setHistoryCorrectionKind("");
+  }
+
+  function handleSelectionReasonDraftChange(value: string): void {
+    setSelectionReasonDraft(value);
+    setSelectionError("");
+  }
+
   const statusLabel =
     status === "done" && lastPasteState === "pasted"
       ? "pasted"
@@ -907,8 +941,214 @@ function App(): React.ReactElement {
         ? "copied"
         : status;
 
+  if (view === "benchmark") {
+    return (
+      <main className="app-shell">
+        <BenchmarkView
+          status={status}
+          benchmarkSource={benchmarkSource}
+          benchmarkResults={benchmarkResults}
+          benchmarkError={benchmarkError}
+          isBenchmarking={isBenchmarking}
+          benchmarkModels={benchmarkModels}
+          benchmarkTargetKey={benchmarkTargetKey}
+          runLatestSttBenchmark={runLatestSttBenchmark}
+          isRunningBatch={isRunningBatch}
+          batchSplit={batchSplit}
+          setBatchSplit={setBatchSplit}
+          batchProgress={batchProgress}
+          batchOutcomes={batchOutcomes}
+          batchError={batchError}
+          runSetSttBenchmark={runSetSttBenchmark}
+          candidateSummary={candidateSummary}
+          summaryError={summaryError}
+          isSummarizing={isSummarizing}
+          summarizeCandidates={summarizeCandidates}
+          currentSelection={currentSelection}
+          selectionReasonDraft={selectionReasonDraft}
+          setSelectionReasonDraft={handleSelectionReasonDraftChange}
+          selectionError={selectionError}
+          isSelectingCandidateKey={isSelectingCandidateKey}
+          selectCandidate={selectCandidate}
+          errorAnalysis={errorAnalysis}
+          onBack={() => setView("home")}
+        />
+      </main>
+    );
+  }
+
+  if (view === "dataset") {
+    return (
+      <main className="app-shell">
+        <DatasetView onBack={() => setView("home")} />
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
+      <HomeView
+        status={status}
+        statusLabel={statusLabel}
+        startRecording={() => void startRecording()}
+        stopRecording={() => stopRecording()}
+        hotkeyStatus={hotkeyStatus}
+        sttConfig={sttConfig}
+        availableSttModels={availableSttModels}
+        isSettingSttModel={isSettingSttModel}
+        changeSttModel={(model) => void changeSttModel(model)}
+        lastResult={lastResult}
+        lastPasteState={lastPasteState}
+        recentSegments={recentSegments}
+        historyError={historyError}
+        isLoadingHistory={isLoadingHistory}
+        loadRecentSegments={() => void loadRecentSegments()}
+        audioError={audioError}
+        loadingAudioSegmentKey={loadingAudioSegmentKey}
+        playingAudioSegmentKey={playingAudioSegmentKey}
+        playHistoryAudio={(segment) => void playHistoryAudio(segment)}
+        copyHistoryTranscript={(segment, mode) => void copyHistoryTranscript(segment, mode)}
+        benchmarkSetTargetKey={benchmarkSetTargetKey}
+        markSttBenchmarkSetMembership={(segment, split) => void markSttBenchmarkSetMembership(segment, split)}
+        isSavingCorrection={isSavingCorrection}
+        startHistoryCorrection={startHistoryCorrection}
+        benchmarkTargetKey={benchmarkTargetKey}
+        runSegmentSttBenchmark={(segment) => void runSegmentSttBenchmark(segment)}
+        isBenchmarking={isBenchmarking}
+        isRunningBatch={isRunningBatch}
+        historyCorrectionTarget={historyCorrectionTarget}
+        historyCorrectionDraft={historyCorrectionDraft}
+        setHistoryCorrectionDraft={handleHistoryCorrectionDraftChange}
+        historyCorrectionKind={historyCorrectionKind}
+        setHistoryCorrectionKind={handleHistoryCorrectionKindChange}
+        saveHistoryCorrection={() => void saveHistoryCorrection()}
+        cancelHistoryCorrection={cancelHistoryCorrection}
+        transcript={transcript}
+        setTranscript={handleTranscriptChange}
+        error={error}
+        notice={notice}
+        correctionNotice={correctionNotice}
+        copyTranscript={() => void copyTranscript()}
+        correctionKind={correctionKind}
+        setCorrectionKind={handleCorrectionKindChange}
+        saveSttCorrection={() => void saveSttCorrection()}
+        openDataFolder={() => void openDataFolder()}
+        openEventsLog={() => void openEventsLog()}
+        openDictionaryFile={() => void openDictionaryFile()}
+        openRulesFile={() => void openRulesFile()}
+        onNavigate={setView}
+      />
+    </main>
+  );
+}
+
+type HomeViewProps = {
+  status: Status;
+  statusLabel: string;
+  startRecording: () => void;
+  stopRecording: () => void;
+  hotkeyStatus: HotkeyStatus | null;
+  sttConfig: SttConfig | null;
+  availableSttModels: string[];
+  isSettingSttModel: boolean;
+  changeSttModel: (model: string) => void;
+  lastResult: TranscriptionResult | null;
+  lastPasteState: "none" | "pasted" | "clipboard-only";
+  recentSegments: RecentSegment[];
+  historyError: string;
+  isLoadingHistory: boolean;
+  loadRecentSegments: () => void;
+  audioError: string;
+  loadingAudioSegmentKey: string;
+  playingAudioSegmentKey: string;
+  playHistoryAudio: (segment: RecentSegment) => void;
+  copyHistoryTranscript: (segment: RecentSegment, mode: "raw" | "corrected") => void;
+  benchmarkSetTargetKey: string | null;
+  markSttBenchmarkSetMembership: (segment: RecentSegment, split: SttBenchmarkSetSplit) => void;
+  isSavingCorrection: boolean;
+  startHistoryCorrection: (segment: RecentSegment) => void;
+  benchmarkTargetKey: string | null;
+  runSegmentSttBenchmark: (segment: RecentSegment) => void;
+  isBenchmarking: boolean;
+  isRunningBatch: boolean;
+  historyCorrectionTarget: HistoryCorrectionTarget | null;
+  historyCorrectionDraft: string;
+  setHistoryCorrectionDraft: (value: string) => void;
+  historyCorrectionKind: CorrectionKind | "";
+  setHistoryCorrectionKind: (kind: CorrectionKind | "") => void;
+  saveHistoryCorrection: () => void;
+  cancelHistoryCorrection: () => void;
+  transcript: string;
+  setTranscript: (value: string) => void;
+  error: string;
+  notice: string;
+  correctionNotice: string;
+  copyTranscript: () => void;
+  correctionKind: CorrectionKind | "";
+  setCorrectionKind: (kind: CorrectionKind | "") => void;
+  saveSttCorrection: () => void;
+  openDataFolder: () => void;
+  openEventsLog: () => void;
+  openDictionaryFile: () => void;
+  openRulesFile: () => void;
+  onNavigate: (view: View) => void;
+};
+
+function HomeView({
+  status,
+  statusLabel,
+  startRecording,
+  stopRecording,
+  hotkeyStatus,
+  sttConfig,
+  availableSttModels,
+  isSettingSttModel,
+  changeSttModel,
+  lastResult,
+  lastPasteState,
+  recentSegments,
+  historyError,
+  isLoadingHistory,
+  loadRecentSegments,
+  audioError,
+  loadingAudioSegmentKey,
+  playingAudioSegmentKey,
+  playHistoryAudio,
+  copyHistoryTranscript,
+  benchmarkSetTargetKey,
+  markSttBenchmarkSetMembership,
+  isSavingCorrection,
+  startHistoryCorrection,
+  benchmarkTargetKey,
+  runSegmentSttBenchmark,
+  isBenchmarking,
+  isRunningBatch,
+  historyCorrectionTarget,
+  historyCorrectionDraft,
+  setHistoryCorrectionDraft,
+  historyCorrectionKind,
+  setHistoryCorrectionKind,
+  saveHistoryCorrection,
+  cancelHistoryCorrection,
+  transcript,
+  setTranscript,
+  error,
+  notice,
+  correctionNotice,
+  copyTranscript,
+  correctionKind,
+  setCorrectionKind,
+  saveSttCorrection,
+  openDataFolder,
+  openEventsLog,
+  openDictionaryFile,
+  openRulesFile,
+  onNavigate,
+}: HomeViewProps): React.ReactElement {
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+
+  return (
+    <>
       <header className="titlebar">
         <div>
           <p className="eyebrow">DicTeX</p>
@@ -916,6 +1156,15 @@ function App(): React.ReactElement {
         </div>
         <div className={`status-pill status-${statusLabel}`}>{statusLabel}</div>
       </header>
+
+      <section className="panel nav-panel">
+        <button className="nav-button" onClick={() => onNavigate("benchmark")}>
+          Benchmark
+        </button>
+        <button className="nav-button" onClick={() => onNavigate("dataset")}>
+          Dataset
+        </button>
+      </section>
 
       <section className="panel controls-panel">
         <button
@@ -987,14 +1236,23 @@ function App(): React.ReactElement {
 
       <section className="panel history-panel" aria-busy={isLoadingHistory}>
         <div className="history-header">
-          <div>
-            <h2>Recent segments</h2>
-            <p>{recentSegments.length > 0 ? `${recentSegments.length} local dictations` : "Local segment history"}</p>
-          </div>
+          <button
+            className="history-toggle"
+            aria-expanded={historyExpanded}
+            onClick={() => setHistoryExpanded((expanded) => !expanded)}
+          >
+            <span className={`history-chevron ${historyExpanded ? "history-chevron-open" : ""}`} aria-hidden="true">
+              ▸
+            </span>
+            <div>
+              <h2>Recent segments</h2>
+              <p>{recentSegments.length > 0 ? `${recentSegments.length} local dictations` : "Local segment history"}</p>
+            </div>
+          </button>
           <button
             className="secondary-button"
             disabled={isLoadingHistory || status === "recording" || status === "transcribing"}
-            onClick={() => void loadRecentSegments()}
+            onClick={() => loadRecentSegments()}
           >
             {isLoadingHistory ? "Loading" : "Refresh"}
           </button>
@@ -1003,7 +1261,7 @@ function App(): React.ReactElement {
         {historyError && <pre className="error">{historyError}</pre>}
         {audioError && <pre className="error">{audioError}</pre>}
 
-        {recentSegments.length === 0 && !historyError ? (
+        {historyExpanded && (recentSegments.length === 0 && !historyError ? (
           <p className="empty-state">No stored dictation segments found.</p>
         ) : (
           <div className="history-list">
@@ -1125,7 +1383,7 @@ function App(): React.ReactElement {
               </article>
             ))}
           </div>
-        )}
+        ))}
       </section>
 
       {historyCorrectionTarget && (
@@ -1137,15 +1395,7 @@ function App(): React.ReactElement {
                 {historyCorrectionTarget.sessionId} / {historyCorrectionTarget.segmentId}
               </p>
             </div>
-            <button
-              className="secondary-button"
-              disabled={isSavingCorrection}
-              onClick={() => {
-                setHistoryCorrectionTarget(null);
-                setHistoryCorrectionDraft("");
-                setHistoryCorrectionKind("");
-              }}
-            >
+            <button className="secondary-button" disabled={isSavingCorrection} onClick={cancelHistoryCorrection}>
               Cancel
             </button>
           </div>
@@ -1153,10 +1403,7 @@ function App(): React.ReactElement {
           <p className="correction-raw">Raw: {historyCorrectionTarget.rawTranscript || "-"}</p>
           <textarea
             value={historyCorrectionDraft}
-            onChange={(event) => {
-              setHistoryCorrectionDraft(event.target.value);
-              setCorrectionNotice("");
-            }}
+            onChange={(event) => setHistoryCorrectionDraft(event.target.value)}
             aria-label="Corrected transcript"
           />
           <div className="actions">
@@ -1164,21 +1411,160 @@ function App(): React.ReactElement {
               ariaLabel={`Correction kind for ${historyCorrectionTarget.sessionId} / ${historyCorrectionTarget.segmentId}`}
               value={historyCorrectionKind}
               disabled={isSavingCorrection}
-              onChange={(kind) => {
-                setHistoryCorrectionKind(kind);
-                setCorrectionNotice("");
-              }}
+              onChange={(kind) => setHistoryCorrectionKind(kind)}
             />
             <button
               className="secondary-button"
               disabled={isSavingCorrection || historyCorrectionDraft.length === 0 || historyCorrectionKind === ""}
-              onClick={() => void saveHistoryCorrection()}
+              onClick={saveHistoryCorrection}
             >
               {isSavingCorrection ? "Saving" : "Save correction"}
             </button>
           </div>
         </section>
       )}
+
+      <section className="panel transcript-panel">
+        <label className="transcript-label" htmlFor="transcript">
+          Last transcript (raw)
+        </label>
+        <textarea
+          id="transcript"
+          value={transcript}
+          onChange={(event) => setTranscript(event.target.value)}
+          placeholder="Your transcript will appear here."
+        />
+
+        {lastResult?.normalizationApplied && (
+          <div className="normalized-preview">
+            <span className="normalized-preview-label">Inserted (normalized)</span>
+            <p className="normalized-preview-text">{lastResult.normalizedTranscript || "-"}</p>
+          </div>
+        )}
+
+        {error && <pre className="error">{error}</pre>}
+        {notice && <p className="notice">{notice}</p>}
+        {correctionNotice && <p className="notice">{correctionNotice}</p>}
+
+        <div className="actions">
+          <button className="secondary-button" disabled={!transcript} onClick={copyTranscript}>
+            Copy
+          </button>
+          <CorrectionKindSelect
+            ariaLabel="Correction kind for the last transcript"
+            value={correctionKind}
+            disabled={!lastResult || isSavingCorrection || status === "recording" || status === "transcribing"}
+            onChange={(kind) => setCorrectionKind(kind)}
+          />
+          <button
+            className="secondary-button"
+            disabled={
+              !lastResult ||
+              isSavingCorrection ||
+              correctionKind === "" ||
+              status === "recording" ||
+              status === "transcribing"
+            }
+            onClick={saveSttCorrection}
+          >
+            {isSavingCorrection ? "Saving" : "Save correction"}
+          </button>
+          <button className="secondary-button" onClick={openDataFolder}>
+            Open data folder
+          </button>
+          <button className="secondary-button" onClick={openEventsLog}>
+            Open events log
+          </button>
+          <button
+            className="secondary-button"
+            disabled={typeof window.dictex.openDictionaryFile !== "function"}
+            onClick={openDictionaryFile}
+          >
+            Open dictionary
+          </button>
+          <button
+            className="secondary-button"
+            disabled={typeof window.dictex.openRulesFile !== "function"}
+            onClick={openRulesFile}
+          >
+            Open rules
+          </button>
+        </div>
+      </section>
+    </>
+  );
+}
+
+type BenchmarkViewProps = {
+  status: Status;
+  benchmarkSource: AudioSegmentRecord | null;
+  benchmarkResults: SttBenchmarkResult[];
+  benchmarkError: string;
+  isBenchmarking: boolean;
+  benchmarkModels: string[];
+  benchmarkTargetKey: string | null;
+  runLatestSttBenchmark: () => void;
+  isRunningBatch: boolean;
+  batchSplit: SttBenchmarkSetSplit;
+  setBatchSplit: (split: SttBenchmarkSetSplit) => void;
+  batchProgress: SttBenchmarkSetProgress | null;
+  batchOutcomes: SttBenchmarkSetSegmentOutcome[];
+  batchError: string;
+  runSetSttBenchmark: () => void;
+  candidateSummary: SttBenchmarkCandidateSummaryResponse | null;
+  summaryError: string;
+  isSummarizing: boolean;
+  summarizeCandidates: () => void;
+  currentSelection: SttCandidateSelectionResponse | null;
+  selectionReasonDraft: string;
+  setSelectionReasonDraft: (value: string) => void;
+  selectionError: string;
+  isSelectingCandidateKey: string;
+  selectCandidate: (candidate: BenchmarkCandidateIdentity) => void;
+  errorAnalysis: CandidateErrorAnalysis[];
+  onBack: () => void;
+};
+
+function BenchmarkView({
+  status,
+  benchmarkSource,
+  benchmarkResults,
+  benchmarkError,
+  isBenchmarking,
+  benchmarkModels,
+  benchmarkTargetKey,
+  runLatestSttBenchmark,
+  isRunningBatch,
+  batchSplit,
+  setBatchSplit,
+  batchProgress,
+  batchOutcomes,
+  batchError,
+  runSetSttBenchmark,
+  candidateSummary,
+  summaryError,
+  isSummarizing,
+  summarizeCandidates,
+  currentSelection,
+  selectionReasonDraft,
+  setSelectionReasonDraft,
+  selectionError,
+  isSelectingCandidateKey,
+  selectCandidate,
+  errorAnalysis,
+  onBack,
+}: BenchmarkViewProps): React.ReactElement {
+  return (
+    <>
+      <header className="titlebar">
+        <div>
+          <p className="eyebrow">DicTeX</p>
+          <h1>Benchmark</h1>
+        </div>
+        <button className="secondary-button" onClick={onBack}>
+          Back to home
+        </button>
+      </header>
 
       <section className="panel benchmark-panel" aria-busy={isBenchmarking}>
         <div className="benchmark-header">
@@ -1381,10 +1767,7 @@ function App(): React.ReactElement {
                 className="reason-input"
                 placeholder="Selection reason (e.g. best quality/latency tradeoff on test_frozen)"
                 value={selectionReasonDraft}
-                onChange={(event) => {
-                  setSelectionReasonDraft(event.target.value);
-                  setSelectionError("");
-                }}
+                onChange={(event) => setSelectionReasonDraft(event.target.value)}
               />
             </div>
 
@@ -1479,81 +1862,27 @@ function App(): React.ReactElement {
           </div>
         </section>
       )}
+    </>
+  );
+}
 
-      <section className="panel transcript-panel">
-        <label className="transcript-label" htmlFor="transcript">
-          Last transcript (raw)
-        </label>
-        <textarea
-          id="transcript"
-          value={transcript}
-          onChange={(event) => {
-            setTranscript(event.target.value);
-            setCorrectionNotice("");
-          }}
-          placeholder="Your transcript will appear here."
-        />
-
-        {lastResult?.normalizationApplied && (
-          <div className="normalized-preview">
-            <span className="normalized-preview-label">Inserted (normalized)</span>
-            <p className="normalized-preview-text">{lastResult.normalizedTranscript || "-"}</p>
-          </div>
-        )}
-
-        {error && <pre className="error">{error}</pre>}
-        {notice && <p className="notice">{notice}</p>}
-        {correctionNotice && <p className="notice">{correctionNotice}</p>}
-
-        <div className="actions">
-          <button className="secondary-button" disabled={!transcript} onClick={copyTranscript}>
-            Copy
-          </button>
-          <CorrectionKindSelect
-            ariaLabel="Correction kind for the last transcript"
-            value={correctionKind}
-            disabled={!lastResult || isSavingCorrection || status === "recording" || status === "transcribing"}
-            onChange={(kind) => {
-              setCorrectionKind(kind);
-              setCorrectionNotice("");
-            }}
-          />
-          <button
-            className="secondary-button"
-            disabled={
-              !lastResult ||
-              isSavingCorrection ||
-              correctionKind === "" ||
-              status === "recording" ||
-              status === "transcribing"
-            }
-            onClick={() => void saveSttCorrection()}
-          >
-            {isSavingCorrection ? "Saving" : "Save correction"}
-          </button>
-          <button className="secondary-button" onClick={openDataFolder}>
-            Open data folder
-          </button>
-          <button className="secondary-button" onClick={openEventsLog}>
-            Open events log
-          </button>
-          <button
-            className="secondary-button"
-            disabled={typeof window.dictex.openDictionaryFile !== "function"}
-            onClick={openDictionaryFile}
-          >
-            Open dictionary
-          </button>
-          <button
-            className="secondary-button"
-            disabled={typeof window.dictex.openRulesFile !== "function"}
-            onClick={openRulesFile}
-          >
-            Open rules
-          </button>
+function DatasetView({ onBack }: { onBack: () => void }): React.ReactElement {
+  return (
+    <>
+      <header className="titlebar">
+        <div>
+          <p className="eyebrow">DicTeX</p>
+          <h1>Dataset</h1>
         </div>
+        <button className="secondary-button" onClick={onBack}>
+          Back to home
+        </button>
+      </header>
+
+      <section className="panel">
+        <p className="empty-state">Bientôt.</p>
       </section>
-    </main>
+    </>
   );
 }
 

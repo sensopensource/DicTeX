@@ -98,6 +98,28 @@ h2 {
   background: #151515;
 }
 
+.nav-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  padding: 0.75rem;
+}
+
+.nav-button {
+  min-height: 2.75rem;
+  border: 1px solid #303030;
+  border-radius: 0.55rem;
+  color: #d8d8d8;
+  background: #1c1c1c;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.nav-button:hover {
+  background: #252525;
+}
+
 .controls-panel {
   display: grid;
   gap: 0.75rem;
@@ -216,6 +238,29 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.history-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  border: none;
+  padding: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.history-chevron {
+  color: #8f8f8f;
+  font-size: 0.8rem;
+  transition: transform 0.12s ease;
+}
+
+.history-chevron-open {
+  transform: rotate(90deg);
 }
 
 .history-header div {
