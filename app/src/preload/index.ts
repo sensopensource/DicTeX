@@ -259,8 +259,8 @@ contextBridge.exposeInMainWorld("dictex", {
   runLatestSttBenchmark: () => ipcRenderer.invoke("benchmark:run-latest-stt") as Promise<SttBenchmarkResponse>,
   runSegmentSttBenchmark: (audioSegment: AudioSegmentRecord) =>
     ipcRenderer.invoke("benchmark:run-segment-stt", audioSegment) as Promise<SttBenchmarkResponse>,
-  runSetSttBenchmark: (split: SttBenchmarkSetSplit) =>
-    ipcRenderer.invoke("benchmark:run-set-stt", { split }) as Promise<SttBenchmarkSetRunResponse>,
+  runSetSttBenchmark: (split: SttBenchmarkSetSplit, models?: string[]) =>
+    ipcRenderer.invoke("benchmark:run-set-stt", { split, models }) as Promise<SttBenchmarkSetRunResponse>,
   summarizeSttBenchmarkSet: (split: SttBenchmarkSetSplit) =>
     ipcRenderer.invoke("benchmark-set:summarize-stt", { split }) as Promise<SttBenchmarkCandidateSummaryResponse>,
   selectSttCandidate: (request: SttCandidateSelectionRequest) =>
