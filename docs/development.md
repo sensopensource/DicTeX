@@ -100,7 +100,8 @@ cd app
 13. Click `Benchmark latest` and confirm `tiny`, `base`, and `small` STT results appear and `stt_benchmark_result` events are appended.
 14. Benchmark a selected history segment and confirm results are associated with that segment id.
 15. Add one or more corrected segments to a benchmark set split, then in the `Benchmark set` panel pick `Test frozen` or `Validation` and click `Run set benchmark`. Confirm the progress counts (queued/running/done/failed) advance, one `stt_benchmark_result` per candidate is appended for each set segment, and a single failing segment is reported without aborting the run.
-16. Click `Open dictionary`, add an entry like `{"from":"dic tex","to":"DicTeX"}`, save the file, then dictate a phrase containing "dic tex". Confirm the clipboard/pasted text and the `Inserted (normalized)` line show `DicTeX`, the `Last transcript (raw)` textarea still shows the raw STT output, and a `normalization_result` event was appended while `stt_result.stt_output` kept the raw transcript. Break the JSON on purpose and confirm the next dictation still inserts the raw text with a quiet `Normalizer:` diagnostic instead of failing.
+16. In the `Candidate summary` panel, click `Summarize by candidate` for the same split. Confirm one row per STT candidate (`stage:provider/model (variant)`) with segment count, mean/median CER, mean/median WER, mean latency, and a missing-result count, and that the summary is labeled with the split it was computed from.
+17. Click `Open dictionary`, add an entry like `{"from":"dic tex","to":"DicTeX"}`, save the file, then dictate a phrase containing "dic tex". Confirm the clipboard/pasted text and the `Inserted (normalized)` line show `DicTeX`, the `Last transcript (raw)` textarea still shows the raw STT output, and a `normalization_result` event was appended while `stt_result.stt_output` kept the raw transcript. Break the JSON on purpose and confirm the next dictation still inserts the raw text with a quiet `Normalizer:` diagnostic instead of failing.
 
 ## Run
 
@@ -211,6 +212,39 @@ STT corrections are append-only events linked to the original segment:
 ```
 
 The important MVP decision is to preserve the audio -> raw STT -> correction -> benchmark score relationship without rewriting earlier events.
+
+## STT Candidate Summary
+
+The `Candidate summary` panel aggregates `stt_benchmark_result` events for a
+chosen benchmark set split (`Test frozen` or `Validation`) by candidate
+identity (`stage` + `provider` + `model` + `variant`). It is read-only: it
+never appends events, it only reads and summarizes what `Run set benchmark`
+already logged.
+
+Per candidate it reports:
+
+- **segments**: how many split segments have a logged result for that
+  candidate;
+- **mean/median CER**: Character Error Rate, the edit distance between the
+  candidate transcript and the corrected transcript divided by the corrected
+  transcript's length. `0%` is a perfect match; higher is worse. CER is
+  case-insensitive and ignores leading/trailing whitespace, but is otherwise
+  literal, so it does not know that two spellings mean the same thing;
+- **mean/median WER**: Word Error Rate, the same edit-distance idea but over
+  whitespace-separated words instead of characters. WER is coarser than CER
+  (one wrong letter in a word counts as a whole wrong word) and is more in
+  line with how a human would judge a transcript at a glance;
+- **mean latency**: average `transcription_duration_ms` across that
+  candidate's logged results, so a lower-CER candidate that is much slower is
+  still visible, not hidden behind the score;
+- **missing**: split segments with no logged result for that candidate. A run
+  that crashed mid-flight never appended an `stt_benchmark_result` event, so a
+  failed attempt and a segment that was never benchmarked look the same here;
+  re-run the set benchmark to fill gaps.
+
+Only the STT stage is scored today; the summary is STT-only by construction
+because it groups by `stage`, so a future `math_transform` or `normalization`
+candidate would summarize separately once that stage starts scoring results.
 
 ## Normalization Pipeline
 

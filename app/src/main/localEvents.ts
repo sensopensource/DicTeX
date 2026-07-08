@@ -38,12 +38,19 @@ export type SttBenchmarkResultEvent = {
   segment_id: string;
   created_at?: string;
   audio_ref?: string;
+  stage?: string;
+  provider?: string;
+  model?: string;
+  variant?: string | null;
   stt_engine?: string;
   stt_model?: string;
   stt_language?: string;
   transcript?: string;
   audio_duration_seconds?: number | null;
   transcription_duration_ms?: number;
+  score_metric?: string | null;
+  score_value?: number | null;
+  score_reference_transcript?: string | null;
 };
 
 export type NormalizationLayerRecord = {
@@ -142,6 +149,24 @@ export type SttBenchmarkSetSegment = {
   split: SttBenchmarkSetSplit;
   benchmarkSetCreatedAt: string | null;
   hasCorrection: boolean;
+};
+
+export type BenchmarkCandidateIdentity = {
+  stage: string;
+  provider: string;
+  model: string;
+  variant: string | null;
+};
+
+export type SttScoredBenchmarkResult = {
+  sessionId: string;
+  segmentId: string;
+  candidate: BenchmarkCandidateIdentity;
+  transcript: string;
+  transcriptionDurationMs: number | null;
+  scoreMetric: string | null;
+  scoreValue: number | null;
+  referenceTranscript: string | null;
 };
 
 type SegmentDraft = {
@@ -322,6 +347,71 @@ export function getSttBenchmarkSetSegments(
     }));
 }
 
+/**
+ * Returns the latest stt_benchmark_result per (segment, candidate) pair for
+ * segments currently in `split`, matching the latest-event-wins rule used
+ * elsewhere so a re-run of a candidate replaces its prior result.
+ */
+export function getSttBenchmarkResultsForSplit(
+  events: LocalEvent[],
+  split: SttBenchmarkSetSplit,
+): SttScoredBenchmarkResult[] {
+  const splitSegmentKeys = new Set(
+    getSttBenchmarkSetSegments(events, split).map((segment) => getSegmentKey(segment.sessionId, segment.segmentId)),
+  );
+
+  const latestByKey = new Map<string, { eventIndex: number; result: SttScoredBenchmarkResult }>();
+
+  events.forEach((event, eventIndex) => {
+    if (!isSttBenchmarkResultEvent(event)) {
+      return;
+    }
+
+    const segmentKey = getSegmentKey(event.session_id, event.segment_id);
+    if (!splitSegmentKeys.has(segmentKey)) {
+      return;
+    }
+
+    const candidate = getBenchmarkCandidateIdentity(event);
+    if (!candidate) {
+      return;
+    }
+
+    const candidateKey = `${segmentKey}::${candidate.stage}/${candidate.provider}/${candidate.model}/${candidate.variant ?? ""}`;
+    const existing = latestByKey.get(candidateKey);
+    if (existing && existing.eventIndex > eventIndex) {
+      return;
+    }
+
+    latestByKey.set(candidateKey, {
+      eventIndex,
+      result: {
+        sessionId: event.session_id,
+        segmentId: event.segment_id,
+        candidate,
+        transcript: event.transcript ?? "",
+        transcriptionDurationMs: getNumber(event.transcription_duration_ms),
+        scoreMetric: getString(event.score_metric),
+        scoreValue: getNumber(event.score_value),
+        referenceTranscript: getString(event.score_reference_transcript),
+      },
+    });
+  });
+
+  return Array.from(latestByKey.values()).map((entry) => entry.result);
+}
+
+function getBenchmarkCandidateIdentity(event: SttBenchmarkResultEvent): BenchmarkCandidateIdentity | null {
+  const stage = getString(event.stage);
+  const provider = getString(event.provider);
+  const model = getString(event.model);
+  if (!stage || !provider || !model) {
+    return null;
+  }
+
+  return { stage, provider, model, variant: getString(event.variant) };
+}
+
 export function reconstructRecentSegments(events: LocalEvent[], limit = 20): ReconstructedSegment[] {
   const segments = new Map<string, SegmentDraft>();
 
@@ -489,6 +579,14 @@ function isSttResultEvent(event: LocalEvent): event is SttResultEvent {
     typeof event.session_id === "string" &&
     typeof event.segment_id === "string" &&
     typeof event.stt_output === "string"
+  );
+}
+
+function isSttBenchmarkResultEvent(event: LocalEvent): event is SttBenchmarkResultEvent {
+  return (
+    event.event_type === "stt_benchmark_result" &&
+    typeof event.session_id === "string" &&
+    typeof event.segment_id === "string"
   );
 }
 

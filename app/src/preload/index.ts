@@ -183,6 +183,31 @@ type SttBenchmarkSetProgress = {
   } | null;
 };
 
+type BenchmarkCandidateIdentity = {
+  stage: string;
+  provider: string;
+  model: string;
+  variant: string | null;
+};
+
+type SttBenchmarkCandidateSummary = {
+  candidate: BenchmarkCandidateIdentity;
+  resultCount: number;
+  missingCount: number;
+  scoredCount: number;
+  meanCer: number | null;
+  medianCer: number | null;
+  meanWer: number | null;
+  medianWer: number | null;
+  meanLatencyMs: number | null;
+};
+
+type SttBenchmarkCandidateSummaryResponse = {
+  split: SttBenchmarkSetSplit;
+  totalSegments: number;
+  candidates: SttBenchmarkCandidateSummary[];
+};
+
 contextBridge.exposeInMainWorld("dictex", {
   transcribeAudio: (audioBytes: Uint8Array, mimeType: string, options: TranscriptionOptions = {}) =>
     ipcRenderer.invoke("dictation:transcribe", audioBytes, mimeType, options) as Promise<TranscriptionResponse>,
@@ -221,6 +246,8 @@ contextBridge.exposeInMainWorld("dictex", {
     ipcRenderer.invoke("benchmark:run-segment-stt", audioSegment) as Promise<SttBenchmarkResponse>,
   runSetSttBenchmark: (split: SttBenchmarkSetSplit) =>
     ipcRenderer.invoke("benchmark:run-set-stt", { split }) as Promise<SttBenchmarkSetRunResponse>,
+  summarizeSttBenchmarkSet: (split: SttBenchmarkSetSplit) =>
+    ipcRenderer.invoke("benchmark-set:summarize-stt", { split }) as Promise<SttBenchmarkCandidateSummaryResponse>,
   onBatchBenchmarkProgress: (callback: (progress: SttBenchmarkSetProgress) => void) => {
     const listener = (_event: IpcRendererEvent, progress: SttBenchmarkSetProgress) => {
       callback(progress);

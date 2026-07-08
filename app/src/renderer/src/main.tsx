@@ -184,6 +184,31 @@ type SttBenchmarkSetProgress = {
   } | null;
 };
 
+type BenchmarkCandidateIdentity = {
+  stage: string;
+  provider: string;
+  model: string;
+  variant: string | null;
+};
+
+type SttBenchmarkCandidateSummary = {
+  candidate: BenchmarkCandidateIdentity;
+  resultCount: number;
+  missingCount: number;
+  scoredCount: number;
+  meanCer: number | null;
+  medianCer: number | null;
+  meanWer: number | null;
+  medianWer: number | null;
+  meanLatencyMs: number | null;
+};
+
+type SttBenchmarkCandidateSummaryResponse = {
+  split: SttBenchmarkSetSplit;
+  totalSegments: number;
+  candidates: SttBenchmarkCandidateSummary[];
+};
+
 type SttErrorCategory =
   | "empty_output"
   | "high_cer"
@@ -240,6 +265,7 @@ type DictationApi = {
   runSegmentSttBenchmark?: (audioSegment: AudioSegmentRecord) => Promise<SttBenchmarkResponse>;
   runSetSttBenchmark?: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkSetRunResponse>;
   onBatchBenchmarkProgress?: (callback: (progress: SttBenchmarkSetProgress) => void) => () => void;
+  summarizeSttBenchmarkSet?: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkCandidateSummaryResponse>;
 };
 
 declare global {
@@ -277,6 +303,9 @@ function App(): React.ReactElement {
   const [batchOutcomes, setBatchOutcomes] = useState<SttBenchmarkSetSegmentOutcome[]>([]);
   const [batchError, setBatchError] = useState("");
   const [isRunningBatch, setIsRunningBatch] = useState(false);
+  const [candidateSummary, setCandidateSummary] = useState<SttBenchmarkCandidateSummaryResponse | null>(null);
+  const [summaryError, setSummaryError] = useState("");
+  const [isSummarizing, setIsSummarizing] = useState(false);
   const [isSavingCorrection, setIsSavingCorrection] = useState(false);
   const [correctionKind, setCorrectionKind] = useState<CorrectionKind | "">("");
   const [benchmarkSetTargetKey, setBenchmarkSetTargetKey] = useState<string | null>(null);
@@ -723,6 +752,24 @@ function App(): React.ReactElement {
     }
   }
 
+  async function summarizeCandidates(): Promise<void> {
+    if (typeof window.dictex.summarizeSttBenchmarkSet !== "function") {
+      setSummaryError("Restart DicTeX to load the benchmark summary preload API");
+      return;
+    }
+
+    setSummaryError("");
+    setIsSummarizing(true);
+
+    try {
+      setCandidateSummary(await window.dictex.summarizeSttBenchmarkSet(batchSplit));
+    } catch (summaryRunError) {
+      setSummaryError(summaryRunError instanceof Error ? summaryRunError.message : "Benchmark summary failed");
+    } finally {
+      setIsSummarizing(false);
+    }
+  }
+
   async function markSttBenchmarkSetMembership(segment: RecentSegment, split: SttBenchmarkSetSplit): Promise<void> {
     if (typeof window.dictex.markSttBenchmarkSetMembership !== "function") {
       setHistoryError("Restart DicTeX to load the benchmark set preload API");
@@ -1163,6 +1210,69 @@ function App(): React.ReactElement {
         )}
       </section>
 
+      <section className="panel summary-panel">
+        <div className="benchmark-header">
+          <div>
+            <h2>Candidate summary</h2>
+            <p>Compare STT candidates over {formatBenchmarkSetSplit(batchSplit)}. CER/WER: lower is better.</p>
+          </div>
+          <button
+            className="secondary-button"
+            disabled={typeof window.dictex.summarizeSttBenchmarkSet !== "function" || isSummarizing}
+            onClick={() => void summarizeCandidates()}
+          >
+            {typeof window.dictex.summarizeSttBenchmarkSet !== "function"
+              ? "Restart app"
+              : isSummarizing
+                ? "Summarizing"
+                : "Summarize by candidate"}
+          </button>
+        </div>
+
+        {summaryError && <pre className="error">{summaryError}</pre>}
+
+        {candidateSummary && candidateSummary.split !== batchSplit && (
+          <p className="empty-state">
+            Showing {formatBenchmarkSetSplit(candidateSummary.split)}; select the split again and re-run to refresh.
+          </p>
+        )}
+
+        {candidateSummary && candidateSummary.totalSegments === 0 && (
+          <p className="empty-state">No corrected segments in {formatBenchmarkSetSplit(candidateSummary.split)} yet.</p>
+        )}
+
+        {candidateSummary && candidateSummary.candidates.length > 0 && (
+          <table className="summary-table">
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th>Segments</th>
+                <th>Mean CER</th>
+                <th>Median CER</th>
+                <th>Mean WER</th>
+                <th>Median WER</th>
+                <th>Mean latency</th>
+                <th>Missing</th>
+              </tr>
+            </thead>
+            <tbody>
+              {candidateSummary.candidates.map((summary) => (
+                <tr key={formatCandidateIdentityKey(summary.candidate)}>
+                  <td title={formatCandidateIdentityKey(summary.candidate)}>{formatCandidateIdentity(summary.candidate)}</td>
+                  <td>{summary.resultCount}</td>
+                  <td>{formatRatePercent(summary.meanCer)}</td>
+                  <td>{formatRatePercent(summary.medianCer)}</td>
+                  <td>{formatRatePercent(summary.meanWer)}</td>
+                  <td>{formatRatePercent(summary.medianWer)}</td>
+                  <td>{formatLatency(summary.meanLatencyMs === null ? null : Math.round(summary.meanLatencyMs))}</td>
+                  <td>{summary.missingCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
       {errorAnalysis.length > 0 && (
         <section className="panel error-analysis-panel">
           <div className="benchmark-header">
@@ -1380,6 +1490,18 @@ function formatBatchOutcomeScore(outcome: SttBenchmarkSetSegmentOutcome): string
 
   const bestCer = Math.min(...scores.map((score) => score.value));
   return ` · best CER ${(bestCer * 100).toFixed(1)}%`;
+}
+
+function formatCandidateIdentity(candidate: BenchmarkCandidateIdentity): string {
+  return `${candidate.stage}:${candidate.provider}/${candidate.model}${candidate.variant ? ` (${candidate.variant})` : ""}`;
+}
+
+function formatCandidateIdentityKey(candidate: BenchmarkCandidateIdentity): string {
+  return `${candidate.stage}/${candidate.provider}/${candidate.model}/${candidate.variant ?? ""}`;
+}
+
+function formatRatePercent(value: number | null): string {
+  return value === null ? "-" : `${(value * 100).toFixed(1)}%`;
 }
 
 const HIGH_CER_THRESHOLD = 0.3;

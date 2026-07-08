@@ -16,6 +16,8 @@ import {
   type ReconstructedSegment,
   type SttBenchmarkSetSplit,
 } from "./localEvents.js";
+import { calculateCharacterErrorRate } from "./sttScoring.js";
+import { summarizeSttBenchmarkResultsByCandidate, type SttBenchmarkCandidateSummaryResponse } from "./benchmarkSummary.js";
 import { normalizeTranscript, type NormalizationResult } from "./normalizer.js";
 
 type TranscriptionResult = {
@@ -527,45 +529,6 @@ function pasteClipboardIntoActiveApp(): Promise<boolean> {
   });
 }
 
-function calculateCharacterErrorRate(candidateTranscript: string, referenceTranscript: string): number {
-  const candidate = normalizeForScoring(candidateTranscript);
-  const reference = normalizeForScoring(referenceTranscript);
-
-  if (reference.length === 0) {
-    return candidate.length === 0 ? 0 : 1;
-  }
-
-  return calculateEditDistance(candidate, reference) / reference.length;
-}
-
-function normalizeForScoring(value: string): string {
-  return value.trim().toLocaleLowerCase();
-}
-
-function calculateEditDistance(left: string, right: string): number {
-  const previousRow = Array.from({ length: right.length + 1 }, (_value, index) => index);
-  const currentRow = Array.from({ length: right.length + 1 }, () => 0);
-
-  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
-    currentRow[0] = leftIndex;
-
-    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
-      const substitutionCost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
-      currentRow[rightIndex] = Math.min(
-        previousRow[rightIndex] + 1,
-        currentRow[rightIndex - 1] + 1,
-        previousRow[rightIndex - 1] + substitutionCost,
-      );
-    }
-
-    for (let rightIndex = 0; rightIndex <= right.length; rightIndex += 1) {
-      previousRow[rightIndex] = currentRow[rightIndex];
-    }
-  }
-
-  return previousRow[right.length];
-}
-
 async function runSttBenchmarkForAudioSegment(
   audioSegment: AudioSegmentRecord,
   events?: LocalEvent[],
@@ -976,6 +939,18 @@ ipcMain.handle(
     }
 
     return { split, total, done, failed, outcomes };
+  },
+);
+
+ipcMain.handle(
+  "benchmark-set:summarize-stt",
+  async (_event, request: SttBenchmarkSetRunRequest): Promise<SttBenchmarkCandidateSummaryResponse> => {
+    if (!request || !isSttBenchmarkSetSplit(request.split)) {
+      throw new Error("Invalid STT benchmark set split");
+    }
+
+    const events = await readLocalEvents(getEventsPath());
+    return summarizeSttBenchmarkResultsByCandidate(events, request.split);
   },
 );
 
