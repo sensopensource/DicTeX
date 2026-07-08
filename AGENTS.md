@@ -7,6 +7,7 @@ Before changing code, read:
 - `README.md`
 - `docs/product-decisions.md`
 - `docs/development.md`
+- `pivot_strategique_stt_normalisation.md` (current strategic direction)
 - this file
 
 ## Product Context
@@ -24,21 +25,37 @@ Current product loop:
 voice -> local STT -> clipboard / active app insertion -> local logs
 ```
 
-Future product loop:
+Target product loop (from the strategic pivot):
 
 ```text
 voice
--> local STT
--> paragraph/math/command detection
--> text + LaTeX
--> fast correction
--> correction logs
--> benchmark/evaluation data
--> rules, prompts, preferences, fine-tuning later
+-> local STT (raw literal text)
+-> normalization pipeline
+   -> layer 1: personal dictionary (deterministic)
+   -> layer 2: regex math-verbalization rules
+   -> layer 3: small seq2seq text-to-text model
+-> math rendering (KaTeX)
+-> fast correction, tagged by correctionKind
+-> two separable datasets: acoustic (STT) and math_transform (normalizer)
+-> Phase 3 normalizer training, then Phase 4 STT acoustic fine-tuning (later)
 ```
 
-Do not skip straight to math parsing before the base dictation loop, logs,
-diagnostics, history, benchmark, and correction data capture are stable.
+## Strategic Pivot (current direction)
+
+See `pivot_strategique_stt_normalisation.md`. The plan decouples two problems
+previously conflated in a single "fine-tune STT to emit clean math" goal:
+
+- **Priority 1 — text-to-text normalization.** Turn literal STT output
+  ("x au carré") into formal notation ("x²") with a three-layer normalizer:
+  personal dictionary, regex rules, then a small seq2seq model. Dictionary and
+  regex already cover much of the need with zero ML.
+- **Priority 2 (later) — STT acoustic fine-tuning.** Only for genuine acoustic
+  errors tied to the user's voice/mic, on correction data tagged `acoustic`.
+
+The base dictation loop, logs, diagnostics, history, benchmark, split, and
+correction capture are now stable, so this normalization work can start. The
+existing infrastructure is reused as-is; nothing is thrown away. Its main data
+consequence is that corrections must be typed (see Data Model Notes).
 
 ## Current Implementation
 
@@ -422,7 +439,9 @@ Issue #38:
   `test_frozen`, with latest-event-wins derivation.
 - Completed.
 
-Open STT benchmark -> selection -> fine-tuning roadmap (labels + hard deps):
+Open STT benchmark -> selection roadmap (labels + hard deps). Per the strategic
+pivot, STT fine-tuning is deferred to Phase 4, so #44/#45 are Phase-4 prep, not
+the near-term goal:
 
 - #39 benchmark candidates over corrected set — `level:tres-eleve`,
   Depends on #38 (done) -> ready.
@@ -433,9 +452,10 @@ Open STT benchmark -> selection -> fine-tuning roadmap (labels + hard deps):
   ready.
 - #43 candidate selection report — `level:moyen` + `needs:high-review`,
   Depends on #40.
-- #44 export corrected datasets — `level:eleve`, Depends on #43.
+- #44 export corrected datasets — `level:eleve`, Depends on #43. Phase 4 prep;
+  export should also split by `correctionKind`.
 - #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`,
-  Depends on #44.
+  Depends on #44. Phase 4; conditional on enough `acoustic`-tagged data.
 
 Startable now in parallel: #39 and #42.
 
@@ -448,7 +468,8 @@ Do preserve:
 - `session_id` + `segment_id`, not `document_id`, in the MVP core path.
 - Audio + raw STT outputs before correction UX.
 - Append-only event history.
-- STT correction distinct from math parsing correction.
+- Corrections typed by `correctionKind` (acoustic / math_transform /
+  normalization / rephrasing), keeping acoustic and semantic problems separable.
 - French-first spoken input.
 - English public docs for GitHub discoverability.
 - Windows-first auto-paste, Linux later.
@@ -468,6 +489,10 @@ Do not introduce without an explicit issue:
 - fine-tuning;
 - cloud sync;
 - multi-user backend.
+
+The strategic pivot sanctions the normalization pipeline (dictionary, regex,
+small seq2seq) and math rendering as the Priority 1 direction — still land them
+through explicit issues, not ad hoc.
 
 ## UI Direction
 
@@ -531,13 +556,22 @@ Current STT corrections use separate event types and must not overwrite history:
 {"event_type":"stt_correction","created_at":"2026-07-05T00:00:00.000Z","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","raw_transcript":"...","corrected_transcript":"...","correction_method":"keyboard"}
 ```
 
-Future correction layers should keep using separate event types, not overwrite history.
+Corrections stay append-only and must not overwrite history.
 
-Important future split:
+Future correction typing (from the strategic pivot): tag each correction with a
+`correctionKind` so acoustic and semantic problems feed different datasets:
 
-- `stt_correction`: audio + raw STT output + corrected transcript.
-- `math_parse_correction`: spoken text + predicted LaTeX + corrected LaTeX.
-- `output_correction`: final inserted output corrected by user.
+- `acoustic`: the STT misheard (e.g. "égalé" -> "égal"). Feeds Phase 4 STT
+  fine-tuning.
+- `math_transform`: spoken text -> notation (e.g. "x au carré" -> "x²"). Feeds
+  Phase 3 normalizer training.
+- `normalization`: cleanup (e.g. "euh donc on a" -> "on a").
+- `rephrasing`: free user rewording.
+
+Prefer extending the existing `stt_correction` event with `correctionKind` over
+inventing separate event types. The `train_candidate_pool` / `validation` /
+`test_frozen` split is kept and read alongside `correctionKind` to build each
+dataset.
 
 ## Benchmark Vision
 
@@ -604,25 +638,32 @@ These are current candidates, not the final benchmark universe.
 
 ## Next Product Priorities
 
-The correction/evaluation loop (#11, #12, #13, #14, #21, #22, #23, #24) merged
-through PR #36. Corrected-segment correction (#37) and benchmark-set membership
-(#38) are done.
+The correction/evaluation loop (#11-#14, #21-#24) merged through PR #36.
+Corrected-segment correction (#37) and benchmark-set membership (#38) are done,
+so the foundations the pivot relies on are in place.
 
-The active roadmap is now the STT benchmark -> selection -> fine-tuning
-pipeline, tracked as #39-#45 (see Completed Work for labels and hard-dependency
-state). Startable in parallel now: #39 and #42.
+Priorities now follow the strategic pivot's phasing:
 
-Still-unissued future candidates (do not start before the pipeline above is
-comfortable):
+1. **Phase 1 — typed correction data (next).** Add `correctionKind` to the
+   correction request and UI so we stop collecting unlabeled data. Highest
+   priority: without the tag the future datasets are unusable.
+2. **Phase 2 — code normalizer (layers 1 & 2).** Personal dictionary + regex
+   math-verbalization rules. Immediate rendering-quality gains, zero ML.
+3. **Phase 3 — ML normalizer (layer 3).** After some usage, extract the
+   `math_transform`-tagged dataset and fine-tune a small seq2seq model.
+4. **Phase 4 — STT acoustic fine-tuning.** Extract the `acoustic`-tagged
+   dataset; if residual acoustic errors justify it, LoRA the selected STT model
+   on that clean data only.
 
-1. Event-log diagnostics and invalid-line visibility.
-2. Safer correction UX for editing older segments without relying only on the
-   latest transcript panel.
-3. A small benchmark result history per segment.
-4. Only after the correction/evaluation loop is comfortable, narrow
-   normalization or math segment classification experiments.
+The STT benchmark -> selection track (#39-#43) stays valid as evaluation
+infrastructure: it picks the base STT model the normalizer sits on top of, and
+#44/#45 prepare Phase 4. Run it in parallel, but Phase 1 (typed data) is the
+immediate next step.
 
-Do not jump directly to LaTeX generation or LLM integrations before validating the correction and benchmark data loop with real local usage.
+Other still-unissued candidates: event-log diagnostics and invalid-line
+visibility; safer correction UX for older segments; a small benchmark result
+history per segment. Land each phase through explicit issues; do not build a
+large generic framework ahead of need.
 
 ## Important Nuance
 
