@@ -467,27 +467,52 @@ Issue #39 / PR #53:
 - Benchmarked STT candidates over the corrected benchmark set.
 - Merged.
 
+Issue #41 / PR #54:
+
+- Added lightweight STT benchmark error analysis.
+- Merged.
+
+Issue #49 / PR #55:
+
+- Added the normalizer pipeline module with the personal dictionary layer
+  (layer 1), `normalization_result` events with per-layer state, passthrough
+  on missing/invalid dictionary. Pivot Phase 2, layer 1 done.
+- Merged.
+
+Issue #40 / PR #56:
+
+- Summarized corrected STT benchmark results by candidate.
+- Merged.
+
+GPU STT (no issue, direct docs+engine commit):
+
+- `engine/transcribe.py` makes `cublas64_12.dll` discoverable from the
+  `nvidia-cublas-cu12` pip package on Windows, enabling
+  `DICTEX_STT_DEVICE=cuda`; setup documented in `docs/development.md`.
+
 Open roadmap (labels + hard deps). Per the strategic pivot, STT fine-tuning is
 deferred to Phase 4, so #44/#45 are Phase-4 prep, not the near-term goal:
 
-- #40 summarize results by candidate — `level:moyen`, Depends on #39 (done) ->
-  ready.
-- #41 lightweight error analysis — `level:moyen` + `needs:high-review`,
-  Depends on #39 (done) -> ready.
 - #43 candidate selection report — `level:moyen` + `needs:high-review`,
-  Depends on #40.
+  Depends on #40 (done) -> ready.
 - #44 export corrected datasets — `level:eleve`, Depends on #43. Phase 4 prep;
   export should also split by `correctionKind`.
 - #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`,
   Depends on #44. Phase 4; conditional on enough `acoustic`-tagged data.
-- #49 normalizer module + personal dictionary (layer 1) — `level:eleve` +
-  `needs:high-review`, no hard dependency -> ready. Pivot Phase 2.
-- #50 regex math-verbalization rules (layer 2) — `level:moyen`, Depends on #49.
-  Pivot Phase 2.
+- #50 regex math-verbalization rules (layer 2) — `level:moyen`,
+  Depends on #49 (done) -> ready. Pivot Phase 2.
+- #57 select active STT model from the UI — `level:moyen`, no dependency ->
+  ready.
+- #58 select benchmark candidates from the UI — `level:moyen`, Depends on #57
+  (reuses its settings-file mechanism).
+- #59 second local STT provider in the benchmark universe — `level:eleve` +
+  `needs:high-review`, no hard dependency -> ready; mostly Python sidecar, so
+  low soft-conflict with the app-side issues.
 
-Startable now in parallel: #49, #40, #41. Soft conflict: all three touch the
-same app source files (the app is only four source files), so separate clones
-will merge-conflict — launch in parallel but merge sequentially and rebase.
+Startable now in parallel: #50, #43, #57, #59. Soft conflict: #50/#43/#57 all
+touch the same app source files, so separate clones will merge-conflict —
+launch in parallel but merge sequentially and rebase. #59 is mostly `engine/`
+and conflicts little with the others.
 
 ## Product Decisions To Preserve
 
@@ -666,6 +691,18 @@ DICTEX_STT_LANGUAGE=fr
 DICTEX_STT_DEVICE=cpu
 DICTEX_STT_COMPUTE_TYPE=int8
 ```
+
+GPU (CUDA) is supported on this machine via env config (see
+`docs/development.md`, "GPU (CUDA) STT"):
+
+```text
+DICTEX_STT_MODEL=large-v3-turbo
+DICTEX_STT_DEVICE=cuda
+DICTEX_STT_COMPUTE_TYPE=float16
+```
+
+Requires `nvidia-cublas-cu12` + `nvidia-cudnn-cu12` pip packages;
+`engine/transcribe.py` handles the cuBLAS DLL path on Windows.
 
 Current STT benchmark candidates (defaults, configurable via
 `DICTEX_STT_BENCHMARK_MODELS` since PR #51):
