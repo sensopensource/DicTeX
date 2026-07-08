@@ -201,8 +201,9 @@ Four levels, French names kept as the label surface:
 
 Modifier label (orthogonal, not a fifth level):
 
-- `needs:high-review` — a lower-level agent may draft, but an agent one level
-  higher should review before merge.
+- `needs:high-review` — after implementing, the agent must flag that a
+  higher-tier review is needed and suggest a reviewer model/level; a separate
+  human-chosen session does the review before merge.
 
 ### How a level is assigned
 
@@ -244,8 +245,10 @@ Notes:
 
 ### Operating protocol (single agent, one session)
 
-The intended workflow is one agent, in one terminal session, from start to
-merge. When told to work an issue, the agent runs this protocol itself:
+The intended workflow is one agent, in one terminal session, from workspace
+setup to PR. The human sets the model and reasoning effort at launch (per the
+level table) and owns review and merge. When told to work an issue, the agent
+runs this protocol itself:
 
 1. **Set up an isolated workspace.** Clone the repo into a fresh sibling folder
    and create the issue branch there (see Git Workflow). Do all work in that
@@ -254,22 +257,25 @@ merge. When told to work an issue, the agent runs this protocol itself:
    Orchestration). For each referenced issue, verify it is CLOSED (merged). If
    any is still open, STOP, report "blocked by #X", and write no code.
 3. Read the issue and find its `level:*` label.
-4. Adjust its own reasoning effort to that level's effort (see the table).
-5. Do the work at that effort and open the PR.
+4. Confirm the current model/effort fits that level (the human set it at
+   launch). If clearly under-powered for the level, say so instead of pushing
+   ahead.
+5. Do the work and open the PR.
 6. Check the issue for `needs:high-review`.
-7. If present, **raise its own reasoning effort by one level** and re-review its
-   own diff at that higher effort before finalizing the PR.
-8. Apply any fixes the higher-effort pass surfaces, then finalize.
+7. If present, do NOT self-review and do NOT change your own effort. Finish the
+   work, then in the PR and final report **flag that a review is required and
+   propose a reviewer model + reasoning level** — one notch above your own
+   current model/effort (e.g. a `level:moyen` agent on Sonnet/medium suggests
+   review on Opus/high). The human chooses the reviewer and launches it.
+8. Finalize the PR with that recommendation surfaced. Do not merge.
 
-Rules for step 5:
+Notes on review:
 
-- The bump is exactly one level, not a jump to max:
-  `faible → moyen → élevé → très-élevé`.
-- `level:tres-eleve` + `needs:high-review` cannot bump higher than max, so it
-  requires a human reviewer instead of a self pass.
-- The review pass is the same agent re-reading its own work at higher effort. It
-  is a self-check, not an independent second reviewer; a human still owns final
-  merge approval.
+- The implementer never changes its own reasoning effort mid-session and never
+  reviews its own work. Effort is fixed by the human at launch.
+- `needs:high-review` only obligates the implementer to surface the need and a
+  suggested reviewer tier; a separate human-chosen session does the review.
+- A human always owns final merge approval.
 
 ## Issue Orchestration
 
@@ -302,12 +308,15 @@ Rules:
 
 ### Orchestrator responsibilities
 
+First read the live issue state with `gh` (open/closed issues, labels, and
+`Depends on:` lines) — the roadmap snapshot in this file may be stale.
+
 When asked to plan the next N issues, the orchestrator:
 
 1. Writes each issue with clear Goal / Scope / Out of scope / Acceptance
    criteria.
 2. Scores each with the five-axis rubric and applies the correct `level:*` label
-   (plus `needs:high-review` when a self-review at +1 is warranted).
+   (plus `needs:high-review` when a higher-tier review is warranted).
 3. Adds a `Depends on:` line listing only hard dependencies.
 4. Proposes a model per issue from the level table (Claude and OpenAI/Codex
    columns), so any provider can pick it up.
