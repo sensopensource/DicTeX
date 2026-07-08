@@ -8,8 +8,10 @@ import {
   getLatestAudioSegment as getLatestAudioSegmentFromEvents,
   getLatestSttCorrection,
   getSttBenchmarkSetSegments,
+  isCorrectionKind,
   readLocalEvents,
   reconstructRecentSegments,
+  type CorrectionKind,
   type LocalEvent,
   type ReconstructedSegment,
   type SttBenchmarkSetSplit,
@@ -104,6 +106,7 @@ type SttCorrectionRequest = {
   audioRef: string | null;
   rawTranscript: string;
   correctedTranscript: string;
+  correctionKind: CorrectionKind;
   correctionMethod?: "keyboard";
 };
 
@@ -111,6 +114,7 @@ type SttCorrectionResponse = {
   createdAt: string;
   sessionId: string;
   segmentId: string;
+  correctionKind: CorrectionKind;
   correctionMethod: "keyboard";
 };
 
@@ -186,7 +190,7 @@ const repoRoot = path.resolve(__dirname, "..", "..", "..");
 const enginePath = path.join(repoRoot, "engine", "transcribe.py");
 const sessionId = `session_${new Date().toISOString().replace(/\D/g, "")}`;
 const globalHotkey = "Super+Alt+Space";
-const sttBenchmarkCandidateModels = ["tiny", "base", "small"];
+const defaultSttBenchmarkModels = ["tiny", "base", "small"];
 
 let mainWindow: BrowserWindow | null = null;
 let globalHotkeyRegistered = false;
@@ -202,8 +206,24 @@ function getSttConfig(): SttConfig {
   };
 }
 
+function getSttBenchmarkModels(): string[] {
+  const envValue = process.env.DICTEX_STT_BENCHMARK_MODELS;
+  if (!envValue) {
+    return defaultSttBenchmarkModels;
+  }
+
+  const parsed = envValue
+    .split(",")
+    .map((m) => m.trim())
+    .filter((m) => m.length > 0);
+
+  const unique = Array.from(new Set(parsed));
+
+  return unique.length > 0 ? unique : defaultSttBenchmarkModels;
+}
+
 function getSttBenchmarkCandidates(config: SttConfig): BenchmarkCandidate[] {
-  return sttBenchmarkCandidateModels.map((model) => ({
+  return getSttBenchmarkModels().map((model) => ({
     stage: "stt",
     provider: config.engine,
     model,
@@ -696,8 +716,13 @@ ipcMain.handle("corrections:save-stt", async (_event, correction: SttCorrectionR
     throw new Error("Correction transcripts must be strings");
   }
 
+  if (!isCorrectionKind(correction.correctionKind)) {
+    throw new Error("Correction kind must be acoustic, math_transform, normalization, or rephrasing");
+  }
+
   const createdAt = new Date().toISOString();
   const correctionMethod: "keyboard" = "keyboard";
+  const correctionKind = correction.correctionKind;
 
   await appendEvent({
     event_type: "stt_correction",
@@ -708,12 +733,14 @@ ipcMain.handle("corrections:save-stt", async (_event, correction: SttCorrectionR
     raw_transcript: correction.rawTranscript,
     corrected_transcript: correction.correctedTranscript,
     correction_method: correctionMethod,
+    correction_kind: correctionKind,
   });
 
   return {
     createdAt,
     sessionId: correction.sessionId,
     segmentId: correction.segmentId,
+    correctionKind,
     correctionMethod,
   };
 });
@@ -906,6 +933,8 @@ ipcMain.handle("diagnostics:open-events-log", async (): Promise<boolean> => {
 });
 
 ipcMain.handle("diagnostics:get-stt-config", (): SttConfig => getSttConfig());
+
+ipcMain.handle("diagnostics:get-stt-benchmark-models", (): string[] => getSttBenchmarkModels());
 
 app.whenReady().then(() => {
   createWindow();

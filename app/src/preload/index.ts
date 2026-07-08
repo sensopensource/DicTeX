@@ -58,11 +58,14 @@ type RecentSegment = {
   correctedTranscript: string | null;
   correctionCreatedAt: string | null;
   correctionMethod: string | null;
+  correctionKind: CorrectionKind | null;
   benchmarkSetSplit: SttBenchmarkSetSplit | null;
   benchmarkSetCreatedAt: string | null;
 };
 
 type SttBenchmarkSetSplit = "train_candidate_pool" | "validation" | "test_frozen";
+
+type CorrectionKind = "acoustic" | "math_transform" | "normalization" | "rephrasing";
 
 type BenchmarkStage =
   | "stt"
@@ -115,6 +118,7 @@ type SttCorrectionRequest = {
   audioRef: string | null;
   rawTranscript: string;
   correctedTranscript: string;
+  correctionKind: CorrectionKind;
   correctionMethod?: "keyboard";
 };
 
@@ -122,6 +126,7 @@ type SttCorrectionResponse = {
   createdAt: string;
   sessionId: string;
   segmentId: string;
+  correctionKind: CorrectionKind;
   correctionMethod: "keyboard";
 };
 
@@ -197,6 +202,7 @@ contextBridge.exposeInMainWorld("dictex", {
   openDataFolder: () => ipcRenderer.invoke("diagnostics:open-data-folder") as Promise<boolean>,
   openEventsLog: () => ipcRenderer.invoke("diagnostics:open-events-log") as Promise<boolean>,
   getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
+  getSttBenchmarkModels: () => ipcRenderer.invoke("diagnostics:get-stt-benchmark-models") as Promise<string[]>,
   getRecentSegments: (limit = 20) => ipcRenderer.invoke("history:get-recent-segments", limit) as Promise<RecentSegment[]>,
   getSegmentAudio: (audioSegment: AudioSegmentRecord) =>
     ipcRenderer.invoke("audio:get-segment", audioSegment) as Promise<AudioSegmentPlayback>,

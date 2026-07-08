@@ -349,6 +349,10 @@ h2 {
   color: #b8d7ff;
 }
 
+.correction-kind-state {
+  color: #d7c69a;
+}
+
 .history-actions {
   display: flex;
   flex-wrap: wrap;

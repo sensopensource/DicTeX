@@ -59,11 +59,14 @@ type RecentSegment = {
   correctedTranscript: string | null;
   correctionCreatedAt: string | null;
   correctionMethod: string | null;
+  correctionKind: CorrectionKind | null;
   benchmarkSetSplit: SttBenchmarkSetSplit | null;
   benchmarkSetCreatedAt: string | null;
 };
 
 type SttBenchmarkSetSplit = "train_candidate_pool" | "validation" | "test_frozen";
+
+type CorrectionKind = "acoustic" | "math_transform" | "normalization" | "rephrasing";
 
 type BenchmarkStage =
   | "stt"
@@ -116,6 +119,7 @@ type SttCorrectionRequest = {
   audioRef: string | null;
   rawTranscript: string;
   correctedTranscript: string;
+  correctionKind: CorrectionKind;
   correctionMethod?: "keyboard";
 };
 
@@ -123,6 +127,7 @@ type SttCorrectionResponse = {
   createdAt: string;
   sessionId: string;
   segmentId: string;
+  correctionKind: CorrectionKind;
   correctionMethod: "keyboard";
 };
 
@@ -192,6 +197,7 @@ type DictationApi = {
   openDataFolder: () => Promise<boolean>;
   openEventsLog: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
+  getSttBenchmarkModels?: () => Promise<string[]>;
   getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
   getSegmentAudio?: (audioSegment: AudioSegmentRecord) => Promise<AudioSegmentPlayback>;
   saveSttCorrection?: (correction: SttCorrectionRequest) => Promise<SttCorrectionResponse>;
@@ -232,6 +238,7 @@ function App(): React.ReactElement {
   const [benchmarkResults, setBenchmarkResults] = useState<SttBenchmarkResult[]>([]);
   const [benchmarkError, setBenchmarkError] = useState("");
   const [isBenchmarking, setIsBenchmarking] = useState(false);
+  const [benchmarkModels, setBenchmarkModels] = useState<string[]>([]);
   const [benchmarkTargetKey, setBenchmarkTargetKey] = useState<string | null>(null);
   const [batchSplit, setBatchSplit] = useState<SttBenchmarkSetSplit>("test_frozen");
   const [batchProgress, setBatchProgress] = useState<SttBenchmarkSetProgress | null>(null);
@@ -239,9 +246,11 @@ function App(): React.ReactElement {
   const [batchError, setBatchError] = useState("");
   const [isRunningBatch, setIsRunningBatch] = useState(false);
   const [isSavingCorrection, setIsSavingCorrection] = useState(false);
+  const [correctionKind, setCorrectionKind] = useState<CorrectionKind | "">("");
   const [benchmarkSetTargetKey, setBenchmarkSetTargetKey] = useState<string | null>(null);
   const [historyCorrectionTarget, setHistoryCorrectionTarget] = useState<HistoryCorrectionTarget | null>(null);
   const [historyCorrectionDraft, setHistoryCorrectionDraft] = useState("");
+  const [historyCorrectionKind, setHistoryCorrectionKind] = useState<CorrectionKind | "">("");
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const isStartingRef = useRef(false);
@@ -276,6 +285,11 @@ function App(): React.ReactElement {
     void window.dictex.getSttConfig().then(setSttConfig).catch(() => {
       setNotice("Could not read STT config");
     });
+    if (typeof window.dictex.getSttBenchmarkModels === "function") {
+      void window.dictex.getSttBenchmarkModels().then(setBenchmarkModels).catch(() => {
+        // Silently fail if benchmark models cannot be fetched; default UI behavior is fine
+      });
+    }
     void loadRecentSegments();
 
     return () => {
@@ -301,8 +315,10 @@ function App(): React.ReactElement {
     setTranscript("");
     setLastPasteState("none");
     setLastResult(null);
+    setCorrectionKind("");
     setHistoryCorrectionTarget(null);
     setHistoryCorrectionDraft("");
+    setHistoryCorrectionKind("");
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -483,6 +499,11 @@ function App(): React.ReactElement {
       return;
     }
 
+    if (correctionKind === "") {
+      setCorrectionNotice("Choose a correction kind before saving");
+      return;
+    }
+
     setCorrectionNotice("");
     setIsSavingCorrection(true);
 
@@ -493,9 +514,10 @@ function App(): React.ReactElement {
         audioRef: lastResult.audioRef,
         rawTranscript: lastResult.transcript,
         correctedTranscript: transcript,
+        correctionKind,
         correctionMethod: "keyboard",
       });
-      setCorrectionNotice(`Saved correction for ${saved.sessionId} / ${saved.segmentId}`);
+      setCorrectionNotice(`Saved ${formatCorrectionKind(saved.correctionKind)} correction for ${saved.sessionId} / ${saved.segmentId}`);
       void loadRecentSegments();
     } catch (saveError) {
       setCorrectionNotice(saveError instanceof Error ? saveError.message : "Could not save correction");
@@ -512,6 +534,7 @@ function App(): React.ReactElement {
       rawTranscript: segment.transcript,
     });
     setHistoryCorrectionDraft(segment.correctedTranscript ?? segment.transcript);
+    setHistoryCorrectionKind("");
     setCorrectionNotice("");
     setNotice(`Correction target ${segment.sessionId} / ${segment.segmentId}`);
   }
@@ -526,6 +549,11 @@ function App(): React.ReactElement {
       return;
     }
 
+    if (historyCorrectionKind === "") {
+      setCorrectionNotice("Choose a correction kind before saving");
+      return;
+    }
+
     setCorrectionNotice("");
     setIsSavingCorrection(true);
 
@@ -536,11 +564,13 @@ function App(): React.ReactElement {
         audioRef: historyCorrectionTarget.audioRef,
         rawTranscript: historyCorrectionTarget.rawTranscript,
         correctedTranscript: historyCorrectionDraft,
+        correctionKind: historyCorrectionKind,
         correctionMethod: "keyboard",
       });
-      setCorrectionNotice(`Saved correction for ${saved.sessionId} / ${saved.segmentId}`);
+      setCorrectionNotice(`Saved ${formatCorrectionKind(saved.correctionKind)} correction for ${saved.sessionId} / ${saved.segmentId}`);
       setHistoryCorrectionTarget(null);
       setHistoryCorrectionDraft("");
+      setHistoryCorrectionKind("");
       void loadRecentSegments();
     } catch (saveError) {
       setCorrectionNotice(saveError instanceof Error ? saveError.message : "Could not save correction");
@@ -784,6 +814,11 @@ function App(): React.ReactElement {
                     <span>{formatAudioDuration(segment.audioDurationSeconds)}</span>
                     <span>{formatLatency(segment.transcriptionDurationMs)}</span>
                     {segment.correctionMethod && <span>{segment.correctionMethod}</span>}
+                    {segment.correctionKind && (
+                      <span className="correction-kind-state" title={`Correction kind: ${formatCorrectionKind(segment.correctionKind)}`}>
+                        {formatCorrectionKind(segment.correctionKind)}
+                      </span>
+                    )}
                     {segment.benchmarkSetSplit && (
                       <span className="benchmark-set-state" title={segment.benchmarkSetCreatedAt ?? undefined}>
                         {formatBenchmarkSetSplit(segment.benchmarkSetSplit)}
@@ -881,6 +916,7 @@ function App(): React.ReactElement {
               onClick={() => {
                 setHistoryCorrectionTarget(null);
                 setHistoryCorrectionDraft("");
+                setHistoryCorrectionKind("");
               }}
             >
               Cancel
@@ -897,9 +933,18 @@ function App(): React.ReactElement {
             aria-label="Corrected transcript"
           />
           <div className="actions">
+            <CorrectionKindSelect
+              ariaLabel={`Correction kind for ${historyCorrectionTarget.sessionId} / ${historyCorrectionTarget.segmentId}`}
+              value={historyCorrectionKind}
+              disabled={isSavingCorrection}
+              onChange={(kind) => {
+                setHistoryCorrectionKind(kind);
+                setCorrectionNotice("");
+              }}
+            />
             <button
               className="secondary-button"
-              disabled={isSavingCorrection || historyCorrectionDraft.length === 0}
+              disabled={isSavingCorrection || historyCorrectionDraft.length === 0 || historyCorrectionKind === ""}
               onClick={() => void saveHistoryCorrection()}
             >
               {isSavingCorrection ? "Saving" : "Save correction"}
@@ -915,6 +960,9 @@ function App(): React.ReactElement {
             <p title={benchmarkSource ? `${benchmarkSource.sessionId} / ${benchmarkSource.segmentId}` : undefined}>
               {benchmarkSource ? `${benchmarkSource.sessionId} / ${benchmarkSource.segmentId}` : "Latest audio segment"}
             </p>
+            {benchmarkModels.length > 0 && (
+              <p className="benchmark-models">Models: {benchmarkModels.join(", ")}</p>
+            )}
           </div>
           <button
             className="secondary-button"
@@ -1081,9 +1129,24 @@ function App(): React.ReactElement {
           <button className="secondary-button" disabled={!transcript} onClick={copyTranscript}>
             Copy
           </button>
+          <CorrectionKindSelect
+            ariaLabel="Correction kind for the last transcript"
+            value={correctionKind}
+            disabled={!lastResult || isSavingCorrection || status === "recording" || status === "transcribing"}
+            onChange={(kind) => {
+              setCorrectionKind(kind);
+              setCorrectionNotice("");
+            }}
+          />
           <button
             className="secondary-button"
-            disabled={!lastResult || isSavingCorrection || status === "recording" || status === "transcribing"}
+            disabled={
+              !lastResult ||
+              isSavingCorrection ||
+              correctionKind === "" ||
+              status === "recording" ||
+              status === "transcribing"
+            }
             onClick={() => void saveSttCorrection()}
           >
             {isSavingCorrection ? "Saving" : "Save correction"}
@@ -1106,6 +1169,58 @@ function Metric({ label, value }: { label: string; value: string }): React.React
       <span>{label}</span>
       <strong title={value}>{value}</strong>
     </div>
+  );
+}
+
+const CORRECTION_KIND_OPTIONS: { value: CorrectionKind; label: string }[] = [
+  { value: "acoustic", label: "Acoustic" },
+  { value: "math_transform", label: "Math notation" },
+  { value: "normalization", label: "Cleanup" },
+  { value: "rephrasing", label: "Rephrase" },
+];
+
+function CorrectionKindSelect({
+  value,
+  onChange,
+  disabled,
+  ariaLabel,
+}: {
+  value: CorrectionKind | "";
+  onChange: (kind: CorrectionKind | "") => void;
+  disabled?: boolean;
+  ariaLabel: string;
+}): React.ReactElement {
+  return (
+    <select
+      aria-label={ariaLabel}
+      className="secondary-select"
+      value={value}
+      disabled={disabled}
+      onChange={(event) => {
+        const next = event.currentTarget.value;
+        onChange(isCorrectionKind(next) ? next : "");
+      }}
+    >
+      <option value="">Correction kind…</option>
+      {CORRECTION_KIND_OPTIONS.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function formatCorrectionKind(kind: CorrectionKind): string {
+  return CORRECTION_KIND_OPTIONS.find((option) => option.value === kind)?.label ?? kind;
+}
+
+function isCorrectionKind(value: string): value is CorrectionKind {
+  return (
+    value === "acoustic" ||
+    value === "math_transform" ||
+    value === "normalization" ||
+    value === "rephrasing"
   );
 }
 
