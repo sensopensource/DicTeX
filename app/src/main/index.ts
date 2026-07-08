@@ -158,6 +158,7 @@ type SttCandidateSelectionResponse = {
 
 type SttBenchmarkSetRunRequest = {
   split: SttBenchmarkSetSplit;
+  models?: string[];
 };
 
 type SttBenchmarkSetSegmentOutcome = {
@@ -612,6 +613,7 @@ function pasteClipboardIntoActiveApp(): Promise<boolean> {
 async function runSttBenchmarkForAudioSegment(
   audioSegment: AudioSegmentRecord,
   events?: LocalEvent[],
+  modelFilter?: string[],
 ): Promise<SttBenchmarkResponse> {
   const audioPath = resolveDataRef(audioSegment.audioRef);
   if (!existsSync(audioPath)) {
@@ -622,8 +624,11 @@ async function runSttBenchmarkForAudioSegment(
   const results: SttBenchmarkResult[] = [];
   const loadedEvents = events ?? (await readLocalEvents(getEventsPath()));
   const correction = getLatestSttCorrection(loadedEvents, audioSegment.sessionId, audioSegment.segmentId);
+  const candidates = modelFilter
+    ? getSttBenchmarkCandidates(baseConfig).filter((candidate) => modelFilter.includes(candidate.model))
+    : getSttBenchmarkCandidates(baseConfig);
 
-  for (const candidate of getSttBenchmarkCandidates(baseConfig)) {
+  for (const candidate of candidates) {
     const config = {
       ...baseConfig,
       model: candidate.model,
@@ -928,6 +933,20 @@ ipcMain.handle(
       throw new Error("Invalid STT benchmark set split");
     }
 
+    let modelFilter: string[] | undefined;
+    if (request.models !== undefined) {
+      const availableModels = getSttBenchmarkModels();
+      if (
+        !Array.isArray(request.models) ||
+        request.models.length < 1 ||
+        request.models.length > 3 ||
+        request.models.some((model) => typeof model !== "string" || !availableModels.includes(model))
+      ) {
+        throw new Error("Select 1 to 3 known STT benchmark candidates");
+      }
+      modelFilter = request.models;
+    }
+
     const split = request.split;
     // Read the event log once so every segment scores against the same correction
     // snapshot and appended benchmark results cannot shift later lookups.
@@ -961,6 +980,7 @@ ipcMain.handle(
         const response = await runSttBenchmarkForAudioSegment(
           { sessionId: segment.sessionId, segmentId: segment.segmentId, audioRef: segment.audioRef },
           events,
+          modelFilter,
         );
         running = 0;
         done += 1;

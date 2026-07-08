@@ -277,7 +277,7 @@ type DictationApi = {
   ) => Promise<SttBenchmarkSetMembershipResponse>;
   runLatestSttBenchmark?: () => Promise<SttBenchmarkResponse>;
   runSegmentSttBenchmark?: (audioSegment: AudioSegmentRecord) => Promise<SttBenchmarkResponse>;
-  runSetSttBenchmark?: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkSetRunResponse>;
+  runSetSttBenchmark?: (split: SttBenchmarkSetSplit, models?: string[]) => Promise<SttBenchmarkSetRunResponse>;
   onBatchBenchmarkProgress?: (callback: (progress: SttBenchmarkSetProgress) => void) => () => void;
   summarizeSttBenchmarkSet?: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkCandidateSummaryResponse>;
   selectSttCandidate?: (request: SttCandidateSelectionRequest) => Promise<SttCandidateSelectionResponse>;
@@ -318,6 +318,7 @@ function App(): React.ReactElement {
   const [benchmarkError, setBenchmarkError] = useState("");
   const [isBenchmarking, setIsBenchmarking] = useState(false);
   const [benchmarkModels, setBenchmarkModels] = useState<string[]>([]);
+  const [selectedBenchmarkModels, setSelectedBenchmarkModels] = useState<string[]>([]);
   const [benchmarkTargetKey, setBenchmarkTargetKey] = useState<string | null>(null);
   const [batchSplit, setBatchSplit] = useState<SttBenchmarkSetSplit>("test_frozen");
   const [batchProgress, setBatchProgress] = useState<SttBenchmarkSetProgress | null>(null);
@@ -378,9 +379,15 @@ function App(): React.ReactElement {
       });
     }
     if (typeof window.dictex.getSttBenchmarkModels === "function") {
-      void window.dictex.getSttBenchmarkModels().then(setBenchmarkModels).catch(() => {
-        // Silently fail if benchmark models cannot be fetched; default UI behavior is fine
-      });
+      void window.dictex
+        .getSttBenchmarkModels()
+        .then((models) => {
+          setBenchmarkModels(models);
+          setSelectedBenchmarkModels(models.slice(0, 3));
+        })
+        .catch(() => {
+          // Silently fail if benchmark models cannot be fetched; default UI behavior is fine
+        });
     }
     if (typeof window.dictex.getLatestSttCandidateSelection === "function") {
       void window.dictex.getLatestSttCandidateSelection().then(setCurrentSelection).catch(() => {
@@ -799,9 +806,26 @@ function App(): React.ReactElement {
     }
   }
 
+  function toggleBenchmarkModel(model: string): void {
+    setSelectedBenchmarkModels((current) => {
+      if (current.includes(model)) {
+        return current.filter((selected) => selected !== model);
+      }
+      if (current.length >= 3) {
+        return current;
+      }
+      return [...current, model];
+    });
+  }
+
   async function runSetSttBenchmark(): Promise<void> {
     if (typeof window.dictex.runSetSttBenchmark !== "function") {
       setBatchError("Restart DicTeX to load the benchmark set preload API");
+      return;
+    }
+
+    if (selectedBenchmarkModels.length < 1) {
+      setBatchError("Check at least one STT candidate to run");
       return;
     }
 
@@ -812,7 +836,7 @@ function App(): React.ReactElement {
     setIsRunningBatch(true);
 
     try {
-      const response = await window.dictex.runSetSttBenchmark(batchSplit);
+      const response = await window.dictex.runSetSttBenchmark(batchSplit, selectedBenchmarkModels);
       setBatchOutcomes(response.outcomes);
       setNotice(
         `Benchmarked ${formatBenchmarkSetSplit(response.split)}: ${response.done} done, ${response.failed} failed of ${response.total}`,
@@ -834,12 +858,21 @@ function App(): React.ReactElement {
     setIsSummarizing(true);
 
     try {
-      setCandidateSummary(await window.dictex.summarizeSttBenchmarkSet(batchSplit));
+      const response = await window.dictex.summarizeSttBenchmarkSet(batchSplit);
+      setCandidateSummary({
+        ...response,
+        candidates: response.candidates.filter((summary) => selectedBenchmarkModels.includes(summary.candidate.model)),
+      });
     } catch (summaryRunError) {
       setSummaryError(summaryRunError instanceof Error ? summaryRunError.message : "Benchmark summary failed");
     } finally {
       setIsSummarizing(false);
     }
+  }
+
+  async function runAnalysis(): Promise<void> {
+    await runSetSttBenchmark();
+    await summarizeCandidates();
   }
 
   async function selectCandidate(candidate: BenchmarkCandidateIdentity): Promise<void> {
@@ -960,6 +993,9 @@ function App(): React.ReactElement {
           batchOutcomes={batchOutcomes}
           batchError={batchError}
           runSetSttBenchmark={runSetSttBenchmark}
+          selectedBenchmarkModels={selectedBenchmarkModels}
+          toggleBenchmarkModel={toggleBenchmarkModel}
+          runAnalysis={runAnalysis}
           candidateSummary={candidateSummary}
           summaryError={summaryError}
           isSummarizing={isSummarizing}
@@ -1511,6 +1547,9 @@ type BenchmarkViewProps = {
   batchOutcomes: SttBenchmarkSetSegmentOutcome[];
   batchError: string;
   runSetSttBenchmark: () => void;
+  selectedBenchmarkModels: string[];
+  toggleBenchmarkModel: (model: string) => void;
+  runAnalysis: () => void;
   candidateSummary: SttBenchmarkCandidateSummaryResponse | null;
   summaryError: string;
   isSummarizing: boolean;
@@ -1541,6 +1580,9 @@ function BenchmarkView({
   batchOutcomes,
   batchError,
   runSetSttBenchmark,
+  selectedBenchmarkModels,
+  toggleBenchmarkModel,
+  runAnalysis,
   candidateSummary,
   summaryError,
   isSummarizing,
@@ -1620,7 +1662,7 @@ function BenchmarkView({
         <div className="benchmark-header">
           <div>
             <h2>Benchmark set</h2>
-            <p>Run STT candidates over every corrected {formatBenchmarkSetSplit(batchSplit)} segment</p>
+            <p>Compare 1-3 STT candidates over every corrected {formatBenchmarkSetSplit(batchSplit)} segment</p>
           </div>
           <div className="batch-controls">
             <select
@@ -1644,19 +1686,39 @@ function BenchmarkView({
                 typeof window.dictex.runSetSttBenchmark !== "function" ||
                 isRunningBatch ||
                 isBenchmarking ||
+                selectedBenchmarkModels.length < 1 ||
                 status === "recording" ||
                 status === "transcribing"
               }
-              onClick={() => void runSetSttBenchmark()}
+              onClick={() => void runAnalysis()}
             >
               {typeof window.dictex.runSetSttBenchmark !== "function"
                 ? "Restart app"
                 : isRunningBatch
                   ? "Running"
-                  : "Run set benchmark"}
+                  : "Run analysis"}
             </button>
           </div>
         </div>
+
+        {benchmarkModels.length > 0 && (
+          <div className="candidate-checkbox-row" role="group" aria-label="STT candidates to compare (1-3)">
+            {benchmarkModels.map((model) => {
+              const isChecked = selectedBenchmarkModels.includes(model);
+              return (
+                <label key={model} className="candidate-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    disabled={isRunningBatch || isBenchmarking || (!isChecked && selectedBenchmarkModels.length >= 3)}
+                    onChange={() => toggleBenchmarkModel(model)}
+                  />
+                  {model}
+                </label>
+              );
+            })}
+          </div>
+        )}
 
         {batchError && <pre className="error">{batchError}</pre>}
 
