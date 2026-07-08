@@ -9,6 +9,9 @@ type TranscriptionOptions = {
 
 type TranscriptionResult = {
   transcript: string;
+  normalizedTranscript: string;
+  normalizationApplied: boolean;
+  normalizationDiagnostics: string[];
   copiedToClipboard: boolean;
   pastedToActiveApp: boolean;
   sessionId: string;
@@ -51,6 +54,8 @@ type RecentSegment = {
   segmentId: string;
   audioRef: string;
   transcript: string;
+  normalizedTranscript: string | null;
+  normalizationCreatedAt: string | null;
   sttEngine: string;
   sttModel: string;
   sttLanguage: string;
@@ -196,6 +201,7 @@ type DictationApi = {
   onHotkeyStatus: (callback: (status: HotkeyStatus) => void) => () => void;
   openDataFolder: () => Promise<boolean>;
   openEventsLog: () => Promise<boolean>;
+  openDictionaryFile?: () => Promise<boolean>;
   getSttConfig: () => Promise<SttConfig>;
   getSttBenchmarkModels?: () => Promise<string[]>;
   getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
@@ -384,6 +390,9 @@ function App(): React.ReactElement {
       setLastResult(result);
       setLastPasteState(result.pastedToActiveApp ? "pasted" : "clipboard-only");
       setCorrectionNotice("");
+      // Surface normalizer diagnostics (e.g. a malformed dictionary) quietly,
+      // without blocking the dictation.
+      setNotice(result.normalizationDiagnostics.length > 0 ? `Normalizer: ${result.normalizationDiagnostics.join("; ")}` : "");
       setStatus("done");
       void loadRecentSegments();
     } catch (transcriptionError) {
@@ -597,6 +606,20 @@ function App(): React.ReactElement {
     }
   }
 
+  async function openDictionaryFile(): Promise<void> {
+    if (typeof window.dictex.openDictionaryFile !== "function") {
+      setNotice("Restart DicTeX to load the dictionary preload API");
+      return;
+    }
+
+    try {
+      const opened = await window.dictex.openDictionaryFile();
+      setNotice(opened ? "Opened normalizer dictionary" : "Could not open normalizer dictionary");
+    } catch (openError) {
+      setNotice(openError instanceof Error ? openError.message : "Could not open normalizer dictionary");
+    }
+  }
+
   async function runLatestSttBenchmark(): Promise<void> {
     if (typeof window.dictex.runLatestSttBenchmark !== "function") {
       setBenchmarkError("Restart DicTeX to load the benchmark preload API");
@@ -805,6 +828,12 @@ function App(): React.ReactElement {
                   </div>
                 ) : (
                   <p className="history-transcript">{segment.transcript || "-"}</p>
+                )}
+
+                {segment.normalizedTranscript !== null && segment.normalizedTranscript !== segment.transcript && (
+                  <p className="history-normalized-transcript" title="Text inserted after normalization">
+                    Inserted: {segment.normalizedTranscript || "-"}
+                  </p>
                 )}
 
                 <div className="history-footer">
@@ -1109,7 +1138,7 @@ function App(): React.ReactElement {
 
       <section className="panel transcript-panel">
         <label className="transcript-label" htmlFor="transcript">
-          Last transcript
+          Last transcript (raw)
         </label>
         <textarea
           id="transcript"
@@ -1120,6 +1149,13 @@ function App(): React.ReactElement {
           }}
           placeholder="Your transcript will appear here."
         />
+
+        {lastResult?.normalizationApplied && (
+          <div className="normalized-preview">
+            <span className="normalized-preview-label">Inserted (normalized)</span>
+            <p className="normalized-preview-text">{lastResult.normalizedTranscript || "-"}</p>
+          </div>
+        )}
 
         {error && <pre className="error">{error}</pre>}
         {notice && <p className="notice">{notice}</p>}
@@ -1156,6 +1192,13 @@ function App(): React.ReactElement {
           </button>
           <button className="secondary-button" onClick={openEventsLog}>
             Open events log
+          </button>
+          <button
+            className="secondary-button"
+            disabled={typeof window.dictex.openDictionaryFile !== "function"}
+            onClick={openDictionaryFile}
+          >
+            Open dictionary
           </button>
         </div>
       </section>
