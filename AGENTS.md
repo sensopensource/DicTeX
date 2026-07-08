@@ -144,29 +144,26 @@ C:\Users\souid\DicTeX
 https://github.com/sensopensource/DicTeX
 ```
 
-If multiple agents work in parallel, do not share the same working directory.
-
 Rule:
 
 ```text
-one agent = one folder = one branch = one PR
+one agent = one clone = one folder = one branch = one PR
 ```
 
-For a second agent, use a separate clone:
+When told to solve an issue, the implementing agent does not work in the main
+checkout. It clones the repo into a fresh sibling folder and works entirely
+there. Parallel agents are then isolated by construction: they never share a
+working directory and cannot collide.
 
 ```text
-C:\Users\souid\DicTeX-agent-b
+git clone https://github.com/sensopensource/DicTeX.git ../DicTeX-issue-<N>
+cd ../DicTeX-issue-<N>
+git checkout -b issue-<N>-<slug>
 ```
 
-Prompt pattern for another agent:
-
-```text
-Work only in C:\Users\souid\DicTeX-agent-b.
-Do not touch C:\Users\souid\DicTeX.
-Read README.md, docs/product-decisions.md, docs/development.md, AGENTS.md, and the assigned issue.
-Create your own branch from main.
-Push a PR and do not merge.
-```
+Then read README.md, docs/product-decisions.md, docs/development.md, AGENTS.md,
+and the assigned issue; do the work in that folder; push the branch and open a
+PR; do not merge.
 
 ## Agent Reasoning Levels
 
@@ -233,16 +230,19 @@ Notes:
 The intended workflow is one agent, in one terminal session, from start to
 merge. When told to work an issue, the agent runs this protocol itself:
 
-0. **Dependency guard.** Read the issue's `Depends on:` line (see Issue
+1. **Set up an isolated workspace.** Clone the repo into a fresh sibling folder
+   and create the issue branch there (see Git Workflow). Do all work in that
+   clone, never in the main checkout.
+2. **Dependency guard.** Read the issue's `Depends on:` line (see Issue
    Orchestration). For each referenced issue, verify it is CLOSED (merged). If
    any is still open, STOP, report "blocked by #X", and write no code.
-1. Read the issue and find its `level:*` label.
-2. Adjust its own reasoning effort to that level's effort (see the table).
-3. Do the work at that effort and open the PR.
-4. Check the issue for `needs:high-review`.
-5. If present, **raise its own reasoning effort by one level** and re-review its
+3. Read the issue and find its `level:*` label.
+4. Adjust its own reasoning effort to that level's effort (see the table).
+5. Do the work at that effort and open the PR.
+6. Check the issue for `needs:high-review`.
+7. If present, **raise its own reasoning effort by one level** and re-review its
    own diff at that higher effort before finalizing the PR.
-6. Apply any fixes the higher-effort pass surfaces, then finalize.
+8. Apply any fixes the higher-effort pass surfaces, then finalize.
 
 Rules for step 5:
 
@@ -305,7 +305,7 @@ Wave 3 (after #39):           #40 (moyen), #41 (moyen)
 
 6. Flags **soft conflicts**: issues with no hard dependency that still touch the
    same files/module. These are not `Depends on:` entries; they are a note to
-   sequence them or isolate branches, per "one agent = one folder = one branch".
+   sequence them, since separate clones still merge-conflict on shared files.
 
 ### How a dependency clears
 
