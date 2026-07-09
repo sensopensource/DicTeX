@@ -249,6 +249,42 @@ Constraints kept:
 Setup and env vars are documented in `docs/development.md`
 ("Second STT provider (Vosk)").
 
+## Corrected dataset export
+
+The Dataset view can export the corrected STT dataset to local JSONL files, in
+preparation for Phase 3 normalizer training and Phase 4 STT acoustic
+fine-tuning. It only reads the append-only event log and writes new files under
+`data/exports/stt-dataset-<timestamp>/`; it never rewrites event history and
+never uploads anything.
+
+Decisions:
+
+- The fine-tuning target is `audio -> corrected_transcript` (the human
+  reference), not `model transcript -> corrected_transcript`. Model transcripts
+  stay useful for benchmarking/error analysis, but the acoustic target is the
+  human transcript.
+- Records are partitioned by benchmark split (`train_candidate_pool`,
+  `validation`, `test_frozen` — frozen test always in its own files) **and** by
+  `correction_kind`. Files are named `<split>.<correction_kind>.jsonl`, so the
+  acoustic (STT) dataset and the math_transform (normalizer) dataset land in
+  distinct files and stay separable.
+- The export reads **all** correction events of a segment, taking the latest
+  correction of **each** kind — not the single latest event. A segment enriched
+  by #66 carries chained `acoustic` + `math_transform` corrections; collapsing to
+  the last event would silently drop the acoustic pair. Within one kind,
+  latest-event-wins still applies so a re-correction supersedes its predecessor.
+- Untyped legacy corrections (no `correction_kind`) cannot be routed into a
+  kind-partitioned dataset, so they are skipped and their count is reported in
+  the manifest and UI rather than dropped silently.
+- Each record is traceable to its source events: `session_id`, `segment_id`,
+  `audio_ref`, resolved absolute `audio_path`, `raw_transcript` and
+  `corrected_transcript` (the transform's input/target), `original_stt_output`
+  (the raw STT even when a chained correction's own raw text is a later literal
+  transcript), `language`, `correction_kind`, `correction_created_at`, and the
+  selected base candidate metadata. A `manifest.json` records per-split /
+  per-kind counts and the selection. Export proceeds even when no base candidate
+  has been selected yet (`selected_candidate` is then null and the UI notes it).
+
 ## Math Parsing Decisions
 
 Math parsing is not part of the current working loop yet.

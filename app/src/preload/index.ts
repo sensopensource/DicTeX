@@ -224,6 +224,30 @@ type SttCandidateSelectionResponse = {
   selectionReason: string;
 };
 
+type SttDatasetExportFileSummary = {
+  correctionKind: string;
+  file: string;
+  recordCount: number;
+};
+
+type SttDatasetExportSplitSummary = {
+  split: SttBenchmarkSetSplit;
+  segmentCount: number;
+  correctedSegmentCount: number;
+  recordCount: number;
+  files: SttDatasetExportFileSummary[];
+};
+
+type SttDatasetExportSummary = {
+  createdAt: string;
+  exportDir: string | null;
+  totalRecords: number;
+  skippedUntypedCorrections: number;
+  selectedCandidate: BenchmarkCandidateIdentity | null;
+  selectionReason: string | null;
+  splits: SttDatasetExportSplitSummary[];
+};
+
 contextBridge.exposeInMainWorld("dictex", {
   transcribeAudio: (audioBytes: Uint8Array, mimeType: string, options: TranscriptionOptions = {}) =>
     ipcRenderer.invoke("dictation:transcribe", audioBytes, mimeType, options) as Promise<TranscriptionResponse>,
@@ -271,6 +295,9 @@ contextBridge.exposeInMainWorld("dictex", {
     ipcRenderer.invoke("candidate-selection:save-stt", request) as Promise<SttCandidateSelectionResponse>,
   getLatestSttCandidateSelection: () =>
     ipcRenderer.invoke("candidate-selection:get-latest-stt") as Promise<SttCandidateSelectionResponse | null>,
+  exportSttDataset: () => ipcRenderer.invoke("dataset:export-stt") as Promise<SttDatasetExportSummary>,
+  openExportFolder: (exportDir?: string) =>
+    ipcRenderer.invoke("dataset:open-export-folder", exportDir) as Promise<boolean>,
   onBatchBenchmarkProgress: (callback: (progress: SttBenchmarkSetProgress) => void) => {
     const listener = (_event: IpcRendererEvent, progress: SttBenchmarkSetProgress) => {
       callback(progress);

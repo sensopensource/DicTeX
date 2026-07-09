@@ -906,6 +906,46 @@ textarea {
   font-size: 0.78rem;
 }
 
+.dataset-export-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.dataset-export-path {
+  margin: 0;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 0.72rem;
+  color: #b8b8b8;
+  word-break: break-all;
+}
+
+.dataset-export-splits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.dataset-export-splits > li > span {
+  color: #9a9a9a;
+}
+
+.dataset-export-splits ul {
+  list-style: none;
+  margin: 0.2rem 0 0;
+  padding: 0 0 0 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  color: #8f8f8f;
+  font-size: 0.74rem;
+}
+
 @media (max-width: 680px) {
   .diagnostics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
