@@ -47,10 +47,10 @@ export type DatasetBuilderSaveRequest = {
    * from its read-only source data). Empty means no acoustic layer for this
    * entry (a math_transform-only, no-audio build). */
   rawTranscript: string;
-  /** faster-whisper benchmark model name tagging the raw transcript's
-   * origin. Only recorded (as a synthetic own-store stt_result event) for a
-   * "paste" source with a non-empty rawTranscript — a "segment" source
-   * already has a real stt_result event in DicTeX's data folder. */
+  /** Reference STT model the user chose in the builder UI. Reserved metadata:
+   * a "segment" source already has a real stt_result event in DicTeX's data
+   * folder, and a "paste" source only builds a math_transform (text -> text)
+   * pair, so this is not written to the store today. */
   referenceModel: string;
   /** Layer 1: literal-correct transcript. Required to save anything at all. */
   literalTranscript: string;
@@ -82,7 +82,6 @@ export type DatasetBuilderPlan = {
   notationTranscript: string;
   saveAcoustic: boolean;
   saveMathTransform: boolean;
-  writeSyntheticSttResult: boolean;
 };
 
 function mintManualId(): { sessionId: string; segmentId: string } {
@@ -112,12 +111,19 @@ export function planDatasetBuilderSave(request: DatasetBuilderSaveRequest): Data
 
   const rawTranscript = typeof request.rawTranscript === "string" ? request.rawTranscript.trim() : "";
   const notationTranscript = typeof request.notationTranscript === "string" ? request.notationTranscript.trim() : "";
-  const saveAcoustic = rawTranscript.length > 0;
+  // The acoustic dataset is (audio -> literal) for STT fine-tuning, so an
+  // acoustic pair is only written for a "segment" source, which carries real
+  // DicTeX audio. A "paste" source has no audio and can ONLY produce a
+  // math_transform (text -> text) pair — never an audio-less acoustic record
+  // that would pollute the acoustic (STT) training set.
+  const saveAcoustic = rawTranscript.length > 0 && request.source.mode === "segment";
   const saveMathTransform = notationTranscript.length > 0;
 
   if (!saveAcoustic && !saveMathTransform) {
     throw new Error(
-      "Nothing to save: provide a raw transcript (paste one or pick a segment) for the acoustic layer, or fill Layer 2 for the math-transform layer",
+      request.source.mode === "segment"
+        ? "Nothing to save: the picked segment has no raw transcript for the acoustic layer, and Layer 2 (notation) is empty."
+        : "Nothing to save: a pasted (no-audio) entry needs Layer 2 (notation) to build a math_transform pair. Pick a recorded segment if you want an acoustic (audio -> literal) pair.",
     );
   }
 
@@ -159,6 +165,5 @@ export function planDatasetBuilderSave(request: DatasetBuilderSaveRequest): Data
     notationTranscript,
     saveAcoustic,
     saveMathTransform,
-    writeSyntheticSttResult: request.source.mode === "paste" && saveAcoustic,
   };
 }

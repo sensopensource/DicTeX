@@ -913,27 +913,6 @@ ipcMain.handle(
     const plan = planDatasetBuilderSave(request);
     const baseConfig = getBaseSttConfig();
 
-    // Synthetic own-store stt_result: only for a "paste" source with a raw
-    // transcript, so getSegmentSttInfo can attribute it to the chosen
-    // reference model. A "segment" source already has a real stt_result
-    // event in DicTeX's (read-only) source data folder.
-    if (plan.writeSyntheticSttResult) {
-      await appendOwnEvent({
-        event_type: "stt_result",
-        session_id: plan.sessionId,
-        segment_id: plan.segmentId,
-        created_at: new Date().toISOString(),
-        audio_ref: plan.audioRef,
-        stt_engine: fasterWhisperProvider,
-        stt_model: typeof request.referenceModel === "string" && request.referenceModel.length > 0
-          ? request.referenceModel
-          : baseConfig.model,
-        stt_language: baseConfig.language,
-        stt_output: plan.rawTranscript,
-        corrected_transcript: null,
-      });
-    }
-
     if (plan.saveAcoustic) {
       await appendOwnEvent({
         event_type: "stt_correction",
