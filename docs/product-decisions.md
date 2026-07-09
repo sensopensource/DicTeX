@@ -2,6 +2,34 @@
 
 This document captures the product and implementation context that future agents should preserve when working on DicTeX.
 
+## DicTeX / Lab split (monorepo)
+
+DicTeX is being split into two Electron apps in one npm-workspaces monorepo
+(see `pivot_dictex_lab_split.md` / AGENTS.md "Current Direction"):
+
+- **`apps/dictex`** — the consumer dictation tool (voice → STT → normalizer →
+  insert). Has the microphone, hotkey, clipboard/paste, and normalizer.
+- **`apps/lab`** — **DicTeX Lab**, the ML tooling app (pivot Phase 2, #76). No
+  microphone: it hosts the STT benchmark (segment/batch, summary, error
+  analysis, candidate selection), typed corrections, benchmark-set split
+  membership, the Vosk provider, and the dataset export.
+
+Data contract (one-directional, file-based, zero code coupling): the Lab reads
+DicTeX's local data folder **read-only** (audio + `stt_result` /
+`normalization_result` events) and keeps its **own** store for everything it
+writes — corrections, splits, benchmark results, candidate selections, dataset
+exports, and its own settings — under its own Electron `userData`
+(`%APPDATA%/dictex-lab-app/data`), never DicTeX's `%APPDATA%/dictex-app/data`.
+The DicTeX data folder path is configurable in the Lab (default
+`%APPDATA%/dictex-app/data`). Both apps import all derivation/scoring/export
+logic from `packages/shared` so the two apps cannot diverge; DicTeX never
+depends on the Lab.
+
+Phase 2 (#76) **adds** the Lab and factors the shared logic; it deliberately
+does **not** remove the benchmark/dataset/correction/split features from
+`apps/dictex` — that is Phase 3 (#77). So those features temporarily exist in
+both apps, kept DRY by the shared package.
+
 ## Product Shape
 
 DicTeX is an OpenWhispr-like dictation layer for mathematical writing.

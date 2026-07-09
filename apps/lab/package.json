@@ -1,8 +1,8 @@
 {
-  "name": "dictex-app",
+  "name": "dictex-lab-app",
   "version": "0.1.0",
   "private": true,
-  "description": "DicTeX desktop app",
+  "description": "DicTeX Lab: benchmark, dataset export, and typed corrections over DicTeX's local data folder (read-only). No microphone.",
   "main": "out/main/index.js",
   "type": "module",
   "scripts": {

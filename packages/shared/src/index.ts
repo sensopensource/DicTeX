@@ -1,7 +1,21 @@
-// DicTeX shared package — placeholder scaffold (pivot Phase 1, issue #75).
+// DicTeX shared package (pivot Phase 2, issue #76) — main-process (".") barrel.
 //
-// Later phases populate this with the cross-app TypeScript contracts shared by
-// `apps/dictex` and `apps/lab`: the JSONL event schema, the dataset /
-// test_frozen export format, and the CER/WER scoring helpers. It is
-// intentionally empty for now (no behavior change) and nothing imports it yet.
-export {};
+// Cross-app TypeScript contracts shared by `apps/dictex` and `apps/lab` main
+// processes: the JSONL event schema + append-only derivations (localEvents),
+// CER/WER scoring (sttScoring), STT candidate summarization (benchmarkSummary),
+// the test_frozen-compatible dataset export builder (datasetExport), the local
+// STT engine invocation (sttEngine — imports node:child_process/fs), and the
+// "live benchmark run" IPC contract types (benchmarkTypes). Both apps import
+// from here so they do not diverge — see pivot_dictex_lab_split.md / AGENTS.md.
+//
+// Renderer-only (browser-safe) helpers live in dedicated subpath exports so
+// they never pull node built-ins into a renderer bundle:
+//   `@dictex/shared/formatting`     — presentation string formatting
+//   `@dictex/shared/errorAnalysis`  — heuristic benchmark error analysis
+// Those modules only TYPE-import from the node-touching modules above.
+export * from "./localEvents.js";
+export * from "./sttScoring.js";
+export * from "./benchmarkSummary.js";
+export * from "./datasetExport.js";
+export * from "./sttEngine.js";
+export * from "./benchmarkTypes.js";

@@ -40,6 +40,20 @@ flowchart LR
     D --> E[Future correction + improvement]
 ```
 
+## Repository Layout
+
+DicTeX is an npm-workspaces monorepo with two Electron apps:
+
+- **`apps/dictex`** — the consumer dictation app (this README's product).
+- **`apps/lab`** — **DicTeX Lab**, a separate tooling app (no microphone) for
+  STT benchmarking, typed corrections, benchmark-set splits, and dataset
+  export. It reads DicTeX's local data folder **read-only** and keeps its own
+  store. See `docs/development.md` → "DicTeX Lab" and
+  `pivot_dictex_lab_split.md`.
+
+Shared Python STT (`packages/engine`) and shared TypeScript
+(`packages/shared`) back both apps.
+
 ## MVP Scope
 
 The current MVP focuses on a small but useful local workflow:
