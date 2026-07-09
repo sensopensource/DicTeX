@@ -83,37 +83,22 @@ Do not collapse all corrections into a single final-output edit, or future train
 
 Store `corrected_transcript: null` in `stt_result` for compatibility, but write human transcript corrections as separate `stt_correction` events. Do not mutate older `stt_result` records.
 
-### Dataset enrichment view (two-layer capture)
+### Dataset enrichment recording — removed (DicTeX/Lab split)
 
-The Dataset view captures **separable** training data for one freshly recorded
-clip as two explicit layers, so the acoustic (STT) and math_transform
-(normalizer) datasets stay cleanly separable. It writes **two chained
-append-only `stt_correction` events** — no new event type:
+The in-app two-layer audio→text *recording* capture (issue #66) has been
+**removed** from DicTeX. Per the current pivot (see
+`pivot_dictex_lab_split.md`), dataset building and benchmarking move to a
+separate **DicTeX Lab** app, and DicTeX stays a lean consumer dictation tool.
+The Lab has no microphone: it consumes DicTeX's real transcriptions and reads
+DicTeX's local data folder. The Dataset view in DicTeX now only exposes the
+local dataset **export** (#44) of already-captured corrections, until the Lab
+takes that over too.
 
-1. `correction_kind = "acoustic"`: `raw_transcript` = raw STT output,
-   `corrected_transcript` = literal-correct transcript (only mishearings fixed;
-   notation stays verbal). Feeds the acoustic dataset paired with the audio.
-2. `correction_kind = "math_transform"`: `raw_transcript` = the literal
-   transcript, `corrected_transcript` = normalized notation. Feeds the
-   normalizer dataset as a text→text pair (no audio).
-
-The pipeline stage is encoded by **which field is filled**, not by one blended
-tag — a single fully-normalized text would collapse both transformations and
-make the datasets non-separable. A layer left empty is skipped rather than
-written empty; the notation layer cannot be saved without the literal layer,
-since it is its input.
-
-Recording in this view **never touches the clipboard and never pastes**
-(`transcribeAudio` is called with `writeClipboard: false` and `autoPaste:
-false`) and uses a per-call STT model override that does not change the
-persisted global dictation model.
-
-Consequence for consumers: a segment can now carry more than one correction
-event. `reconstructRecentSegments` (`app/src/main/localEvents.ts`) uses
-latest-event-wins, so history shows only the last kind. **Dataset export (#44)
-must read all correction events of a segment, not just the latest.** Do not
-"fix" the history derivation for this — history display and dataset extraction
-have different needs.
+The two-layer separability principle itself is preserved — it just lives in the
+Lab now: acoustic pairs (audio → literal-correct transcript) and math_transform
+pairs (literal text → normalized notation) stay separable by encoding the
+pipeline stage in which field is filled, still as chained append-only
+`stt_correction` events.
 
 ## UI Direction
 
