@@ -198,8 +198,8 @@ Do not treat a Whisper STT transcript and a Claude or Qwen math-transform output
 The STT benchmark universe must not stay "Whisper base vs Whisper small". To make
 it genuinely multi-provider, a second local STT engine was added as a
 benchmark-only candidate behind a small provider abstraction in the Python
-sidecar (`engine/providers/`): `faster-whisper` is the first provider, **Vosk**
-the second.
+sidecar (`packages/engine/providers/`): `faster-whisper` is the first provider,
+**Vosk** the second.
 
 Why Vosk:
 
