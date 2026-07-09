@@ -633,27 +633,23 @@ graceful error). Removed all benchmark/dataset/correction/split IPC + UI and 61
 dead CSS blocks (~-3400 LOC; CSS bundle 16.6 -> 9.2 kB). No `packages/shared` or
 `packages/engine` deletions. Done.
 
-Open roadmap — DicTeX / Lab split (see `pivot_dictex_lab_split.md`). **Phases 0-3
-are merged; only Phase 4 remains.** Prior benchmark/dataset issues are done or
-folded in (#43/#58 closed; #44 export relocated to the Lab in Phase 2; #66
-recording reverted in Phase 0; #45 re-scoped to post-pivot).
+Roadmap — DicTeX / Lab split (see `pivot_dictex_lab_split.md`). **The pivot is
+complete: all four phases (0-4) are merged.** DicTeX is the lean consumer
+dictation app; the Lab owns benchmark + dataset building + export. Prior
+benchmark/dataset issues are done or folded in (#43/#58 closed; #44 export
+relocated to the Lab in Phase 2; #66 recording reverted in Phase 0).
 
 - #75 Phase 1 — monorepo skeleton — **DONE** (PR #79).
 - #76 Phase 2 — `apps/lab` + `packages/shared` — **DONE** (PR #80).
 - #77 Phase 3 — slim DicTeX + Open Lab — **DONE** (PR #81).
 - #78 Phase 4 — Lab manual two-layer dataset builder + benchmark from the data
-  folder — `level:eleve` + `needs:high-review`. Depends on: #76 (done) ->
-  **in flight** (PR pending; reviewer tier: Opus 4.8 max).
+  folder — **DONE** (PR #82; Opus-max review restricted paste sources to
+  math_transform, so no audio-less `acoustic` records reach the STT dataset).
+
+Post-pivot (not started):
+
 - #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`.
-  Post-pivot (Phase 5), gated on the Lab producing enough `acoustic`-tagged data.
-
-Launch plan (waves):
-
-```text
-Done:               #75 -> #76 -> #77 (Phases 1-3 merged)
-In flight:          #78 (Phase 4, needs:high-review)
-Later (post-pivot): #45
-```
+  Phase 5, gated on the Lab producing enough `acoustic`-tagged data.
 
 Model per level (Claude / Codex): `level:eleve` -> Opus 4.8 high / gpt-5-codex
 high; `needs:high-review` issues get a reviewer one notch up (Opus 4.8 max).

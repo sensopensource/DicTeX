@@ -235,9 +235,9 @@ recorder (see AGENTS.md "Two-layer dataset enrichment"): an **empty layer is
 skipped**, so the two datasets stay separable purely by which layer was
 filled —
 
-- a raw transcript (pasted or from a picked segment) + Layer 1 writes an
-  `acoustic` correction (`raw_transcript` = raw STT, `corrected_transcript` =
-  Layer 1);
+- a **picked segment** (real audio) + Layer 1 writes an `acoustic` correction
+  (`raw_transcript` = the segment's raw STT, `corrected_transcript` = Layer 1);
+  a **paste** source has no audio, so it never writes `acoustic`;
 - Layer 1 + Layer 2 writes a `math_transform` correction (`raw_transcript` =
   Layer 1, `corrected_transcript` = Layer 2) — Layer 2 can never be saved
   without Layer 1, since Layer 1 is its input;

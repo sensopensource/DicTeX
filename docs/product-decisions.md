@@ -31,8 +31,9 @@ leaving it a pure consumer dictation tool (single Home view, collapsible
 Copy/Copy-raw/Play history, and an "Open Lab" launcher). DicTeX Lab is now the
 **sole** tooling surface for benchmark, typed corrections, splits, and dataset
 export; DicTeX only writes raw dictation data (`audio_segment`, `stt_result`,
-`normalization_result`) that the Lab reads. Phases 0-3 are merged; Phase 4 (#78,
-the Lab's manual two-layer dataset builder) is the remaining pivot work.
+`normalization_result`) that the Lab reads. **All four pivot phases (0-4) are
+merged** — DicTeX is the lean consumer app and the Lab owns benchmark + dataset
+building + export.
 
 ## Product Shape
 
@@ -143,9 +144,15 @@ data flow. Decisions:
 - **An empty layer is skipped, never blended.** Saving never collapses the
   acoustic and math_transform transforms into one record; which correction
   event(s) get written is determined purely by which layer is filled
-  (raw transcript present → acoustic; Layer 2 present → math_transform, which
-  always requires Layer 1 since Layer 1 is its input). A wrong/blended format
-  here would corrupt both datasets (see AGENTS.md level-scoring: axis E = 4).
+  (Layer 2 present → math_transform, which always requires Layer 1 since Layer 1
+  is its input). A wrong/blended format here would corrupt both datasets (see
+  AGENTS.md level-scoring: axis E = 4).
+- **An `acoustic` pair requires real audio (a picked segment) — never a paste.**
+  A paste source has no audio, so it can only write a math_transform
+  (text → text) pair; an acoustic pair (audio → literal) is only written for a
+  picked DicTeX segment. This keeps audio-less `acoustic` records — which are
+  unusable for STT fine-tuning — out of the acoustic dataset (Opus-max review of
+  #78 / PR #82).
 - **A pasted (no-audio) entry still needs a string `audioRef` internally.**
   `@dictex/shared`'s `getSttBenchmarkSetSegments` (and therefore
   `buildSttDatasetExport`, reused unmodified) requires a string `audioRef` to
