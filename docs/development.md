@@ -9,22 +9,30 @@
 
 ## Repository Layout
 
-DicTeX is an npm-workspaces monorepo. The consumer app, the Python STT engine,
-and shared TypeScript live in separate workspaces:
+DicTeX is an npm-workspaces monorepo. The consumer app, the tooling app, the
+Python STT engine, and shared TypeScript live in separate workspaces:
 
 ```text
 apps/
-  dictex/      # the Electron + React consumer app
+  dictex/      # the Electron + React consumer dictation app (has a microphone)
+  lab/         # DicTeX Lab — Electron + React tooling app (NO microphone):
+               # benchmark + dataset export + corrections/splits over DicTeX's
+               # data folder, read-only, with its own store
 packages/
-  engine/      # the Python STT sidecar (faster-whisper + Vosk)
-  shared/      # shared TS scaffold (event schema, dataset format, scoring) — empty for now
+  engine/      # the Python STT sidecar (faster-whisper + Vosk) — shared
+  shared/      # shared TS used by both apps: JSONL event schema + derivations,
+               # CER/WER scoring, benchmark summary, dataset export builder,
+               # STT engine invocation, benchmark IPC types, error analysis,
+               # and presentation helpers
 ```
 
 npm commands run from the **repository root**. The root `package.json` holds the
-workspaces list and delegates `typecheck` / `build` / `dev` to `apps/dictex`, so
-`scripts/npm.cmd run <script>` from the root drives the app. The Python `.venv`
-lives at the **repository root** (`.venv/`), not inside a workspace; the Electron
-main process resolves it relative to the repo root at runtime.
+workspaces list; root `typecheck` and `build` cover `packages/shared` +
+`apps/dictex` + `apps/lab`, while `dev` runs `apps/dictex` (use `dev:dictex` /
+`dev:lab` to pick one). So `scripts/npm.cmd run <script>` from the root drives
+the monorepo. The Python `.venv` lives at the **repository root** (`.venv/`),
+not inside a workspace; each app's Electron main process resolves it relative to
+the repo root at runtime (both apps sit at the same depth under `apps/`).
 
 ## Windows TLS Note
 
@@ -159,6 +167,75 @@ scripts/npm.sh run dev
 ```
 
 The app uses a Python sidecar with faster-whisper for local transcription.
+
+## DicTeX Lab (tooling app)
+
+`apps/lab` is the separate **DicTeX Lab** app (pivot Phase 2, see
+`pivot_dictex_lab_split.md`). It has **no microphone, no hotkey, no
+clipboard/paste, and no normalizer**: it is where the ML tooling lives —
+STT benchmark (segment/batch, candidate summary, error analysis, candidate
+selection), typed corrections, benchmark-set split membership, and the
+test_frozen-compatible dataset export. It reuses `packages/engine`
+(faster-whisper + Vosk) for STT and `packages/shared` for all derivation /
+scoring / export logic, so DicTeX and the Lab cannot diverge.
+
+Run it (from the repository root):
+
+```powershell
+scripts\npm.cmd run dev:lab
+```
+
+```sh
+scripts/npm.sh run dev:lab
+```
+
+### DicTeX data folder (read-only source) + the Lab's own store
+
+The Lab reads DicTeX's local data folder — `audio/` + `events.jsonl`
+(`audio_segment` / `stt_result` / `normalization_result`) — **read-only**.
+It never writes into DicTeX's folder. Everything the Lab produces
+(corrections, splits, benchmark results, candidate selections, dataset
+exports, and its own settings) goes into the **Lab's own** store under its
+own Electron `userData` (`%APPDATA%/dictex-lab-app/data`), a separate folder
+from DicTeX's `%APPDATA%/dictex-app/data`.
+
+The DicTeX data folder path is configurable in the Lab's Segments view:
+
+- default: `%APPDATA%/dictex-app/data`;
+- override via `Choose folder…` (native picker) or by pasting an absolute
+  path + `Apply`;
+- `Reset to default` clears the override.
+
+The choice is persisted in the Lab's own `settings.json`
+(`{"dictexDataFolder": "..."}`); a missing/malformed file degrades to the
+default with a quiet diagnostic. When the Lab benchmarks a segment, it reads
+that segment's audio from the configured source folder and appends the
+`stt_benchmark_result` to its **own** event log. When combining state for a
+segment, the Lab concatenates DicTeX's read-only events (first) with its own
+events (second), so latest-event-wins derivations see the Lab's corrections/
+splits layered on top of DicTeX's raw dictation records.
+
+### Manual Lab smoke test
+
+1. `scripts\npm.cmd run dev:lab`, confirm the window opens to the Segments
+   view and the data-folder line shows `%APPDATA%/dictex-app/data (default)`
+   with a `data folder ok` pill when DicTeX has recorded at least once.
+2. Confirm DicTeX segments recorded by `apps/dictex` appear in the list
+   (read from the source folder), and `Play` plays their audio.
+3. `Correct` a segment (choose a correction kind), then set its split to
+   `Test frozen`; confirm both land only in the Lab's events log
+   (`Open Lab events log`) and DicTeX's `events.jsonl` is untouched.
+4. In `Benchmark`, click `Benchmark latest` (needs the venv or
+   `DICTEX_PYTHON`); confirm `tiny`/`base`/`small` transcripts + latency
+   appear. Run `Run analysis` over `Test frozen`, `Summarize by candidate`,
+   and `Select` a candidate.
+5. In `Dataset export`, click `Export dataset`; confirm a
+   `stt-dataset-<timestamp>/` folder with a `manifest.json` +
+   `<split>.<correction_kind>.jsonl` files is written under the **Lab's**
+   `data/exports/`, not DicTeX's folder, and DicTeX's `events.jsonl` is
+   unchanged.
+6. Point the data folder at a different directory (or reset it) and confirm
+   the segment list refreshes from the new source.
 
 ## Global Dictation Hotkey
 

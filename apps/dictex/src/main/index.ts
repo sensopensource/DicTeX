@@ -12,15 +12,23 @@ import {
   isCorrectionKind,
   readLocalEvents,
   reconstructRecentSegments,
+  calculateCharacterErrorRate,
+  summarizeSttBenchmarkResultsByCandidate,
+  buildSttDatasetExport,
+  transcribeWithPython,
+  ProviderUnavailableError,
+  getSttBenchmarkModels,
   type BenchmarkCandidateIdentity,
   type CorrectionKind,
   type LocalEvent,
   type ReconstructedSegment,
   type SttBenchmarkSetSplit,
-} from "./localEvents.js";
-import { calculateCharacterErrorRate } from "./sttScoring.js";
-import { summarizeSttBenchmarkResultsByCandidate, type SttBenchmarkCandidateSummaryResponse } from "./benchmarkSummary.js";
-import { buildSttDatasetExport, type SttDatasetExport, type SttDatasetRecord } from "./datasetExport.js";
+  type SttBenchmarkCandidateSummaryResponse,
+  type SttDatasetExport,
+  type SttDatasetRecord,
+  type SttConfig,
+  type EngineTranscriptionResult,
+} from "@dictex/shared";
 import { readAppSettings, writeAppSettings } from "./settings.js";
 import { normalizeTranscript, DEFAULT_RULES, type NormalizationResult } from "./normalizer.js";
 
@@ -48,14 +56,6 @@ type TranscriptionResult = {
 type TranscriptionOptions = {
   autoPaste?: boolean;
   trigger?: "manual" | "global_hotkey";
-};
-
-type SttConfig = {
-  engine: string;
-  model: string;
-  language: string;
-  device: string;
-  computeType: string;
 };
 
 type AudioSegmentRecord = {
@@ -224,34 +224,7 @@ type SttBenchmarkSetProgress = {
   } | null;
 };
 
-type EngineTranscriptionResult = {
-  transcript: string;
-  sttEngine: string;
-  sttModel: string;
-  sttLanguage: string;
-  audioDurationSeconds: number | null;
-};
-
-type PythonInvocation = {
-  command: string;
-  argsPrefix: string[];
-};
-
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-
-/**
- * Thrown when a benchmark provider's dependencies or local model files are
- * absent. The sidecar reports this as an `{"available": false}` result; the
- * benchmark loop catches it to skip the candidate with a quiet diagnostic
- * instead of failing the segment. Never raised on the faster-whisper dictation
- * path, whose dependency is required.
- */
-class ProviderUnavailableError extends Error {
-  constructor(readonly reason: string) {
-    super(reason);
-    this.name = "ProviderUnavailableError";
-  }
-}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Built main output lives at `<repoRoot>/apps/dictex/out/main`, so four levels
@@ -263,7 +236,6 @@ const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
 const enginePath = path.join(repoRoot, "packages", "engine", "transcribe.py");
 const sessionId = `session_${new Date().toISOString().replace(/\D/g, "")}`;
 const globalHotkey = "Super+Alt+Space";
-const defaultSttBenchmarkModels = ["tiny", "base", "small"];
 // The minimum models always offered in the UI selector. `large-v3-turbo` is the
 // current dictation model on GPU (see docs/development.md "GPU (CUDA) STT").
 const defaultSttModels = ["tiny", "base", "small", "large-v3-turbo"];
@@ -317,22 +289,6 @@ function getAvailableSttModels(): string[] {
   add(getSttModel());
 
   return models;
-}
-
-function getSttBenchmarkModels(): string[] {
-  const envValue = process.env.DICTEX_STT_BENCHMARK_MODELS;
-  if (!envValue) {
-    return defaultSttBenchmarkModels;
-  }
-
-  const parsed = envValue
-    .split(",")
-    .map((m) => m.trim())
-    .filter((m) => m.length > 0);
-
-  const unique = Array.from(new Set(parsed));
-
-  return unique.length > 0 ? unique : defaultSttBenchmarkModels;
 }
 
 function getVoskBenchmarkModels(): string[] {
@@ -431,39 +387,6 @@ function registerGlobalHotkey(): void {
   });
 
   sendHotkeyStatus();
-}
-
-function getPythonInvocation(): PythonInvocation {
-  if (process.env.DICTEX_PYTHON) {
-    return {
-      command: process.env.DICTEX_PYTHON,
-      argsPrefix: [],
-    };
-  }
-
-  const venvPython =
-    process.platform === "win32"
-      ? path.join(repoRoot, ".venv", "Scripts", "python.exe")
-      : path.join(repoRoot, ".venv", "bin", "python");
-
-  if (existsSync(venvPython)) {
-    return {
-      command: venvPython,
-      argsPrefix: [],
-    };
-  }
-
-  if (process.platform === "win32") {
-    return {
-      command: "py",
-      argsPrefix: ["-3.11"],
-    };
-  }
-
-  return {
-    command: "python3",
-    argsPrefix: [],
-  };
 }
 
 function getDataRoot(): string {
@@ -607,81 +530,6 @@ async function getLatestAudioSegment(): Promise<AudioSegmentRecord | null> {
   return getLatestAudioSegmentFromEvents(await readLocalEvents(getEventsPath()));
 }
 
-function transcribeWithPython(audioPath: string, config: SttConfig = getSttConfig()): Promise<EngineTranscriptionResult> {
-  return new Promise((resolve, reject) => {
-    const python = getPythonInvocation();
-    const child = spawn(python.command, [...python.argsPrefix, enginePath, audioPath], {
-      cwd: repoRoot,
-      env: {
-        ...process.env,
-        HF_HUB_DISABLE_SYMLINKS_WARNING: "1",
-        PYTHONIOENCODING: "utf-8",
-        DICTEX_STT_PROVIDER: config.engine,
-        DICTEX_STT_MODEL: config.model,
-        DICTEX_STT_LANGUAGE: config.language,
-        DICTEX_STT_DEVICE: config.device,
-        DICTEX_STT_COMPUTE_TYPE: config.computeType,
-      },
-      windowsHide: true,
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf8");
-    });
-
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
-    });
-
-    child.on("error", reject);
-
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(stderr || `Transcription process exited with code ${code}`));
-        return;
-      }
-
-      try {
-        const parsed = JSON.parse(stdout) as {
-          available?: unknown;
-          reason?: unknown;
-          transcript?: unknown;
-          stt_engine?: unknown;
-          stt_model?: unknown;
-          stt_language?: unknown;
-          stt_duration?: unknown;
-        };
-        if (parsed.available === false) {
-          // Optional provider with absent deps/model files. Signal the caller to
-          // skip this candidate quietly rather than treating it as a failure.
-          reject(
-            new ProviderUnavailableError(
-              typeof parsed.reason === "string" ? parsed.reason : "provider unavailable",
-            ),
-          );
-          return;
-        }
-        if (typeof parsed.transcript !== "string") {
-          reject(new Error("Transcription process returned no transcript"));
-          return;
-        }
-        resolve({
-          transcript: parsed.transcript,
-          sttEngine: typeof parsed.stt_engine === "string" ? parsed.stt_engine : "unknown",
-          sttModel: typeof parsed.stt_model === "string" ? parsed.stt_model : "unknown",
-          sttLanguage: typeof parsed.stt_language === "string" ? parsed.stt_language : "unknown",
-          audioDurationSeconds: typeof parsed.stt_duration === "number" ? parsed.stt_duration : null,
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
-  });
-}
-
 function pasteClipboardIntoActiveApp(): Promise<boolean> {
   if (process.platform !== "win32") {
     return Promise.resolve(false);
@@ -739,7 +587,7 @@ async function runSttBenchmarkForAudioSegment(
     const transcriptionStartedAt = Date.now();
     let sttResult: EngineTranscriptionResult;
     try {
-      sttResult = await transcribeWithPython(audioPath, config);
+      sttResult = await transcribeWithPython(enginePath, repoRoot, audioPath, config);
     } catch (error) {
       if (error instanceof ProviderUnavailableError) {
         // Optional provider not installed / model files missing: skip it
@@ -958,7 +806,7 @@ ipcMain.handle(
     });
 
     const transcriptionStartedAt = Date.now();
-    const sttResult = await transcribeWithPython(audioPath);
+    const sttResult = await transcribeWithPython(enginePath, repoRoot, audioPath, getSttConfig());
     const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
 
     await appendEvent({

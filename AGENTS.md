@@ -597,6 +597,28 @@ Pivot Phase 0 (PR #74, merged to main directly):
 - Recorded the DicTeX/Lab split plan in `pivot_dictex_lab_split.md`.
 - Done.
 
+Pivot Phase 2 (#76, open PR — `needs:high-review`, awaiting review):
+
+- Scaffolded `apps/lab` (**DicTeX Lab**): electron-vite + React, no microphone/
+  hotkey/clipboard/normalizer. Hosts the STT benchmark (segment/batch, candidate
+  summary, error analysis, candidate selection), typed corrections,
+  benchmark-set splits, and the test_frozen dataset export.
+- Factored the shared pure logic into `packages/shared` (populated from the
+  empty Phase-1 scaffold): `localEvents` (event schema + append-only
+  derivations), `sttScoring` (CER/WER), `benchmarkSummary`, `datasetExport`,
+  `sttEngine` (Python sidecar invocation + `getSttBenchmarkModels`),
+  `benchmarkTypes` (benchmark IPC types), `errorAnalysis`, and `formatting`.
+  `apps/dictex` re-points its imports to `@dictex/shared` (its local copies of
+  those modules deleted); its dictation path is otherwise unchanged. The node-
+  touching barrel (`.`) is main-process only; `formatting` + `errorAnalysis` are
+  browser-safe subpath exports for renderers.
+- The Lab reads DicTeX's data folder **read-only** (configurable, default
+  `%APPDATA%/dictex-app/data`) and writes only into its OWN store
+  (`%APPDATA%/dictex-lab-app/data`). Documented in `docs/development.md` and
+  `docs/product-decisions.md`.
+- Deliberately did NOT remove these features from `apps/dictex` (that is Phase 3
+  / #77); they temporarily exist in both apps, kept DRY by `packages/shared`.
+
 Open roadmap — DicTeX / Lab split (see `pivot_dictex_lab_split.md`). Prior
 benchmark/dataset issues are done or folded into the phases below (#43 and #58
 closed as done/superseded; #44 export landed via PR #72 and relocates to the Lab
