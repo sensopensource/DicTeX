@@ -2092,18 +2092,18 @@ function DatasetView({
     selectedModelRef.current = selectedModel;
   }, [selectedModel]);
 
-  // Default the model selector so the displayed model always matches the model
-  // actually used: prefer the active dictation model, else the first available
-  // one (so a failed STT-config load can't show a model the capture won't use).
+  // Default to a FAST model for capture. The raw STT here is only a draft the
+  // user corrects, so speed matters far more than accuracy — and defaulting to
+  // the global dictation model (which may be large-v3-turbo on CPU, ~10-20 s per
+  // clip) makes the view feel frozen. Prefer base/small/tiny; the selector still
+  // lets the user pick a heavier model when they want a cleaner draft.
   useEffect(() => {
-    if (selectedModel !== "") {
+    if (selectedModel !== "" || availableSttModels.length === 0) {
       return;
     }
-    const fallback = sttConfig?.model ?? availableSttModels[0] ?? "";
-    if (fallback) {
-      setSelectedModel(fallback);
-    }
-  }, [sttConfig, availableSttModels, selectedModel]);
+    const preferredFast = ["base", "small", "tiny"].find((model) => availableSttModels.includes(model));
+    setSelectedModel(preferredFast ?? availableSttModels[0]);
+  }, [availableSttModels, selectedModel]);
 
   useEffect(() => {
     return () => {
@@ -2187,6 +2187,18 @@ function DatasetView({
     // stop so startRecording applies it once recording begins.
     if (isStartingRef.current) {
       stopRequestedRef.current = true;
+    }
+  }
+
+  // Click to start, click to stop — better than press-and-hold for reading a
+  // full sentence aloud, and it can't drop the clip on an accidental quick tap.
+  function toggleRecording(): void {
+    if (status === "recording") {
+      stopRecording();
+      return;
+    }
+    if (status !== "transcribing") {
+      void startRecording();
     }
   }
 
@@ -2312,8 +2324,20 @@ function DatasetView({
     }
   }
 
-  const statusLabel = status === "done" ? "captured" : status;
-  const isBusy = status === "recording" || status === "transcribing" || isSaving;
+  const isRecording = status === "recording";
+  const isTranscribing = status === "transcribing";
+  const statusLabel =
+    status === "done"
+      ? "captured"
+      : isRecording
+        ? "recording…"
+        : isTranscribing
+          ? "transcribing…"
+          : status === "idle"
+            ? "ready"
+            : status;
+  const isBusy = isRecording || isTranscribing || isSaving;
+  const canEditLayers = capturedSegment !== null && !isSaving;
   const exportAvailable = typeof window.dictex.exportSttDataset === "function";
   const summary = datasetExportSummary;
 
@@ -2330,27 +2354,21 @@ function DatasetView({
       </header>
 
       <section className="panel controls-panel">
+        <h2 className="dataset-step">1 · Record a clip</h2>
         <button
-          className="record-button"
-          disabled={status === "transcribing" || isSaving}
-          onMouseDown={() => void startRecording()}
-          onMouseUp={() => stopRecording()}
-          onMouseLeave={() => stopRecording()}
-          onTouchStart={(event) => {
-            event.preventDefault();
-            void startRecording();
-          }}
-          onTouchEnd={(event) => {
-            event.preventDefault();
-            stopRecording();
-          }}
+          className={`record-button${isRecording ? " record-button-active" : ""}`}
+          disabled={isTranscribing || isSaving}
+          onClick={toggleRecording}
         >
-          {status === "recording" ? "Release to transcribe" : "Hold to record a clip"}
+          {isRecording ? "◼ Stop & transcribe" : isTranscribing ? "Transcribing…" : "● Start recording"}
         </button>
 
         <div className="shortcut-row">
           <span>State</span>
-          <strong>{statusLabel}</strong>
+          <span className="dataset-state">
+            {(isRecording || isTranscribing) && <span className="spinner" aria-hidden="true" />}
+            <strong>{statusLabel}</strong>
+          </span>
           <span className="signal-muted">no clipboard, no paste</span>
         </div>
 
@@ -2369,43 +2387,46 @@ function DatasetView({
               </option>
             ))}
           </select>
-          <span className="signal-muted">this capture only</span>
+          <span className="signal-muted">fast draft; big = slow on CPU</span>
         </div>
       </section>
 
       <section className="panel transcript-panel">
+        <h2 className="dataset-step">2 · Correct in two layers</h2>
         <p className="dataset-hint">
-          Capture two separable layers for one clip. Layer 1 (acoustic) fixes only mishearings and keeps notation
-          verbal. Layer 2 (math notation) turns that literal text into formal notation. Leave a layer empty to skip it.
+          Layer 1 (acoustic) fixes only mishearings and keeps notation verbal. Layer 2 (math notation) turns that
+          literal text into formal notation. Leave a layer empty to skip it.
         </p>
 
         <label className="transcript-label" htmlFor="dataset-raw">
           Raw STT output
         </label>
         <p id="dataset-raw" className="dataset-raw">
-          {rawTranscript || "Record a clip to see the raw transcript."}
+          {rawTranscript || (isTranscribing ? "Transcribing the clip…" : "Record a clip to see the raw transcript.")}
         </p>
 
         <label className="transcript-label" htmlFor="dataset-literal">
           Layer 1 — literal transcript (acoustic, verbal, e.g. "x au carré plus deux")
         </label>
         <textarea
+          className="dataset-textarea"
           id="dataset-literal"
           value={literalDraft}
           onChange={(event) => setLiteralDraft(event.target.value)}
-          disabled={!capturedSegment || isSaving}
-          placeholder="What was really said, with mishearings fixed."
+          disabled={!canEditLayers}
+          placeholder={canEditLayers ? "What was really said, with mishearings fixed." : "Record a clip first."}
         />
 
         <label className="transcript-label" htmlFor="dataset-notation">
           Layer 2 — normalized notation (math_transform, e.g. "x² + 2")
         </label>
         <textarea
+          className="dataset-textarea"
           id="dataset-notation"
           value={notationDraft}
           onChange={(event) => setNotationDraft(event.target.value)}
-          disabled={!capturedSegment || isSaving}
-          placeholder="Optional: the literal text rewritten as formal notation."
+          disabled={!canEditLayers}
+          placeholder={canEditLayers ? "Optional: the literal text rewritten as formal notation." : "Record a clip first."}
         />
 
         {error && <pre className="error">{error}</pre>}
@@ -2415,11 +2436,8 @@ function DatasetView({
           <button
             className="secondary-button"
             disabled={
-              !capturedSegment ||
-              isSaving ||
-              (literalDraft.trim() === "" && notationDraft.trim() === "") ||
-              status === "recording" ||
-              status === "transcribing"
+              !canEditLayers ||
+              (literalDraft.trim() === "" && notationDraft.trim() === "")
             }
             onClick={() => void saveLayers()}
           >
