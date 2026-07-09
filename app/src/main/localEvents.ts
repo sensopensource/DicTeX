@@ -76,6 +76,14 @@ export type NormalizationResultEvent = {
 
 export type CorrectionKind = "acoustic" | "math_transform" | "normalization" | "rephrasing";
 
+/** Canonical, stable ordering for correction kinds in derived outputs. */
+export const CORRECTION_KIND_ORDER: CorrectionKind[] = [
+  "acoustic",
+  "math_transform",
+  "normalization",
+  "rephrasing",
+];
+
 export type SttCorrectionEvent = {
   event_type: "stt_correction";
   session_id: string;
@@ -272,6 +280,114 @@ export function getLatestSttCorrection(
   }
 
   return latestCorrection;
+}
+
+export type SegmentCorrectionByKind = {
+  correctionKind: CorrectionKind;
+  rawTranscript: string;
+  correctedTranscript: string;
+  correctionMethod: string | null;
+  correctionCreatedAt: string | null;
+};
+
+/**
+ * Returns the latest stt_correction of one segment for EACH correction kind
+ * (deterministic acoustic -> math_transform -> normalization -> rephrasing
+ * order). Unlike getLatestSttCorrection (a single latest across all kinds, for
+ * history display), dataset export must keep every kind: the enrichment tool
+ * (#66) writes chained acoustic + math_transform corrections for one segment, so
+ * collapsing to the single latest event would silently drop the acoustic pair.
+ * Within one kind, latest-event-wins still applies so a re-correction supersedes
+ * its predecessor. Untyped legacy corrections (null kind) are excluded here —
+ * they cannot be routed into a kind-partitioned dataset; countUntypedSttCorrections
+ * reports how many were skipped so the loss is never silent.
+ */
+export function getSttCorrectionsByKind(
+  events: LocalEvent[],
+  sessionId: string,
+  segmentId: string,
+): SegmentCorrectionByKind[] {
+  const latestByKind = new Map<CorrectionKind, { eventIndex: number; correction: SegmentCorrectionByKind }>();
+
+  events.forEach((event, eventIndex) => {
+    if (!isSttCorrectionEvent(event) || event.session_id !== sessionId || event.segment_id !== segmentId) {
+      return;
+    }
+
+    const kind = getCorrectionKind(event.correction_kind);
+    if (kind === null) {
+      return;
+    }
+
+    const existing = latestByKind.get(kind);
+    if (existing && existing.eventIndex > eventIndex) {
+      return;
+    }
+
+    latestByKind.set(kind, {
+      eventIndex,
+      correction: {
+        correctionKind: kind,
+        rawTranscript: event.raw_transcript,
+        correctedTranscript: event.corrected_transcript,
+        correctionMethod: getString(event.correction_method),
+        correctionCreatedAt: getString(event.created_at),
+      },
+    });
+  });
+
+  return CORRECTION_KIND_ORDER.map((kind) => latestByKind.get(kind)?.correction).filter(
+    (correction): correction is SegmentCorrectionByKind => correction !== undefined,
+  );
+}
+
+/**
+ * Counts stt_correction events of a segment that carry no (or an invalid)
+ * correction_kind. Used by dataset export to surface how many corrections could
+ * not be routed by kind instead of dropping them silently.
+ */
+export function countUntypedSttCorrections(events: LocalEvent[], sessionId: string, segmentId: string): number {
+  let count = 0;
+  for (const event of events) {
+    if (
+      isSttCorrectionEvent(event) &&
+      event.session_id === sessionId &&
+      event.segment_id === segmentId &&
+      getCorrectionKind(event.correction_kind) === null
+    ) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+export type SegmentSttInfo = {
+  sttOutput: string | null;
+  sttLanguage: string | null;
+  sttEngine: string | null;
+  sttModel: string | null;
+};
+
+/**
+ * Returns the latest stt_result for one segment: the original raw STT output and
+ * its engine/model/language. Dataset export pairs this with each correction so a
+ * record stays traceable to the transcription that produced it.
+ */
+export function getSegmentSttInfo(events: LocalEvent[], sessionId: string, segmentId: string): SegmentSttInfo {
+  let info: SegmentSttInfo = { sttOutput: null, sttLanguage: null, sttEngine: null, sttModel: null };
+
+  for (const event of events) {
+    if (isSttResultEvent(event) && event.session_id === sessionId && event.segment_id === segmentId) {
+      info = {
+        sttOutput: event.stt_output,
+        sttLanguage: getString(event.stt_language),
+        sttEngine: getString(event.stt_engine),
+        sttModel: getString(event.stt_model),
+      };
+    }
+  }
+
+  return info;
 }
 
 type BenchmarkSetSegmentDraft = {
