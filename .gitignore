@@ -16,9 +16,10 @@ __pycache__/
 
 # Node / Electron
 node_modules/
-app/node_modules/
-app/out/
-app/dist/
+apps/*/node_modules/
+packages/*/node_modules/
+apps/*/out/
+apps/*/dist/
 
 # Local runtime data
 .env

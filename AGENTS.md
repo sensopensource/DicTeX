@@ -156,25 +156,35 @@ C:\Users\souid\AppData\Roaming\dictex-app\data\settings.json
 
 ## Development Commands
 
-From repo root:
+DicTeX is an npm-workspaces monorepo (`apps/dictex`, `packages/engine`,
+`packages/shared`). Run npm from the repository root; the root `package.json`
+holds the workspaces list and delegates `typecheck` / `build` / `dev` to
+`apps/dictex`:
 
 ```powershell
-cd app
-..\scripts\npm.cmd run typecheck
-..\scripts\npm.cmd run build
-..\scripts\npm.cmd run dev
+scripts\npm.cmd install
+scripts\npm.cmd run typecheck
+scripts\npm.cmd run build
+scripts\npm.cmd run dev
 ```
 
-Python venv exists locally at:
+There is one root `package-lock.json`; the app has no separate lockfile.
+
+Python venv exists locally at the repository root (not inside a workspace):
 
 ```text
 C:\Users\souid\DicTeX\.venv
 ```
 
+The Electron main process resolves the repo root at runtime (four levels up
+from the built `apps/dictex/out/main`) and looks for the engine at
+`packages/engine/transcribe.py` and Python at `<repoRoot>/.venv`. Keep the venv
+at the repo root.
+
 Use pip with truststore on this machine:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install --use-feature=truststore -r engine\requirements.txt
+.\.venv\Scripts\python.exe -m pip install --use-feature=truststore -r packages\engine\requirements.txt
 ```
 
 Do not use `strict-ssl=false`.
@@ -513,7 +523,7 @@ Issue #40 / PR #56:
 
 GPU STT (no issue, direct docs+engine commit):
 
-- `engine/transcribe.py` makes `cublas64_12.dll` discoverable from the
+- `packages/engine/transcribe.py` makes `cublas64_12.dll` discoverable from the
   `nvidia-cublas-cu12` pip package on Windows, enabling
   `DICTEX_STT_DEVICE=cuda`; setup documented in `docs/development.md`.
 
@@ -543,7 +553,7 @@ Issue #59 / PR #68:
 
 - Added Vosk (Kaldi-based) as a second local, benchmark-only STT provider,
   behind a minimal provider abstraction in the Python sidecar
-  (`engine/providers/`). faster-whisper output stays byte-identical; Vosk
+  (`packages/engine/providers/`). faster-whisper output stays byte-identical; Vosk
   candidates are optional at runtime (quiet skip if uninstalled) and never
   block dictation or faster-whisper benchmarking.
 - Documented in `docs/product-decisions.md` ("Second local STT provider
@@ -840,7 +850,7 @@ DICTEX_STT_COMPUTE_TYPE=float16
 ```
 
 Requires `nvidia-cublas-cu12` + `nvidia-cudnn-cu12` pip packages;
-`engine/transcribe.py` handles the cuBLAS DLL path on Windows.
+`packages/engine/transcribe.py` handles the cuBLAS DLL path on Windows.
 
 Current STT benchmark candidates (defaults, configurable via
 `DICTEX_STT_BENCHMARK_MODELS` since PR #51):

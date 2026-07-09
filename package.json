@@ -1,0 +1,15 @@
+{
+  "name": "dictex-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DicTeX monorepo: consumer dictation app, Python STT engine, shared TS packages",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspace apps/dictex",
+    "build": "npm run build --workspace apps/dictex",
+    "dev": "npm run dev --workspace apps/dictex"
+  }
+}

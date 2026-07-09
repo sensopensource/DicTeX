@@ -254,8 +254,13 @@ class ProviderUnavailableError extends Error {
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(__dirname, "..", "..", "..");
-const enginePath = path.join(repoRoot, "engine", "transcribe.py");
+// Built main output lives at `<repoRoot>/apps/dictex/out/main`, so four levels
+// up from `__dirname` (main -> out -> dictex -> apps -> repoRoot) is the real
+// monorepo root. The Python engine now lives under `packages/engine`, and the
+// dictation venv stays at the repo root (`<repoRoot>/.venv`), so this must
+// resolve to the true repo root or both the engine and the venv lookup break.
+const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
+const enginePath = path.join(repoRoot, "packages", "engine", "transcribe.py");
 const sessionId = `session_${new Date().toISOString().replace(/\D/g, "")}`;
 const globalHotkey = "Super+Alt+Space";
 const defaultSttBenchmarkModels = ["tiny", "base", "small"];

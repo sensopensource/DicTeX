@@ -7,6 +7,25 @@
 - Python 3.11
 - Git
 
+## Repository Layout
+
+DicTeX is an npm-workspaces monorepo. The consumer app, the Python STT engine,
+and shared TypeScript live in separate workspaces:
+
+```text
+apps/
+  dictex/      # the Electron + React consumer app
+packages/
+  engine/      # the Python STT sidecar (faster-whisper + Vosk)
+  shared/      # shared TS scaffold (event schema, dataset format, scoring) — empty for now
+```
+
+npm commands run from the **repository root**. The root `package.json` holds the
+workspaces list and delegates `typecheck` / `build` / `dev` to `apps/dictex`, so
+`scripts/npm.cmd run <script>` from the root drives the app. The Python `.venv`
+lives at the **repository root** (`.venv/`), not inside a workspace; the Electron
+main process resolves it relative to the repo root at runtime.
+
 ## Windows TLS Note
 
 On this machine, npm cannot verify the npm registry certificate with Node's bundled CA store. Use Node's system CA mode when running npm:
@@ -22,7 +41,7 @@ Do not use `strict-ssl=false` for this project.
 The same certificate issue can affect pip. Use:
 
 ```powershell
-python -m pip install --use-feature=truststore -r engine\requirements.txt
+python -m pip install --use-feature=truststore -r packages\engine\requirements.txt
 ```
 
 Windows helper:
@@ -39,41 +58,44 @@ scripts/npm.sh <npm arguments>
 
 ## Install
 
+Run everything from the repository root.
+
 Windows:
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --use-feature=truststore -r engine\requirements.txt
-cd app
-..\scripts\npm.cmd install
+.\.venv\Scripts\python.exe -m pip install --use-feature=truststore -r packages\engine\requirements.txt
+scripts\npm.cmd install
 ```
 
 Linux/macOS:
 
 ```sh
 python3 -m venv .venv
-./.venv/bin/python -m pip install -r engine/requirements.txt
-cd app
-../scripts/npm.sh install
+./.venv/bin/python -m pip install -r packages/engine/requirements.txt
+scripts/npm.sh install
 ```
+
+`npm install` at the root installs every workspace (there is one root
+`package-lock.json`; the app has no separate lockfile).
 
 ## Validate
 
 Windows:
 
 ```powershell
-cd app
-..\scripts\npm.cmd run typecheck
-..\scripts\npm.cmd run build
+scripts\npm.cmd run typecheck
+scripts\npm.cmd run build
 ```
 
 Linux/macOS:
 
 ```sh
-cd app
-../scripts/npm.sh run typecheck
-../scripts/npm.sh run build
+scripts/npm.sh run typecheck
+scripts/npm.sh run build
 ```
+
+These root scripts delegate to `apps/dictex`.
 
 ## Manual MVP Smoke Test
 
@@ -82,8 +104,7 @@ Run this checklist on Windows when validating MVP behavior manually. CI does not
 1. Launch the app:
 
 ```powershell
-cd app
-..\scripts\npm.cmd run dev
+scripts\npm.cmd run dev
 ```
 
 2. Confirm the app opens to the compact utility UI and shows the global shortcut status.
@@ -113,15 +134,13 @@ cd app
 Windows:
 
 ```powershell
-cd app
-..\scripts\npm.cmd run dev
+scripts\npm.cmd run dev
 ```
 
 Linux/macOS:
 
 ```sh
-cd app
-../scripts/npm.sh run dev
+scripts/npm.sh run dev
 ```
 
 The app uses a Python sidecar with faster-whisper for local transcription.
@@ -163,13 +182,12 @@ DICTEX_STT_DEVICE=cpu
 DICTEX_STT_COMPUTE_TYPE=int8
 ```
 
-Override example:
+Override example (from the repository root):
 
 ```powershell
 $env:DICTEX_STT_MODEL="small"
 $env:DICTEX_STT_LANGUAGE="fr"
-cd app
-..\scripts\npm.cmd run dev
+scripts\npm.cmd run dev
 ```
 
 ### Selecting the STT model from the UI
@@ -203,14 +221,13 @@ segment.
 
 ### GPU (CUDA) STT
 
-To run STT on an NVIDIA GPU instead of CPU:
+To run STT on an NVIDIA GPU instead of CPU (from the repository root):
 
 ```powershell
 $env:DICTEX_STT_MODEL="large-v3-turbo"
 $env:DICTEX_STT_DEVICE="cuda"
 $env:DICTEX_STT_COMPUTE_TYPE="float16"
-cd app
-..\scripts\npm.cmd run dev
+scripts\npm.cmd run dev
 ```
 
 The Windows `ctranslate2` CUDA wheel bundles cuDNN but not cuBLAS. If the
@@ -223,9 +240,9 @@ Install it via pip instead of the full CUDA Toolkit:
 .\.venv\Scripts\python.exe -m pip install --use-feature=truststore nvidia-cublas-cu12 nvidia-cudnn-cu12
 ```
 
-`engine/transcribe.py` prepends that package's `bin` directory to `PATH` at
-startup on Windows, so no manual `PATH` changes are needed after installing
-it.
+`packages/engine/transcribe.py` prepends that package's `bin` directory to
+`PATH` at startup on Windows, so no manual `PATH` changes are needed after
+installing it.
 
 On Windows, if Python is not available through `py -3.11`, set:
 
@@ -237,7 +254,7 @@ In development, the Electron app automatically uses the repository `.venv` Pytho
 
 ### Second STT provider (Vosk)
 
-The Python sidecar has a small provider abstraction (`engine/providers/`):
+The Python sidecar has a small provider abstraction (`packages/engine/providers/`):
 `faster-whisper` is the dictation engine and default benchmark provider; **Vosk**
 is a second, benchmark-only provider (a different, Kaldi-based engine family —
 see `docs/product-decisions.md`). Vosk is fully optional: without it installed,
@@ -249,7 +266,7 @@ To enable Vosk benchmark candidates:
 1. Install the optional dependency:
 
    ```powershell
-   .\.venv\Scripts\python.exe -m pip install --use-feature=truststore -r engine\requirements-vosk.txt
+   .\.venv\Scripts\python.exe -m pip install --use-feature=truststore -r packages\engine\requirements-vosk.txt
    ```
 
 2. Download a French Vosk model (e.g. `vosk-model-small-fr-0.22` from
