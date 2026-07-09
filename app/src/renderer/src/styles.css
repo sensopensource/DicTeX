@@ -147,8 +147,18 @@ h2 {
 }
 
 .record-button:disabled {
-  cursor: wait;
-  opacity: 0.55;
+  cursor: default;
+  opacity: 0.7;
+}
+
+.record-button-active {
+  border-color: #7a3a22;
+  color: #ffb088;
+  background: #241813;
+}
+
+.record-button-active:hover:not(:disabled) {
+  background: #2c1d16;
 }
 
 .shortcut-row {
@@ -809,11 +819,51 @@ h2 {
   text-transform: uppercase;
 }
 
+.dataset-step {
+  color: #cfcfcf;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .dataset-hint {
   margin: 0;
   color: #9a9a9a;
   font-size: 0.76rem;
   line-height: 1.5;
+}
+
+.dataset-textarea {
+  min-height: 4.5rem;
+}
+
+.dataset-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.spinner {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px solid #3a3a3a;
+  border-top-color: #7aa2ff;
+  border-radius: 50%;
+  animation: spinner-rotate 0.7s linear infinite;
+}
+
+@keyframes spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2s;
+  }
 }
 
 .dataset-raw {
