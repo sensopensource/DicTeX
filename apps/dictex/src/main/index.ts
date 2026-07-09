@@ -5,29 +5,11 @@ import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  getLatestAudioSegment as getLatestAudioSegmentFromEvents,
-  getLatestSttCandidateSelection,
-  getLatestSttCorrection,
-  getSttBenchmarkSetSegments,
-  isCorrectionKind,
   readLocalEvents,
   reconstructRecentSegments,
-  calculateCharacterErrorRate,
-  summarizeSttBenchmarkResultsByCandidate,
-  buildSttDatasetExport,
   transcribeWithPython,
-  ProviderUnavailableError,
-  getSttBenchmarkModels,
-  type BenchmarkCandidateIdentity,
-  type CorrectionKind,
-  type LocalEvent,
   type ReconstructedSegment,
-  type SttBenchmarkSetSplit,
-  type SttBenchmarkCandidateSummaryResponse,
-  type SttDatasetExport,
-  type SttDatasetRecord,
   type SttConfig,
-  type EngineTranscriptionResult,
 } from "@dictex/shared";
 import { readAppSettings, writeAppSettings } from "./settings.js";
 import { normalizeTranscript, DEFAULT_RULES, type NormalizationResult } from "./normalizer.js";
@@ -69,159 +51,9 @@ type AudioSegmentPlayback = {
   mimeType: string;
 };
 
-type BenchmarkStage =
-  | "stt"
-  | "normalization"
-  | "segment_classification"
-  | "math_transform"
-  | "correction_suggestion";
-
-type BenchmarkCandidate = {
-  stage: BenchmarkStage;
-  provider: string;
-  model: string;
-  variant?: string;
-};
-
-type SttBenchmarkResult = {
-  sessionId: string;
-  segmentId: string;
-  audioRef: string;
-  candidate: BenchmarkCandidate;
-  stage: BenchmarkStage;
-  provider: string;
-  model: string;
-  variant: string | null;
-  sttEngine: string;
-  sttModel: string;
-  sttLanguage: string;
-  transcript: string;
-  audioDurationSeconds: number | null;
-  transcriptionDurationMs: number;
-  score: SttBenchmarkScore | null;
-};
-
-type SttBenchmarkResponse = {
-  source: AudioSegmentRecord;
-  results: SttBenchmarkResult[];
-  /** Quiet notes for candidates skipped at runtime (e.g. an optional provider
-   * whose deps/model files are absent). Empty when every candidate ran. */
-  diagnostics: string[];
-};
-
-type SttBenchmarkScore = {
-  stage: "stt";
-  metric: "cer";
-  value: number;
-  referenceTranscript: string;
-  correctionCreatedAt: string | null;
-};
-
-type SttCorrectionRequest = {
-  sessionId: string;
-  segmentId: string;
-  audioRef: string | null;
-  rawTranscript: string;
-  correctedTranscript: string;
-  correctionKind: CorrectionKind;
-  correctionMethod?: "keyboard";
-};
-
-type SttCorrectionResponse = {
-  createdAt: string;
-  sessionId: string;
-  segmentId: string;
-  correctionKind: CorrectionKind;
-  correctionMethod: "keyboard";
-};
-
-type SttBenchmarkSetMembershipRequest = {
-  sessionId: string;
-  segmentId: string;
-  audioRef: string | null;
-  split: SttBenchmarkSetSplit;
-};
-
-type SttBenchmarkSetMembershipResponse = {
-  createdAt: string;
-  sessionId: string;
-  segmentId: string;
-  split: SttBenchmarkSetSplit;
-};
-
-type SttCandidateSelectionRequest = {
-  candidate: BenchmarkCandidateIdentity;
-  selectionReason: string;
-};
-
-type SttCandidateSelectionResponse = {
-  createdAt: string;
-  candidate: BenchmarkCandidateIdentity;
-  selectionReason: string;
-};
-
-type SttDatasetExportFileSummary = {
-  correctionKind: string;
-  file: string;
-  recordCount: number;
-};
-
-type SttDatasetExportSplitSummary = {
-  split: SttBenchmarkSetSplit;
-  segmentCount: number;
-  correctedSegmentCount: number;
-  recordCount: number;
-  files: SttDatasetExportFileSummary[];
-};
-
-type SttDatasetExportSummary = {
-  createdAt: string;
-  /** Absolute path of the export folder, or null when there was nothing to export. */
-  exportDir: string | null;
-  totalRecords: number;
-  skippedUntypedCorrections: number;
-  selectedCandidate: BenchmarkCandidateIdentity | null;
-  selectionReason: string | null;
-  splits: SttDatasetExportSplitSummary[];
-};
-
-type SttBenchmarkSetRunRequest = {
-  split: SttBenchmarkSetSplit;
-  models?: string[];
-};
-
-type SttBenchmarkSetSegmentOutcome = {
-  sessionId: string;
-  segmentId: string;
-  audioRef: string;
-  status: "done" | "failed";
-  error: string | null;
-  results: SttBenchmarkResult[];
-};
-
-type SttBenchmarkSetRunResponse = {
-  split: SttBenchmarkSetSplit;
-  total: number;
-  done: number;
-  failed: number;
-  outcomes: SttBenchmarkSetSegmentOutcome[];
-};
-
-type SttBenchmarkSetProgress = {
-  split: SttBenchmarkSetSplit;
-  total: number;
-  queued: number;
-  running: number;
-  done: number;
-  failed: number;
-  current: { sessionId: string; segmentId: string } | null;
-  lastOutcome: {
-    sessionId: string;
-    segmentId: string;
-    status: "done" | "failed";
-    error: string | null;
-    resultCount: number;
-  } | null;
+type OpenLabResult = {
+  ok: boolean;
+  error?: string;
 };
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -239,15 +71,6 @@ const globalHotkey = "Super+Alt+Space";
 // The minimum models always offered in the UI selector. `large-v3-turbo` is the
 // current dictation model on GPU (see docs/development.md "GPU (CUDA) STT").
 const defaultSttModels = ["tiny", "base", "small", "large-v3-turbo"];
-// faster-whisper is the dictation engine and default benchmark provider; Vosk is
-// the second, benchmark-only provider (see docs/product-decisions.md). Provider
-// names match the Python sidecar registry and the candidate identity.
-const fasterWhisperProvider = "faster-whisper";
-const voskProvider = "vosk";
-// Vosk benchmark candidate model(s). A candidate is always registered so the
-// provider appears in the benchmark universe; it is skipped at runtime with a
-// quiet diagnostic when vosk or its model files are absent.
-const defaultVoskBenchmarkModels = ["vosk-model-small-fr-0.22"];
 
 let mainWindow: BrowserWindow | null = null;
 let globalHotkeyRegistered = false;
@@ -272,9 +95,9 @@ function getSttConfig(): SttConfig {
 }
 
 /**
- * Models offered in the UI selector: the minimum core set, plus the benchmark
- * candidate universe (from DICTEX_STT_BENCHMARK_MODELS when set) so dictation and
- * benchmark stay consistent, plus the active model so it is always selectable.
+ * Models offered in the UI selector: the minimum core set, plus any extras from
+ * DICTEX_STT_BENCHMARK_MODELS (optional power-user list), plus the active model
+ * so it is always selectable. Benchmark itself lives in DicTeX Lab (#76/#77).
  */
 function getAvailableSttModels(): string[] {
   const models: string[] = [];
@@ -285,46 +108,18 @@ function getAvailableSttModels(): string[] {
   };
 
   defaultSttModels.forEach(add);
-  getSttBenchmarkModels().forEach(add);
-  add(getSttModel());
 
-  return models;
-}
-
-function getVoskBenchmarkModels(): string[] {
-  const envValue = process.env.DICTEX_VOSK_BENCHMARK_MODELS;
-  if (envValue === undefined) {
-    return defaultVoskBenchmarkModels;
+  const envValue = process.env.DICTEX_STT_BENCHMARK_MODELS;
+  if (envValue) {
+    envValue
+      .split(",")
+      .map((m) => m.trim())
+      .filter((m) => m.length > 0)
+      .forEach(add);
   }
 
-  const parsed = envValue
-    .split(",")
-    .map((m) => m.trim())
-    .filter((m) => m.length > 0);
-
-  // An explicitly empty value disables Vosk candidates entirely; a set value
-  // replaces the default list.
-  return Array.from(new Set(parsed));
-}
-
-function getSttBenchmarkCandidates(config: SttConfig): BenchmarkCandidate[] {
-  const fasterWhisper: BenchmarkCandidate[] = getSttBenchmarkModels().map((model) => ({
-    stage: "stt",
-    provider: fasterWhisperProvider,
-    model,
-    variant: `${config.device}-${config.computeType}-${config.language}`,
-  }));
-
-  // Vosk is CPU-only and has no compute-type dimension, so its variant only
-  // carries the device and language to keep the candidate identity meaningful.
-  const vosk: BenchmarkCandidate[] = getVoskBenchmarkModels().map((model) => ({
-    stage: "stt",
-    provider: voskProvider,
-    model,
-    variant: `cpu-${config.language}`,
-  }));
-
-  return [...fasterWhisper, ...vosk];
+  add(getSttModel());
+  return models;
 }
 
 function createWindow(): BrowserWindow {
@@ -371,14 +166,6 @@ function sendHotkeyStatus(): void {
   });
 }
 
-function sendBatchBenchmarkProgress(progress: SttBenchmarkSetProgress): void {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
-  mainWindow.webContents.send("benchmark:set-progress", progress);
-}
-
 function registerGlobalHotkey(): void {
   globalHotkeyRegistered = globalShortcut.register(globalHotkey, () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -399,10 +186,6 @@ function getEventsPath(): string {
 
 function getNormalizerDir(): string {
   return path.join(getDataRoot(), "normalizer");
-}
-
-function getExportsRoot(): string {
-  return path.join(getDataRoot(), "exports");
 }
 
 function getSettingsPath(): string {
@@ -514,20 +297,12 @@ function resolveDataRef(portableRef: string): string {
   return targetPath;
 }
 
-function isSttBenchmarkSetSplit(value: unknown): value is SttBenchmarkSetSplit {
-  return value === "train_candidate_pool" || value === "validation" || value === "test_frozen";
-}
-
 async function appendEvent(event: Record<string, JsonValue>): Promise<void> {
   const dataRoot = getDataRoot();
   await mkdir(dataRoot, { recursive: true });
   await appendFile(getEventsPath(), `${JSON.stringify(event)}\n`, {
     encoding: "utf8",
   });
-}
-
-async function getLatestAudioSegment(): Promise<AudioSegmentRecord | null> {
-  return getLatestAudioSegmentFromEvents(await readLocalEvents(getEventsPath()));
 }
 
 function pasteClipboardIntoActiveApp(): Promise<boolean> {
@@ -559,221 +334,76 @@ function pasteClipboardIntoActiveApp(): Promise<boolean> {
   });
 }
 
-async function runSttBenchmarkForAudioSegment(
-  audioSegment: AudioSegmentRecord,
-  events?: LocalEvent[],
-  modelFilter?: string[],
-): Promise<SttBenchmarkResponse> {
-  const audioPath = resolveDataRef(audioSegment.audioRef);
-  if (!existsSync(audioPath)) {
-    throw new Error(`Audio segment file not found: ${audioSegment.audioRef}`);
-  }
-
-  const baseConfig = getSttConfig();
-  const results: SttBenchmarkResult[] = [];
-  const diagnostics: string[] = [];
-  const loadedEvents = events ?? (await readLocalEvents(getEventsPath()));
-  const correction = getLatestSttCorrection(loadedEvents, audioSegment.sessionId, audioSegment.segmentId);
-  const candidates = modelFilter
-    ? getSttBenchmarkCandidates(baseConfig).filter((candidate) => modelFilter.includes(candidate.model))
-    : getSttBenchmarkCandidates(baseConfig);
-
-  for (const candidate of candidates) {
-    const config = {
-      ...baseConfig,
-      engine: candidate.provider,
-      model: candidate.model,
-    };
-    const transcriptionStartedAt = Date.now();
-    let sttResult: EngineTranscriptionResult;
-    try {
-      sttResult = await transcribeWithPython(enginePath, repoRoot, audioPath, config);
-    } catch (error) {
-      if (error instanceof ProviderUnavailableError) {
-        // Optional provider not installed / model files missing: skip it
-        // quietly. No event is appended, so this candidate simply does not
-        // appear in the results — never blocking faster-whisper candidates.
-        const note = `${candidate.provider}/${candidate.model} unavailable: ${error.reason}`;
-        console.warn(`[benchmark] ${note}`);
-        diagnostics.push(note);
-        continue;
-      }
-      throw error;
-    }
-    const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
-    const result: SttBenchmarkResult = {
-      sessionId: audioSegment.sessionId,
-      segmentId: audioSegment.segmentId,
-      audioRef: audioSegment.audioRef,
-      candidate,
-      stage: candidate.stage,
-      provider: candidate.provider,
-      model: candidate.model,
-      variant: candidate.variant ?? null,
-      sttEngine: sttResult.sttEngine,
-      sttModel: sttResult.sttModel,
-      sttLanguage: sttResult.sttLanguage,
-      transcript: sttResult.transcript,
-      audioDurationSeconds: sttResult.audioDurationSeconds,
-      transcriptionDurationMs,
-      score: correction
-        ? {
-            stage: "stt",
-            metric: "cer",
-            value: calculateCharacterErrorRate(sttResult.transcript, correction.correctedTranscript),
-            referenceTranscript: correction.correctedTranscript,
-            correctionCreatedAt: correction.correctionCreatedAt,
-          }
-        : null,
-    };
-
-    await appendEvent({
-      event_type: "stt_benchmark_result",
-      session_id: result.sessionId,
-      segment_id: result.segmentId,
-      created_at: new Date().toISOString(),
-      audio_ref: result.audioRef,
-      stage: result.stage,
-      provider: result.provider,
-      model: result.model,
-      variant: result.variant,
-      candidate: {
-        stage: result.stage,
-        provider: result.provider,
-        model: result.model,
-        variant: result.variant,
-      },
-      stt_engine: result.sttEngine,
-      stt_model: result.sttModel,
-      stt_language: result.sttLanguage,
-      transcript: result.transcript,
-      audio_duration_seconds: result.audioDurationSeconds,
-      transcription_duration_ms: result.transcriptionDurationMs,
-      score_metric: result.score?.metric ?? null,
-      score_value: result.score?.value ?? null,
-      score_reference_type: result.score ? "stt_correction" : null,
-      score_reference_transcript: result.score?.referenceTranscript ?? null,
-      score_reference_created_at: result.score?.correctionCreatedAt ?? null,
-    });
-
-    results.push(result);
-  }
-
-  return {
-    source: audioSegment,
-    results,
-    diagnostics,
-  };
-}
-
-function datasetSplitFileName(split: SttBenchmarkSetSplit, correctionKind: string): string {
-  return `${split}.${correctionKind}.jsonl`;
-}
-
-/** Serializes one export record to the JSONL line shape (snake_case, matching
- * the event log). The absolute `audio_path` is resolved from the portable
- * `audio_ref`; it is null if the ref cannot be resolved inside the data dir. */
-function serializeDatasetRecord(record: SttDatasetRecord): Record<string, JsonValue> {
-  let audioPath: string | null = null;
-  try {
-    audioPath = resolveDataRef(record.audioRef);
-  } catch {
-    audioPath = null;
-  }
-
-  return {
-    split: record.split,
-    session_id: record.sessionId,
-    segment_id: record.segmentId,
-    audio_ref: record.audioRef,
-    audio_path: audioPath,
-    language: record.language,
-    correction_kind: record.correctionKind,
-    raw_transcript: record.rawTranscript,
-    corrected_transcript: record.correctedTranscript,
-    original_stt_output: record.originalSttOutput,
-    stt_engine: record.sttEngine,
-    stt_model: record.sttModel,
-    correction_method: record.correctionMethod,
-    correction_created_at: record.correctionCreatedAt,
-    selected_candidate: record.selectedCandidate,
-    selection_reason: record.selectionReason,
-  };
-}
-
 /**
- * Writes the corrected STT dataset export as local JSONL files plus a manifest,
- * one folder per export run (timestamped, never overwriting a prior export). It
- * reads the event log but never writes to it, so history is untouched. Nothing is
- * uploaded. Returns null exportDir when there is nothing to export (no folder is
- * created in that case).
+ * Launch DicTeX Lab as a separate process. DicTeX never imports Lab code —
+ * process spawn only (pivot Phase 3). Prefer a built Lab entry; fall back to
+ * `npm run dev:lab` from the monorepo root. Failures return a message, never throw.
  */
-async function writeSttDatasetExport(datasetExport: SttDatasetExport): Promise<SttDatasetExportSummary> {
-  const baseSummary: Omit<SttDatasetExportSummary, "exportDir" | "splits"> = {
-    createdAt: datasetExport.createdAt,
-    totalRecords: datasetExport.totalRecords,
-    skippedUntypedCorrections: datasetExport.skippedUntypedCorrections,
-    selectedCandidate: datasetExport.selectedCandidate,
-    selectionReason: datasetExport.selectionReason,
-  };
+function openLabApp(): OpenLabResult {
+  const labAppDir = path.join(repoRoot, "apps", "lab");
+  const labMain = path.join(labAppDir, "out", "main", "index.js");
+  const npmHelper =
+    process.platform === "win32"
+      ? path.join(repoRoot, "scripts", "npm.cmd")
+      : path.join(repoRoot, "scripts", "npm.sh");
 
-  if (datasetExport.totalRecords === 0) {
-    return { ...baseSummary, exportDir: null, splits: [] };
-  }
-
-  const folderStamp = datasetExport.createdAt.replace(/[:.]/g, "-");
-  const exportDir = path.join(getExportsRoot(), `stt-dataset-${folderStamp}`);
-  await mkdir(exportDir, { recursive: true });
-
-  const splitSummaries: SttDatasetExportSplitSummary[] = [];
-
-  for (const splitGroup of datasetExport.splits) {
-    const files: SttDatasetExportFileSummary[] = [];
-
-    for (const kindGroup of splitGroup.kinds) {
-      const fileName = datasetSplitFileName(splitGroup.split, kindGroup.correctionKind);
-      const contents = kindGroup.records
-        .map((record) => `${JSON.stringify(serializeDatasetRecord(record))}\n`)
-        .join("");
-      await writeFile(path.join(exportDir, fileName), contents, { encoding: "utf8" });
-      files.push({ correctionKind: kindGroup.correctionKind, file: fileName, recordCount: kindGroup.records.length });
+  if (existsSync(labMain)) {
+    try {
+      const child = spawn(process.execPath, [labMain], {
+        cwd: labAppDir,
+        detached: true,
+        stdio: "ignore",
+        env: {
+          ...process.env,
+          // Ensure Electron treats this as an app entry, not a Node script.
+          ELECTRON_RUN_AS_NODE: undefined,
+          // Built Lab loads its own renderer from disk; do not inherit DicTeX's
+          // electron-vite dev server URL.
+          ELECTRON_RENDERER_URL: undefined,
+        },
+      });
+      child.unref();
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not launch built DicTeX Lab",
+      };
     }
-
-    splitSummaries.push({
-      split: splitGroup.split,
-      segmentCount: splitGroup.segmentCount,
-      correctedSegmentCount: splitGroup.correctedSegmentCount,
-      recordCount: splitGroup.recordCount,
-      files,
-    });
   }
 
-  const manifest: Record<string, JsonValue> = {
-    app: "DicTeX",
-    dataset: "stt_corrected",
-    created_at: datasetExport.createdAt,
-    selected_candidate: datasetExport.selectedCandidate,
-    selection_reason: datasetExport.selectionReason,
-    total_records: datasetExport.totalRecords,
-    skipped_untyped_corrections: datasetExport.skippedUntypedCorrections,
-    splits: splitSummaries.map((splitSummary) => ({
-      split: splitSummary.split,
-      segment_count: splitSummary.segmentCount,
-      corrected_segment_count: splitSummary.correctedSegmentCount,
-      record_count: splitSummary.recordCount,
-      files: splitSummary.files.map((file) => ({
-        correction_kind: file.correctionKind,
-        file: file.file,
-        record_count: file.recordCount,
-      })),
-    })),
-  };
+  if (!existsSync(npmHelper)) {
+    return {
+      ok: false,
+      error:
+        "DicTeX Lab is not built and the monorepo npm helper was not found. From the repo root run: scripts\\npm.cmd run build (or scripts\\npm.cmd run dev:lab).",
+    };
+  }
 
-  await writeFile(path.join(exportDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, {
-    encoding: "utf8",
-  });
-
-  return { ...baseSummary, exportDir, splits: splitSummaries };
+  try {
+    const child = spawn(npmHelper, ["run", "dev:lab"], {
+      cwd: repoRoot,
+      detached: true,
+      stdio: "ignore",
+      shell: process.platform === "win32",
+      env: {
+        ...process.env,
+        // Keep Node TLS helper if the machine needs it; do not force DicTeX's
+        // renderer URL onto the Lab dev server.
+        ELECTRON_RENDERER_URL: undefined,
+      },
+    });
+    child.unref();
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not start DicTeX Lab. Build or start it first: scripts\\npm.cmd run build / dev:lab.",
+    };
+  }
 }
 
 ipcMain.handle(
@@ -897,317 +527,7 @@ ipcMain.handle("audio:get-segment", async (_event, audioSegment: AudioSegmentRec
   };
 });
 
-ipcMain.handle("corrections:save-stt", async (_event, correction: SttCorrectionRequest): Promise<SttCorrectionResponse> => {
-  if (!correction.sessionId || !correction.segmentId) {
-    throw new Error("Missing correction segment identity");
-  }
-
-  if (typeof correction.rawTranscript !== "string" || typeof correction.correctedTranscript !== "string") {
-    throw new Error("Correction transcripts must be strings");
-  }
-
-  if (!isCorrectionKind(correction.correctionKind)) {
-    throw new Error("Correction kind must be acoustic, math_transform, normalization, or rephrasing");
-  }
-
-  const createdAt = new Date().toISOString();
-  const correctionMethod: "keyboard" = "keyboard";
-  const correctionKind = correction.correctionKind;
-
-  await appendEvent({
-    event_type: "stt_correction",
-    created_at: createdAt,
-    session_id: correction.sessionId,
-    segment_id: correction.segmentId,
-    audio_ref: correction.audioRef,
-    raw_transcript: correction.rawTranscript,
-    corrected_transcript: correction.correctedTranscript,
-    correction_method: correctionMethod,
-    correction_kind: correctionKind,
-  });
-
-  return {
-    createdAt,
-    sessionId: correction.sessionId,
-    segmentId: correction.segmentId,
-    correctionKind,
-    correctionMethod,
-  };
-});
-
-ipcMain.handle(
-  "benchmark-set:mark-stt",
-  async (_event, membership: SttBenchmarkSetMembershipRequest): Promise<SttBenchmarkSetMembershipResponse> => {
-    if (!membership || typeof membership.sessionId !== "string" || typeof membership.segmentId !== "string") {
-      throw new Error("Missing benchmark set segment identity");
-    }
-
-    if (membership.audioRef !== null && typeof membership.audioRef !== "string") {
-      throw new Error("Invalid benchmark set audio reference");
-    }
-
-    if (!isSttBenchmarkSetSplit(membership.split)) {
-      throw new Error("Invalid STT benchmark set split");
-    }
-
-    const latestCorrection = getLatestSttCorrection(
-      await readLocalEvents(getEventsPath()),
-      membership.sessionId,
-      membership.segmentId,
-    );
-    if (!latestCorrection) {
-      throw new Error("Correct the transcript before adding it to an STT benchmark set");
-    }
-
-    const createdAt = new Date().toISOString();
-
-    await appendEvent({
-      event_type: "stt_benchmark_set_membership",
-      created_at: createdAt,
-      session_id: membership.sessionId,
-      segment_id: membership.segmentId,
-      audio_ref: membership.audioRef,
-      split: membership.split,
-      reason: "manual",
-    });
-
-    return {
-      createdAt,
-      sessionId: membership.sessionId,
-      segmentId: membership.segmentId,
-      split: membership.split,
-    };
-  },
-);
-
-ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkResponse> => {
-  const latestAudioSegment = await getLatestAudioSegment();
-  if (!latestAudioSegment) {
-    throw new Error("No stored audio segment found");
-  }
-
-  return runSttBenchmarkForAudioSegment(latestAudioSegment);
-});
-
-ipcMain.handle("benchmark:run-segment-stt", async (_event, audioSegment: AudioSegmentRecord): Promise<SttBenchmarkResponse> => {
-  if (
-    !audioSegment ||
-    typeof audioSegment.sessionId !== "string" ||
-    typeof audioSegment.segmentId !== "string" ||
-    typeof audioSegment.audioRef !== "string"
-  ) {
-    throw new Error("Invalid benchmark segment");
-  }
-
-  return runSttBenchmarkForAudioSegment(audioSegment);
-});
-
-ipcMain.handle(
-  "benchmark:run-set-stt",
-  async (_event, request: SttBenchmarkSetRunRequest): Promise<SttBenchmarkSetRunResponse> => {
-    if (!request || !isSttBenchmarkSetSplit(request.split)) {
-      throw new Error("Invalid STT benchmark set split");
-    }
-
-    let modelFilter: string[] | undefined;
-    if (request.models !== undefined) {
-      const availableModels = getSttBenchmarkModels();
-      if (
-        !Array.isArray(request.models) ||
-        request.models.length < 1 ||
-        request.models.length > 3 ||
-        request.models.some((model) => typeof model !== "string" || !availableModels.includes(model))
-      ) {
-        throw new Error("Select 1 to 3 known STT benchmark candidates");
-      }
-      modelFilter = request.models;
-    }
-
-    const split = request.split;
-    // Read the event log once so every segment scores against the same correction
-    // snapshot and appended benchmark results cannot shift later lookups.
-    const events = await readLocalEvents(getEventsPath());
-    const segments = getSttBenchmarkSetSegments(events, split);
-    const total = segments.length;
-
-    let queued = total;
-    let running = 0;
-    let done = 0;
-    let failed = 0;
-    const outcomes: SttBenchmarkSetSegmentOutcome[] = [];
-
-    sendBatchBenchmarkProgress({ split, total, queued, running, done, failed, current: null, lastOutcome: null });
-
-    for (const segment of segments) {
-      queued -= 1;
-      running = 1;
-      sendBatchBenchmarkProgress({
-        split,
-        total,
-        queued,
-        running,
-        done,
-        failed,
-        current: { sessionId: segment.sessionId, segmentId: segment.segmentId },
-        lastOutcome: null,
-      });
-
-      try {
-        const response = await runSttBenchmarkForAudioSegment(
-          { sessionId: segment.sessionId, segmentId: segment.segmentId, audioRef: segment.audioRef },
-          events,
-          modelFilter,
-        );
-        running = 0;
-        done += 1;
-        outcomes.push({
-          sessionId: segment.sessionId,
-          segmentId: segment.segmentId,
-          audioRef: segment.audioRef,
-          status: "done",
-          error: null,
-          results: response.results,
-        });
-        sendBatchBenchmarkProgress({
-          split,
-          total,
-          queued,
-          running,
-          done,
-          failed,
-          current: null,
-          lastOutcome: {
-            sessionId: segment.sessionId,
-            segmentId: segment.segmentId,
-            status: "done",
-            error: null,
-            resultCount: response.results.length,
-          },
-        });
-      } catch (error) {
-        running = 0;
-        failed += 1;
-        const message = error instanceof Error ? error.message : "Benchmark failed";
-        outcomes.push({
-          sessionId: segment.sessionId,
-          segmentId: segment.segmentId,
-          audioRef: segment.audioRef,
-          status: "failed",
-          error: message,
-          results: [],
-        });
-        sendBatchBenchmarkProgress({
-          split,
-          total,
-          queued,
-          running,
-          done,
-          failed,
-          current: null,
-          lastOutcome: {
-            sessionId: segment.sessionId,
-            segmentId: segment.segmentId,
-            status: "failed",
-            error: message,
-            resultCount: 0,
-          },
-        });
-      }
-    }
-
-    return { split, total, done, failed, outcomes };
-  },
-);
-
-ipcMain.handle(
-  "benchmark-set:summarize-stt",
-  async (_event, request: SttBenchmarkSetRunRequest): Promise<SttBenchmarkCandidateSummaryResponse> => {
-    if (!request || !isSttBenchmarkSetSplit(request.split)) {
-      throw new Error("Invalid STT benchmark set split");
-    }
-
-    const events = await readLocalEvents(getEventsPath());
-    return summarizeSttBenchmarkResultsByCandidate(events, request.split);
-  },
-);
-
-ipcMain.handle(
-  "candidate-selection:save-stt",
-  async (_event, request: SttCandidateSelectionRequest): Promise<SttCandidateSelectionResponse> => {
-    const candidate = request?.candidate;
-    if (
-      !candidate ||
-      typeof candidate.stage !== "string" ||
-      typeof candidate.provider !== "string" ||
-      typeof candidate.model !== "string" ||
-      (candidate.variant !== null && typeof candidate.variant !== "undefined" && typeof candidate.variant !== "string")
-    ) {
-      throw new Error("Invalid STT candidate identity");
-    }
-
-    if (typeof request.selectionReason !== "string" || request.selectionReason.trim() === "") {
-      throw new Error("Selection reason is required");
-    }
-
-    const createdAt = new Date().toISOString();
-    const selectionReason = request.selectionReason.trim();
-    const variant = candidate.variant ?? null;
-
-    await appendEvent({
-      event_type: "stt_candidate_selection",
-      created_at: createdAt,
-      stage: candidate.stage,
-      provider: candidate.provider,
-      model: candidate.model,
-      variant,
-      selection_reason: selectionReason,
-    });
-
-    return {
-      createdAt,
-      candidate: { stage: candidate.stage, provider: candidate.provider, model: candidate.model, variant },
-      selectionReason,
-    };
-  },
-);
-
-ipcMain.handle("candidate-selection:get-latest-stt", async (): Promise<SttCandidateSelectionResponse | null> => {
-  const events = await readLocalEvents(getEventsPath());
-  const selection = getLatestSttCandidateSelection(events);
-  if (!selection) {
-    return null;
-  }
-
-  return {
-    createdAt: selection.createdAt ?? "",
-    candidate: selection.candidate,
-    selectionReason: selection.selectionReason ?? "",
-  };
-});
-
-ipcMain.handle("dataset:export-stt", async (): Promise<SttDatasetExportSummary> => {
-  const events = await readLocalEvents(getEventsPath());
-  const datasetExport = buildSttDatasetExport(events, new Date().toISOString());
-  return writeSttDatasetExport(datasetExport);
-});
-
-ipcMain.handle("dataset:open-export-folder", async (_event, exportDir?: unknown): Promise<boolean> => {
-  const exportsRoot = getExportsRoot();
-  await mkdir(exportsRoot, { recursive: true });
-
-  let targetDir = exportsRoot;
-  if (typeof exportDir === "string" && exportDir.length > 0) {
-    // Only open folders inside the exports root; never an arbitrary caller path.
-    const resolved = path.resolve(exportDir);
-    const relative = path.relative(path.resolve(exportsRoot), resolved);
-    if (!relative.startsWith("..") && !path.isAbsolute(relative) && existsSync(resolved)) {
-      targetDir = resolved;
-    }
-  }
-
-  const error = await shell.openPath(targetDir);
-  return error.length === 0;
-});
+ipcMain.handle("app:open-lab", (): OpenLabResult => openLabApp());
 
 ipcMain.handle("diagnostics:open-data-folder", async (): Promise<boolean> => {
   const dataRoot = getDataRoot();
@@ -1254,8 +574,6 @@ ipcMain.handle("diagnostics:open-rules", async (): Promise<boolean> => {
 });
 
 ipcMain.handle("diagnostics:get-stt-config", (): SttConfig => getSttConfig());
-
-ipcMain.handle("diagnostics:get-stt-benchmark-models", (): string[] => getSttBenchmarkModels());
 
 ipcMain.handle("diagnostics:get-stt-models", (): string[] => getAvailableSttModels());
 
