@@ -2001,20 +2001,39 @@ function DatasetView({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const selectedModelRef = useRef("");
+  // Guard the async gap in startRecording (getUserMedia can await a permission
+  // prompt): a release fired before the recorder exists is remembered here and
+  // applied once recording actually starts, so a quick tap can't leave the mic
+  // stuck recording. Mirrors the Home dictation flow.
+  const isStartingRef = useRef(false);
+  const stopRequestedRef = useRef(false);
+  // Set on unmount so a stop() triggered by teardown does not transcribe (and
+  // persist) an abandoned segment.
+  const unmountedRef = useRef(false);
+  // Which correction layers have already been persisted for the current captured
+  // segment, so a retry after a partial failure never re-appends a layer.
+  const persistedKindsRef = useRef<Set<CorrectionKind>>(new Set());
 
   useEffect(() => {
     selectedModelRef.current = selectedModel;
   }, [selectedModel]);
 
-  // Default the model selector to the active dictation model once config loads.
+  // Default the model selector so the displayed model always matches the model
+  // actually used: prefer the active dictation model, else the first available
+  // one (so a failed STT-config load can't show a model the capture won't use).
   useEffect(() => {
-    if (selectedModel === "" && sttConfig?.model) {
-      setSelectedModel(sttConfig.model);
+    if (selectedModel !== "") {
+      return;
     }
-  }, [sttConfig, selectedModel]);
+    const fallback = sttConfig?.model ?? availableSttModels[0] ?? "";
+    if (fallback) {
+      setSelectedModel(fallback);
+    }
+  }, [sttConfig, availableSttModels, selectedModel]);
 
   useEffect(() => {
     return () => {
+      unmountedRef.current = true;
       if (recorderRef.current && recorderRef.current.state === "recording") {
         recorderRef.current.stop();
       }
@@ -2030,10 +2049,12 @@ function DatasetView({
   }, [availableSttModels, sttConfig]);
 
   async function startRecording(): Promise<void> {
-    if (status === "recording" || status === "transcribing") {
+    if (isStartingRef.current || recorderRef.current?.state === "recording" || status === "transcribing") {
       return;
     }
 
+    isStartingRef.current = true;
+    stopRequestedRef.current = false;
     setError("");
     setNotice("");
     setStatus("recording");
@@ -2058,13 +2079,26 @@ function DatasetView({
 
       recorder.onstop = () => {
         stream.getTracks().forEach((track) => track.stop());
+        // Teardown-triggered stop: release the mic but do not transcribe/persist
+        // an abandoned segment.
+        if (unmountedRef.current) {
+          return;
+        }
         void transcribeRecording(recorder.mimeType || "audio/webm");
       };
 
       recorder.start();
+
+      // A release that arrived during the getUserMedia await was deferred; honor
+      // it now so the clip stops instead of recording indefinitely.
+      if (stopRequestedRef.current) {
+        stopRecording();
+      }
     } catch (recordingError) {
       setStatus("error");
       setError(recordingError instanceof Error ? recordingError.message : "Microphone access failed");
+    } finally {
+      isStartingRef.current = false;
     }
   }
 
@@ -2072,6 +2106,13 @@ function DatasetView({
     if (recorderRef.current && recorderRef.current.state === "recording") {
       setStatus("transcribing");
       recorderRef.current.stop();
+      return;
+    }
+
+    // Recorder not created yet (still inside the getUserMedia await): defer the
+    // stop so startRecording applies it once recording begins.
+    if (isStartingRef.current) {
+      stopRequestedRef.current = true;
     }
   }
 
@@ -2099,6 +2140,8 @@ function DatasetView({
         audioRef: result.audioRef,
         rawTranscript: result.transcript,
       });
+      // Fresh segment: nothing persisted for it yet.
+      persistedKindsRef.current = new Set();
       setStatus("done");
       reloadRecentSegments();
     } catch (transcriptionError) {
@@ -2137,11 +2180,13 @@ function DatasetView({
     setError("");
     setIsSaving(true);
 
-    const savedKinds: string[] = [];
+    const savedKinds: CorrectionKind[] = [];
 
     try {
-      // Layer 1 — acoustic: audio -> literal-correct transcript.
-      if (literal !== "") {
+      // Layer 1 — acoustic: audio -> literal-correct transcript. Skipped if it was
+      // already persisted for this segment (retry after a partial failure), so the
+      // acoustic pair is never appended twice.
+      if (literal !== "" && !persistedKindsRef.current.has("acoustic")) {
         await window.dictex.saveSttCorrection({
           sessionId: capturedSegment.sessionId,
           segmentId: capturedSegment.segmentId,
@@ -2151,12 +2196,13 @@ function DatasetView({
           correctionKind: "acoustic",
           correctionMethod: "keyboard",
         });
+        persistedKindsRef.current.add("acoustic");
         savedKinds.push("acoustic");
       }
 
       // Layer 2 — math_transform: literal transcript -> normalized notation.
       // Chained after the acoustic write; its raw_transcript is the literal text.
-      if (notation !== "") {
+      if (notation !== "" && !persistedKindsRef.current.has("math_transform")) {
         await window.dictex.saveSttCorrection({
           sessionId: capturedSegment.sessionId,
           segmentId: capturedSegment.segmentId,
@@ -2166,11 +2212,17 @@ function DatasetView({
           correctionKind: "math_transform",
           correctionMethod: "keyboard",
         });
+        persistedKindsRef.current.add("math_transform");
         savedKinds.push("math_transform");
       }
 
+      if (savedKinds.length === 0) {
+        setNotice("Nothing new to save for this segment");
+        return;
+      }
+
       setNotice(
-        `Saved ${savedKinds.length === 2 ? "acoustic + math_transform" : savedKinds[0]} for ${capturedSegment.sessionId} / ${capturedSegment.segmentId}`,
+        `Saved ${savedKinds.map(formatCorrectionKind).join(" + ")} for ${capturedSegment.sessionId} / ${capturedSegment.segmentId}`,
       );
       // Reset for the next capture; keep the model choice.
       setRawTranscript("");
