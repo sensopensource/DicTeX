@@ -215,6 +215,51 @@ segment, the Lab concatenates DicTeX's read-only events (first) with its own
 events (second), so latest-event-wins derivations see the Lab's corrections/
 splits layered on top of DicTeX's raw dictation records.
 
+### Dataset builder (manual two-layer entries, issue #78)
+
+The `Dataset` view's **Build a dataset entry** panel is the Lab's manual,
+no-microphone replacement for the old in-app recording (#66, removed in
+Phase 0): you run DicTeX in the background yourself, then feed the Lab its
+real transcription by hand. Two independent inputs:
+
+- **Paste a transcription** — free-text raw STT transcript, no audio. Mints a
+  synthetic identity (`lab_manual_<timestamp>` / `entry_<random>`).
+- **Pick a DicTeX segment** — chooses one of the (read-only) segments listed
+  in the Segments view; the real `sessionId`/`segmentId`/`audioRef` and raw
+  transcript are reused as-is.
+
+Then two layers, always typed by hand:
+
+- **Layer 1 (literal, verbal)** — e.g. `x au carré plus deux`.
+- **Layer 2 (normalized notation, LaTeX/KaTeX-compatible)** — e.g. `x^2 + 2`;
+  the field stays disabled until Layer 1 is filled.
+
+Clicking `Save entry` writes chained `stt_correction` events into the Lab's
+**own** store (never DicTeX's folder), same principle as the removed #66
+recorder (see AGENTS.md "Two-layer dataset enrichment"): an **empty layer is
+skipped**, so the two datasets stay separable purely by which layer was
+filled —
+
+- a raw transcript (pasted or from a picked segment) + Layer 1 writes an
+  `acoustic` correction (`raw_transcript` = raw STT, `corrected_transcript` =
+  Layer 1);
+- Layer 1 + Layer 2 writes a `math_transform` correction (`raw_transcript` =
+  Layer 1, `corrected_transcript` = Layer 2) — Layer 2 can never be saved
+  without Layer 1, since Layer 1 is its input;
+- both can be written together (chained on the same segment identity), giving
+  one record in each dataset once exported.
+
+The entry is also marked into the chosen benchmark-set split (train pool /
+validation / test frozen) so it is immediately visible to `buildSttDatasetExport`
+and to the Benchmark view's set runner. A **paste**-sourced entry has no real
+audio: internally it is still assigned a string `audioRef` (not `null`) so the
+shared `getSttBenchmarkSetSegments` derivation picks it up, but the Lab's own
+`serializeDatasetRecord` maps that back to `audio_ref: null, audio_path: null`
+in the exported JSONL — the export never claims a fake audio file exists for a
+text-only, math_transform-only entry. A **picked-segment** entry always keeps
+its real `audio_ref`/`audio_path`, resolved against the configured (read-only)
+DicTeX data folder.
+
 ### Manual Lab smoke test
 
 1. `scripts\npm.cmd run dev:lab`, confirm the window opens to the Segments
@@ -229,12 +274,25 @@ splits layered on top of DicTeX's raw dictation records.
    `DICTEX_PYTHON`); confirm `tiny`/`base`/`small` transcripts + latency
    appear. Run `Run analysis` over `Test frozen`, `Summarize by candidate`,
    and `Select` a candidate.
-5. In `Dataset export`, click `Export dataset`; confirm a
-   `stt-dataset-<timestamp>/` folder with a `manifest.json` +
-   `<split>.<correction_kind>.jsonl` files is written under the **Lab's**
-   `data/exports/`, not DicTeX's folder, and DicTeX's `events.jsonl` is
-   unchanged.
-6. Point the data folder at a different directory (or reset it) and confirm
+5. In `Dataset`, use **Build a dataset entry**: pick a DicTeX segment, type a
+   Layer 1 literal transcript, leave Layer 2 empty, choose `Test frozen`, and
+   click `Save entry`; confirm the notice reports an `acoustic` save only.
+   Paste a transcription (no segment), leave the raw text empty, fill Layer 1
+   and Layer 2, and save; confirm the notice reports a `math_transform` save
+   only, with a freshly minted `lab_manual_…` identity. Pick another segment,
+   fill both layers, and save; confirm the notice reports both `acoustic` and
+   `math_transform` for that segment's real identity.
+6. Click `Export dataset`; confirm the `<split>.acoustic.jsonl` /
+   `<split>.math_transform.jsonl` files from step 5 contain one record each
+   per filled layer, that the acoustic-only record has a real, resolved
+   `audio_path` under DicTeX's data folder, and that the math_transform-only
+   (pasted) record has `audio_ref: null` and `audio_path: null`. Confirm
+   DicTeX's `events.jsonl` is still unchanged.
+7. Back in `Benchmark`, with `Test frozen` selected, click `Run analysis`
+   (needs the venv or `DICTEX_PYTHON`); confirm the segment built in step 5
+   appears in the batch outcomes and candidate summary alongside any other
+   `Test frozen` segments.
+8. Point the data folder at a different directory (or reset it) and confirm
    the segment list refreshes from the new source.
 
 ## Global Dictation Hotkey

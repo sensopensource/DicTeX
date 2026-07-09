@@ -128,6 +128,41 @@ pairs (literal text → normalized notation) stay separable by encoding the
 pipeline stage in which field is filled, still as chained append-only
 `stt_correction` events.
 
+### Lab manual two-layer dataset builder (issue #78)
+
+The Lab's `Dataset` view re-implements the manual builder (no microphone):
+choose the input (paste a transcription, or pick a DicTeX-recorded segment),
+type Layer 1 (literal) and optionally Layer 2 (notation), pick a benchmark-set
+split, and save. See `docs/development.md` → "Dataset builder" for the full
+data flow. Decisions:
+
+- **An empty layer is skipped, never blended.** Saving never collapses the
+  acoustic and math_transform transforms into one record; which correction
+  event(s) get written is determined purely by which layer is filled
+  (raw transcript present → acoustic; Layer 2 present → math_transform, which
+  always requires Layer 1 since Layer 1 is its input). A wrong/blended format
+  here would corrupt both datasets (see AGENTS.md level-scoring: axis E = 4).
+- **A pasted (no-audio) entry still needs a string `audioRef` internally.**
+  `@dictex/shared`'s `getSttBenchmarkSetSegments` (and therefore
+  `buildSttDatasetExport`, reused unmodified) requires a string `audioRef` to
+  place a segment into a benchmark-set split; `null` is filtered out there.
+  Rather than fork that shared derivation, the Lab uses an internal, local
+  convention (`NO_AUDIO_REF = ""`, documented in
+  `apps/lab/src/main/datasetBuilder.ts`) for text-only entries, and its own
+  `serializeDatasetRecord` maps it back to a genuine `audio_ref: null,
+  audio_path: null` in the exported JSONL — the export never claims a fake
+  audio file exists for a math_transform-only entry.
+- **A picked-segment entry always keeps its real identity and audio.** No
+  synthetic ids, no re-resolving: the segment's own `sessionId`/`segmentId`/
+  `audioRef` (already read read-only from DicTeX's data folder) are reused
+  as-is, so a chained acoustic + math_transform save lands on the same
+  segment DicTeX recorded.
+- **Export format is untouched.** The builder only produces `stt_correction`
+  / `stt_benchmark_set_membership` events in the Lab's own store; export still
+  goes through the existing, unmodified `buildSttDatasetExport` /
+  `serializeDatasetRecord` path, so builder-made entries are
+  test_frozen-compatible by construction, not by a parallel code path.
+
 ## UI Direction
 
 The UI should feel like a compact utility app, not a landing page, dashboard, or marketing site.

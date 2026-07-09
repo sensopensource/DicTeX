@@ -16,6 +16,7 @@ import type {
   SttBenchmarkSetMembershipResponse,
   SttDatasetExportSummary,
 } from "@dictex/shared";
+import type { DatasetBuilderSaveRequest, DatasetBuilderSaveResponse } from "../main/datasetBuilder.js";
 
 type AudioSegmentPlayback = {
   audioBytes: Uint8Array;
@@ -67,6 +68,10 @@ contextBridge.exposeInMainWorld("dictexLab", {
     ipcRenderer.invoke("candidate-selection:save-stt", request) as Promise<SttCandidateSelectionResponse>,
   getLatestSttCandidateSelection: () =>
     ipcRenderer.invoke("candidate-selection:get-latest-stt") as Promise<SttCandidateSelectionResponse | null>,
+
+  // Dataset builder (own store, manual two-layer entries, #78).
+  saveDatasetBuilderEntry: (request: DatasetBuilderSaveRequest) =>
+    ipcRenderer.invoke("dataset-builder:save-entry", request) as Promise<DatasetBuilderSaveResponse>,
 
   // Dataset export (own store).
   exportSttDataset: () => ipcRenderer.invoke("dataset:export-stt") as Promise<SttDatasetExportSummary>,
