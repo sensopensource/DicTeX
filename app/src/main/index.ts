@@ -47,6 +47,14 @@ type TranscriptionResult = {
 type TranscriptionOptions = {
   autoPaste?: boolean;
   trigger?: "manual" | "global_hotkey";
+  // Per-call STT model override. Used by the Dataset enrichment view so it can
+  // transcribe with a chosen model without mutating the persisted global
+  // dictation model (activeSttModelOverride). Ignored if not a known model.
+  model?: string;
+  // When false, the transcript is not written to the clipboard (and, with
+  // autoPaste false, nothing leaves the app). The Dataset enrichment flow sets
+  // this so capturing training data never touches the user's clipboard.
+  writeClipboard?: boolean;
 };
 
 type SttConfig = {
@@ -812,8 +820,16 @@ ipcMain.handle(
       audio_size_bytes: audioBytes.byteLength,
     });
 
+    // Per-call model override (Dataset view) does not touch the persisted global
+    // dictation model; fall back to the active config for any unknown value.
+    const requestedModel = typeof options.model === "string" ? options.model.trim() : "";
+    const transcriptionConfig =
+      requestedModel.length > 0 && getAvailableSttModels().includes(requestedModel)
+        ? { ...getSttConfig(), model: requestedModel }
+        : getSttConfig();
+
     const transcriptionStartedAt = Date.now();
-    const sttResult = await transcribeWithPython(audioPath);
+    const sttResult = await transcribeWithPython(audioPath, transcriptionConfig);
     const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
 
     await appendEvent({
@@ -853,9 +869,14 @@ ipcMain.handle(
     });
 
     const insertedTranscript = normalization.output;
-    clipboard.writeText(insertedTranscript);
+    // The Dataset enrichment flow captures training data and must not touch the
+    // clipboard; only the dictation flow writes it (and optionally pastes).
+    const copiedToClipboard = options.writeClipboard !== false;
+    if (copiedToClipboard) {
+      clipboard.writeText(insertedTranscript);
+    }
     const pastedToActiveApp =
-      options.autoPaste === true && insertedTranscript.trim().length > 0
+      copiedToClipboard && options.autoPaste === true && insertedTranscript.trim().length > 0
         ? await pasteClipboardIntoActiveApp()
         : false;
 
@@ -864,7 +885,7 @@ ipcMain.handle(
       normalizedTranscript: insertedTranscript,
       normalizationApplied: !normalization.passthrough,
       normalizationDiagnostics: normalization.diagnostics,
-      copiedToClipboard: true,
+      copiedToClipboard,
       pastedToActiveApp,
       sessionId,
       segmentId,
