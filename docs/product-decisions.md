@@ -25,10 +25,14 @@ The DicTeX data folder path is configurable in the Lab (default
 logic from `packages/shared` so the two apps cannot diverge; DicTeX never
 depends on the Lab.
 
-Phase 2 (#76) **adds** the Lab and factors the shared logic; it deliberately
-does **not** remove the benchmark/dataset/correction/split features from
-`apps/dictex` — that is Phase 3 (#77). So those features temporarily exist in
-both apps, kept DRY by the shared package.
+Phase 2 (#76) added the Lab and factored the shared logic. Phase 3 (#77) then
+**removed** the benchmark/dataset/correction/split features from `apps/dictex`,
+leaving it a pure consumer dictation tool (single Home view, collapsible
+Copy/Copy-raw/Play history, and an "Open Lab" launcher). DicTeX Lab is now the
+**sole** tooling surface for benchmark, typed corrections, splits, and dataset
+export; DicTeX only writes raw dictation data (`audio_segment`, `stt_result`,
+`normalization_result`) that the Lab reads. Phases 0-3 are merged; Phase 4 (#78,
+the Lab's manual two-layer dataset builder) is the remaining pivot work.
 
 ## Product Shape
 

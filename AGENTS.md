@@ -108,7 +108,8 @@ manual button or hotkey
 -> main copies transcript to clipboard
 -> hotkey path also sends Ctrl+V on Windows
 -> renderer refreshes recent segment history
--> user may replay local audio, save STT correction, or benchmark the segment
+-> user may replay local audio or copy the raw / inserted transcript
+   (corrections + benchmark now live in DicTeX Lab, not DicTeX)
 ```
 
 Current benchmark flow:
@@ -597,7 +598,12 @@ Pivot Phase 0 (PR #74, merged to main directly):
 - Recorded the DicTeX/Lab split plan in `pivot_dictex_lab_split.md`.
 - Done.
 
-Pivot Phase 2 (#76, open PR — `needs:high-review`, awaiting review):
+Pivot Phase 1 (#75, PR #79, merged): npm-workspaces monorepo — `app/` ->
+`apps/dictex`, `engine/` -> `packages/engine`, empty `packages/shared`; the
+Electron main `repoRoot` resolves four levels up from the built
+`apps/dictex/out/main`. No behavior change. Done.
+
+Pivot Phase 2 (#76, PR #80, merged):
 
 - Scaffolded `apps/lab` (**DicTeX Lab**): electron-vite + React, no microphone/
   hotkey/clipboard/normalizer. Hosts the STT benchmark (segment/batch, candidate
@@ -616,44 +622,41 @@ Pivot Phase 2 (#76, open PR — `needs:high-review`, awaiting review):
   `%APPDATA%/dictex-app/data`) and writes only into its OWN store
   (`%APPDATA%/dictex-lab-app/data`). Documented in `docs/development.md` and
   `docs/product-decisions.md`.
-- Deliberately did NOT remove these features from `apps/dictex` (that is Phase 3
-  / #77); they temporarily exist in both apps, kept DRY by `packages/shared`.
+- The Lab still coexisted with the same features in `apps/dictex` at this point;
+  Phase 3 (#77) removed them from DicTeX. Done.
 
-Open roadmap — DicTeX / Lab split (see `pivot_dictex_lab_split.md`). Prior
-benchmark/dataset issues are done or folded into the phases below (#43 and #58
-closed as done/superseded; #44 export landed via PR #72 and relocates to the Lab
-in Phase 2; #66 recording reverted in Phase 0; #45 re-scoped to post-pivot).
+Pivot Phase 3 (#77, PR #81, merged): slimmed `apps/dictex` to a pure consumer
+dictation tool — single Home view (dictation + normalizer + STT model selector +
+minimal diagnostics), collapsible history with **Copy / Copy raw / Play only**,
+and an **"Open Lab"** launcher (prefers the built Lab, falls back to `dev:lab`,
+graceful error). Removed all benchmark/dataset/correction/split IPC + UI and 61
+dead CSS blocks (~-3400 LOC; CSS bundle 16.6 -> 9.2 kB). No `packages/shared` or
+`packages/engine` deletions. Done.
 
-- #75 Phase 1 — npm-workspaces monorepo skeleton (`apps/dictex` +
-  `packages/engine` + `packages/shared`), no behavior change — `level:eleve`.
-  Depends on: (none). Keystone.
-- #76 Phase 2 — scaffold `apps/lab` + move benchmark / dataset / corrections /
-  splits / Vosk / export into it; Lab reads DicTeX's data folder read-only —
-  `level:eleve` + `needs:high-review`. Depends on: #75.
-- #77 Phase 3 — slim DicTeX to Home + "Open Lab" + copy/copy-raw/play history;
-  strip the benchmark/dataset/correction/split IPC — `level:eleve`.
-  Depends on: #75, #76.
+Open roadmap — DicTeX / Lab split (see `pivot_dictex_lab_split.md`). **Phases 0-3
+are merged; only Phase 4 remains.** Prior benchmark/dataset issues are done or
+folded in (#43/#58 closed; #44 export relocated to the Lab in Phase 2; #66
+recording reverted in Phase 0; #45 re-scoped to post-pivot).
+
+- #75 Phase 1 — monorepo skeleton — **DONE** (PR #79).
+- #76 Phase 2 — `apps/lab` + `packages/shared` — **DONE** (PR #80).
+- #77 Phase 3 — slim DicTeX + Open Lab — **DONE** (PR #81).
 - #78 Phase 4 — Lab manual two-layer dataset builder + benchmark from the data
-  folder — `level:eleve` + `needs:high-review`. Depends on: #76.
+  folder — `level:eleve` + `needs:high-review`. Depends on: #76 (done) ->
+  **in flight** (PR pending; reviewer tier: Opus 4.8 max).
 - #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`.
-  Re-scoped to post-pivot (Phase 5), gated on the Lab producing enough
-  `acoustic`-tagged data.
+  Post-pivot (Phase 5), gated on the Lab producing enough `acoustic`-tagged data.
 
 Launch plan (waves):
 
 ```text
-Wave 1 (ready now):     #75 (eleve)
-Wave 2 (after #75):     #76 (eleve, needs:high-review)
-Wave 3 (after #76):     #77 (eleve) + #78 (eleve, needs:high-review) in parallel
-Later (post-pivot):     #45
+Done:               #75 -> #76 -> #77 (Phases 1-3 merged)
+In flight:          #78 (Phase 4, needs:high-review)
+Later (post-pivot): #45
 ```
 
 Model per level (Claude / Codex): `level:eleve` -> Opus 4.8 high / gpt-5-codex
 high; `needs:high-review` issues get a reviewer one notch up (Opus 4.8 max).
-
-Soft conflict: #76 and #77 both touch `main.tsx` / `index.ts` / `preload` /
-`localEvents` in opposite directions (add-to-lab vs remove-from-dictex) — land
-#76 before starting #77, then rebase #77.
 
 ## Product Decisions To Preserve
 
