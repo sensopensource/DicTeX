@@ -21,6 +21,10 @@ type TranscriptionResponse = {
 type TranscriptionOptions = {
   autoPaste?: boolean;
   trigger?: "manual" | "global_hotkey";
+  // Per-call STT model override (Dataset enrichment view), forwarded as-is.
+  model?: string;
+  // When false, the transcript is not copied to the clipboard (Dataset flow).
+  writeClipboard?: boolean;
 };
 
 type HotkeyStatus = {

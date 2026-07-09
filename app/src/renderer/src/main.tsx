@@ -5,6 +5,11 @@ import "./styles.css";
 type TranscriptionOptions = {
   autoPaste?: boolean;
   trigger?: "manual" | "global_hotkey";
+  // Per-call STT model override (Dataset enrichment view); does not change the
+  // persisted global dictation model.
+  model?: string;
+  // When false, the transcript is not copied to the clipboard (Dataset flow).
+  writeClipboard?: boolean;
 };
 
 type TranscriptionResult = {
@@ -1076,6 +1081,9 @@ function App(): React.ReactElement {
     return (
       <main className="app-shell">
         <DatasetView
+          availableSttModels={availableSttModels}
+          sttConfig={sttConfig}
+          reloadRecentSegments={() => void loadRecentSegments()}
           exportSttDataset={() => void exportSttDataset()}
           openExportFolder={() => void openExportFolder()}
           isExportingDataset={isExportingDataset}
@@ -2008,6 +2016,9 @@ function BenchmarkView({
 }
 
 type DatasetViewProps = {
+  availableSttModels: string[];
+  sttConfig: SttConfig | null;
+  reloadRecentSegments: () => void;
   exportSttDataset: () => void;
   openExportFolder: () => void;
   isExportingDataset: boolean;
@@ -2016,7 +2027,34 @@ type DatasetViewProps = {
   onBack: () => void;
 };
 
+type DatasetCapturedSegment = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+  rawTranscript: string;
+};
+
+/**
+ * Dataset enrichment view (issue #66). Captures separable training data for one
+ * freshly recorded segment as TWO explicit layers, written as two chained
+ * append-only stt_correction events (no new event type):
+ *
+ *   1. acoustic:        audio -> literal-correct transcript (notation stays verbal)
+ *   2. math_transform:  literal transcript -> normalized notation (text->text)
+ *
+ * Encoding the pipeline stage in *which field is filled* keeps the acoustic (STT)
+ * and normalizer datasets separable — a single fully-normalized text would
+ * collapse both transformations. Recording never touches the clipboard or pastes.
+ *
+ * Self-contained recording state (its own MediaRecorder) so it never disturbs the
+ * Home dictation flow. reconstructRecentSegments uses latest-event-wins, so a
+ * segment with both corrections shows only the last kind in history; dataset
+ * export (#44) must read ALL correction events of a segment, not just the last.
+ */
 function DatasetView({
+  availableSttModels,
+  sttConfig,
+  reloadRecentSegments,
   exportSttDataset,
   openExportFolder,
   isExportingDataset,
@@ -2024,6 +2062,258 @@ function DatasetView({
   datasetExportError,
   onBack,
 }: DatasetViewProps): React.ReactElement {
+  const [status, setStatus] = useState<Status>("idle");
+  const [selectedModel, setSelectedModel] = useState("");
+  const [rawTranscript, setRawTranscript] = useState("");
+  const [literalDraft, setLiteralDraft] = useState("");
+  const [notationDraft, setNotationDraft] = useState("");
+  const [capturedSegment, setCapturedSegment] = useState<DatasetCapturedSegment | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const selectedModelRef = useRef("");
+  // Guard the async gap in startRecording (getUserMedia can await a permission
+  // prompt): a release fired before the recorder exists is remembered here and
+  // applied once recording actually starts, so a quick tap can't leave the mic
+  // stuck recording. Mirrors the Home dictation flow.
+  const isStartingRef = useRef(false);
+  const stopRequestedRef = useRef(false);
+  // Set on unmount so a stop() triggered by teardown does not transcribe (and
+  // persist) an abandoned segment.
+  const unmountedRef = useRef(false);
+  // Which correction layers have already been persisted for the current captured
+  // segment, so a retry after a partial failure never re-appends a layer.
+  const persistedKindsRef = useRef<Set<CorrectionKind>>(new Set());
+
+  useEffect(() => {
+    selectedModelRef.current = selectedModel;
+  }, [selectedModel]);
+
+  // Default the model selector so the displayed model always matches the model
+  // actually used: prefer the active dictation model, else the first available
+  // one (so a failed STT-config load can't show a model the capture won't use).
+  useEffect(() => {
+    if (selectedModel !== "") {
+      return;
+    }
+    const fallback = sttConfig?.model ?? availableSttModels[0] ?? "";
+    if (fallback) {
+      setSelectedModel(fallback);
+    }
+  }, [sttConfig, availableSttModels, selectedModel]);
+
+  useEffect(() => {
+    return () => {
+      unmountedRef.current = true;
+      if (recorderRef.current && recorderRef.current.state === "recording") {
+        recorderRef.current.stop();
+      }
+    };
+  }, []);
+
+  const modelOptions = useMemo(() => {
+    const models = [...availableSttModels];
+    if (sttConfig?.model && !models.includes(sttConfig.model)) {
+      models.unshift(sttConfig.model);
+    }
+    return models;
+  }, [availableSttModels, sttConfig]);
+
+  async function startRecording(): Promise<void> {
+    if (isStartingRef.current || recorderRef.current?.state === "recording" || status === "transcribing") {
+      return;
+    }
+
+    isStartingRef.current = true;
+    stopRequestedRef.current = false;
+    setError("");
+    setNotice("");
+    setStatus("recording");
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : undefined;
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+
+      chunksRef.current = [];
+      recorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        // Teardown-triggered stop: release the mic but do not transcribe/persist
+        // an abandoned segment.
+        if (unmountedRef.current) {
+          return;
+        }
+        void transcribeRecording(recorder.mimeType || "audio/webm");
+      };
+
+      recorder.start();
+
+      // A release that arrived during the getUserMedia await was deferred; honor
+      // it now so the clip stops instead of recording indefinitely.
+      if (stopRequestedRef.current) {
+        stopRecording();
+      }
+    } catch (recordingError) {
+      setStatus("error");
+      setError(recordingError instanceof Error ? recordingError.message : "Microphone access failed");
+    } finally {
+      isStartingRef.current = false;
+    }
+  }
+
+  function stopRecording(): void {
+    if (recorderRef.current && recorderRef.current.state === "recording") {
+      setStatus("transcribing");
+      recorderRef.current.stop();
+      return;
+    }
+
+    // Recorder not created yet (still inside the getUserMedia await): defer the
+    // stop so startRecording applies it once recording begins.
+    if (isStartingRef.current) {
+      stopRequestedRef.current = true;
+    }
+  }
+
+  async function transcribeRecording(mimeType: string): Promise<void> {
+    try {
+      const audioBlob = new Blob(chunksRef.current, { type: mimeType });
+      const audioBuffer = await audioBlob.arrayBuffer();
+      const model = selectedModelRef.current;
+      const result = await window.dictex.transcribeAudio(new Uint8Array(audioBuffer), mimeType, {
+        // Dataset capture: never paste and never write the clipboard.
+        autoPaste: false,
+        writeClipboard: false,
+        trigger: "manual",
+        ...(model ? { model } : {}),
+      });
+
+      setRawTranscript(result.transcript);
+      // Prefill the literal layer with the raw STT output: the user only fixes
+      // mishearings from here, keeping notation verbal.
+      setLiteralDraft(result.transcript);
+      setNotationDraft("");
+      setCapturedSegment({
+        sessionId: result.sessionId,
+        segmentId: result.segmentId,
+        audioRef: result.audioRef,
+        rawTranscript: result.transcript,
+      });
+      // Fresh segment: nothing persisted for it yet.
+      persistedKindsRef.current = new Set();
+      setStatus("done");
+      reloadRecentSegments();
+    } catch (transcriptionError) {
+      setStatus("error");
+      setError(transcriptionError instanceof Error ? transcriptionError.message : "Transcription failed");
+    }
+  }
+
+  async function saveLayers(): Promise<void> {
+    if (!capturedSegment) {
+      setNotice("Record a clip before saving");
+      return;
+    }
+
+    if (typeof window.dictex.saveSttCorrection !== "function") {
+      setNotice("Restart DicTeX to load the correction preload API");
+      return;
+    }
+
+    const literal = literalDraft.trim();
+    const notation = notationDraft.trim();
+
+    if (literal === "" && notation === "") {
+      setNotice("Fill at least the literal transcript before saving");
+      return;
+    }
+
+    // The math_transform pair's input is the literal text, so notation cannot be
+    // saved on its own — that would produce an empty-input training pair.
+    if (notation !== "" && literal === "") {
+      setNotice("Fill the literal transcript before adding the normalized notation");
+      return;
+    }
+
+    setNotice("");
+    setError("");
+    setIsSaving(true);
+
+    const savedKinds: CorrectionKind[] = [];
+
+    try {
+      // Layer 1 — acoustic: audio -> literal-correct transcript. Skipped if it was
+      // already persisted for this segment (retry after a partial failure), so the
+      // acoustic pair is never appended twice.
+      if (literal !== "" && !persistedKindsRef.current.has("acoustic")) {
+        await window.dictex.saveSttCorrection({
+          sessionId: capturedSegment.sessionId,
+          segmentId: capturedSegment.segmentId,
+          audioRef: capturedSegment.audioRef,
+          rawTranscript: capturedSegment.rawTranscript,
+          correctedTranscript: literal,
+          correctionKind: "acoustic",
+          correctionMethod: "keyboard",
+        });
+        persistedKindsRef.current.add("acoustic");
+        savedKinds.push("acoustic");
+      }
+
+      // Layer 2 — math_transform: literal transcript -> normalized notation.
+      // Chained after the acoustic write; its raw_transcript is the literal text.
+      if (notation !== "" && !persistedKindsRef.current.has("math_transform")) {
+        await window.dictex.saveSttCorrection({
+          sessionId: capturedSegment.sessionId,
+          segmentId: capturedSegment.segmentId,
+          audioRef: capturedSegment.audioRef,
+          rawTranscript: literal,
+          correctedTranscript: notation,
+          correctionKind: "math_transform",
+          correctionMethod: "keyboard",
+        });
+        persistedKindsRef.current.add("math_transform");
+        savedKinds.push("math_transform");
+      }
+
+      if (savedKinds.length === 0) {
+        setNotice("Nothing new to save for this segment");
+        return;
+      }
+
+      setNotice(
+        `Saved ${savedKinds.map(formatCorrectionKind).join(" + ")} for ${capturedSegment.sessionId} / ${capturedSegment.segmentId}`,
+      );
+      // Reset for the next capture; keep the model choice.
+      setRawTranscript("");
+      setLiteralDraft("");
+      setNotationDraft("");
+      setCapturedSegment(null);
+      setStatus("idle");
+      reloadRecentSegments();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Could not save correction layers");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  const statusLabel = status === "done" ? "captured" : status;
+  const isBusy = status === "recording" || status === "transcribing" || isSaving;
   const exportAvailable = typeof window.dictex.exportSttDataset === "function";
   const summary = datasetExportSummary;
 
@@ -2032,12 +2322,111 @@ function DatasetView({
       <header className="titlebar">
         <div>
           <p className="eyebrow">DicTeX</p>
-          <h1>Dataset</h1>
+          <h1>Dataset enrichment</h1>
         </div>
         <button className="secondary-button" onClick={onBack}>
           Back to home
         </button>
       </header>
+
+      <section className="panel controls-panel">
+        <button
+          className="record-button"
+          disabled={status === "transcribing" || isSaving}
+          onMouseDown={() => void startRecording()}
+          onMouseUp={() => stopRecording()}
+          onMouseLeave={() => stopRecording()}
+          onTouchStart={(event) => {
+            event.preventDefault();
+            void startRecording();
+          }}
+          onTouchEnd={(event) => {
+            event.preventDefault();
+            stopRecording();
+          }}
+        >
+          {status === "recording" ? "Release to transcribe" : "Hold to record a clip"}
+        </button>
+
+        <div className="shortcut-row">
+          <span>State</span>
+          <strong>{statusLabel}</strong>
+          <span className="signal-muted">no clipboard, no paste</span>
+        </div>
+
+        <div className="shortcut-row">
+          <span>STT model</span>
+          <select
+            aria-label="Dataset STT model"
+            className="secondary-select"
+            disabled={isBusy || modelOptions.length === 0}
+            value={selectedModel}
+            onChange={(event) => setSelectedModel(event.currentTarget.value)}
+          >
+            {modelOptions.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
+          </select>
+          <span className="signal-muted">this capture only</span>
+        </div>
+      </section>
+
+      <section className="panel transcript-panel">
+        <p className="dataset-hint">
+          Capture two separable layers for one clip. Layer 1 (acoustic) fixes only mishearings and keeps notation
+          verbal. Layer 2 (math notation) turns that literal text into formal notation. Leave a layer empty to skip it.
+        </p>
+
+        <label className="transcript-label" htmlFor="dataset-raw">
+          Raw STT output
+        </label>
+        <p id="dataset-raw" className="dataset-raw">
+          {rawTranscript || "Record a clip to see the raw transcript."}
+        </p>
+
+        <label className="transcript-label" htmlFor="dataset-literal">
+          Layer 1 — literal transcript (acoustic, verbal, e.g. "x au carré plus deux")
+        </label>
+        <textarea
+          id="dataset-literal"
+          value={literalDraft}
+          onChange={(event) => setLiteralDraft(event.target.value)}
+          disabled={!capturedSegment || isSaving}
+          placeholder="What was really said, with mishearings fixed."
+        />
+
+        <label className="transcript-label" htmlFor="dataset-notation">
+          Layer 2 — normalized notation (math_transform, e.g. "x² + 2")
+        </label>
+        <textarea
+          id="dataset-notation"
+          value={notationDraft}
+          onChange={(event) => setNotationDraft(event.target.value)}
+          disabled={!capturedSegment || isSaving}
+          placeholder="Optional: the literal text rewritten as formal notation."
+        />
+
+        {error && <pre className="error">{error}</pre>}
+        {notice && <p className="notice">{notice}</p>}
+
+        <div className="actions">
+          <button
+            className="secondary-button"
+            disabled={
+              !capturedSegment ||
+              isSaving ||
+              (literalDraft.trim() === "" && notationDraft.trim() === "") ||
+              status === "recording" ||
+              status === "transcribing"
+            }
+            onClick={() => void saveLayers()}
+          >
+            {isSaving ? "Saving" : "Save layers"}
+          </button>
+        </div>
+      </section>
 
       <section className="panel" aria-busy={isExportingDataset}>
         <div className="benchmark-header">
