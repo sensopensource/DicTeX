@@ -93,6 +93,12 @@ h2 {
 }
 
 .panel {
+  /* Grid items default to a min-width of their content's min-content size,
+     so a deeply nested `white-space: nowrap` descendant (e.g. .benchmark-header
+     p) can blow out .app-shell's single grid column past its max-width and
+     force a page-wide horizontal scrollbar. min-width: 0 lets each panel
+     shrink to the shell's width so overflow/ellipsis rules apply as intended. */
+  min-width: 0;
   border: 1px solid #2a2a2a;
   border-radius: 0.75rem;
   background: #151515;

@@ -44,6 +44,11 @@ import {
   type SttDatasetExportSummary,
 } from "@dictex/shared";
 import { readLabSettings, writeLabSettings } from "./settings.js";
+import {
+  planDatasetBuilderSave,
+  type DatasetBuilderSaveRequest,
+  type DatasetBuilderSaveResponse,
+} from "./datasetBuilder.js";
 
 /**
  * DicTeX Lab main process (pivot Phase 2, issue #76). No microphone, no
@@ -115,6 +120,13 @@ function getSourceEventsPath(): string {
  * root, same guard shape as apps/dictex's `resolveDataRef`.
  */
 function resolveSourceAudioRef(portableRef: string): string {
+  if (portableRef.length === 0) {
+    // NO_AUDIO_REF (see ./datasetBuilder.ts): a dataset-builder text-only
+    // entry with no real audio file. Reject before resolving, so this never
+    // silently resolves to the data root directory itself.
+    throw new Error("This entry has no audio file (a Lab dataset-builder text-only entry)");
+  }
+
   const dataRoot = path.resolve(getSourceDataRoot());
   const targetPath = path.resolve(dataRoot, portableRef);
   const relative = path.relative(dataRoot, targetPath);
@@ -362,18 +374,25 @@ function datasetSplitFileName(split: SttBenchmarkSetSplit, correctionKind: strin
  * resolution is a read, never a write.
  */
 function serializeDatasetRecord(record: SttDatasetRecord): Record<string, JsonValue> {
+  // A dataset-builder text-only entry (see ./datasetBuilder.ts) carries
+  // NO_AUDIO_REF ("") as its audioRef. Map it back to a genuine `null` here
+  // rather than resolving/leaking the sentinel into the exported JSONL, so a
+  // math_transform-only, no-audio record never claims an audio file exists.
+  const hasAudio = record.audioRef.length > 0;
   let audioPath: string | null = null;
-  try {
-    audioPath = resolveSourceAudioRef(record.audioRef);
-  } catch {
-    audioPath = null;
+  if (hasAudio) {
+    try {
+      audioPath = resolveSourceAudioRef(record.audioRef);
+    } catch {
+      audioPath = null;
+    }
   }
 
   return {
     split: record.split,
     session_id: record.sessionId,
     segment_id: record.segmentId,
-    audio_ref: record.audioRef,
+    audio_ref: hasAudio ? record.audioRef : null,
     audio_path: audioPath,
     language: record.language,
     correction_kind: record.correctionKind,
@@ -875,6 +894,77 @@ ipcMain.handle("candidate-selection:get-latest-stt", async (): Promise<SttCandid
     selectionReason: selection.selectionReason ?? "",
   };
 });
+
+// ---- dataset builder (own store; manual two-layer entries, issue #78) ----
+
+ipcMain.handle(
+  "dataset-builder:save-entry",
+  async (_event, request: DatasetBuilderSaveRequest): Promise<DatasetBuilderSaveResponse> => {
+    if (!request || (request.source?.mode !== "paste" && request.source?.mode !== "segment")) {
+      throw new Error("Invalid dataset builder source");
+    }
+    if (!isSttBenchmarkSetSplit(request.split)) {
+      throw new Error("Invalid STT benchmark set split");
+    }
+
+    // planDatasetBuilderSave validates the transcripts/source further and
+    // decides which layer(s) to write (see ./datasetBuilder.ts docblock for
+    // the two-layer separability rule).
+    const plan = planDatasetBuilderSave(request);
+    const baseConfig = getBaseSttConfig();
+
+    if (plan.saveAcoustic) {
+      await appendOwnEvent({
+        event_type: "stt_correction",
+        created_at: new Date().toISOString(),
+        session_id: plan.sessionId,
+        segment_id: plan.segmentId,
+        audio_ref: plan.audioRef,
+        raw_transcript: plan.rawTranscript,
+        corrected_transcript: plan.literalTranscript,
+        correction_method: "keyboard",
+        correction_kind: "acoustic",
+      });
+    }
+
+    if (plan.saveMathTransform) {
+      await appendOwnEvent({
+        event_type: "stt_correction",
+        created_at: new Date().toISOString(),
+        session_id: plan.sessionId,
+        segment_id: plan.segmentId,
+        audio_ref: plan.audioRef,
+        raw_transcript: plan.literalTranscript,
+        corrected_transcript: plan.notationTranscript,
+        correction_method: "keyboard",
+        correction_kind: "math_transform",
+      });
+    }
+
+    // Benchmark-set membership is what makes buildSttDatasetExport (reused
+    // unmodified from @dictex/shared) pick this entry up for the chosen
+    // split; see getSttBenchmarkSetSegments's string-typed audioRef
+    // requirement, satisfied here by NO_AUDIO_REF for a no-audio entry.
+    await appendOwnEvent({
+      event_type: "stt_benchmark_set_membership",
+      created_at: new Date().toISOString(),
+      session_id: plan.sessionId,
+      segment_id: plan.segmentId,
+      audio_ref: plan.audioRef,
+      split: request.split,
+      reason: "dataset_builder",
+    });
+
+    return {
+      sessionId: plan.sessionId,
+      segmentId: plan.segmentId,
+      audioRef: plan.realAudioRef,
+      savedAcoustic: plan.saveAcoustic,
+      savedMathTransform: plan.saveMathTransform,
+      split: request.split,
+    };
+  },
+);
 
 // ---- dataset export (own store) ----
 

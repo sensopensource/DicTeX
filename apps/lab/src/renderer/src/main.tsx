@@ -45,6 +45,11 @@ import {
   type CandidateErrorAnalysis,
   type SttErrorCategory,
 } from "@dictex/shared/errorAnalysis";
+import type {
+  DatasetBuilderSaveRequest,
+  DatasetBuilderSaveResponse,
+  DatasetBuilderSource,
+} from "../../main/datasetBuilder.js";
 
 type AudioSegmentPlayback = {
   audioBytes: Uint8Array;
@@ -79,6 +84,7 @@ type LabApi = {
   summarizeSttBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkCandidateSummaryResponse>;
   selectSttCandidate: (request: SttCandidateSelectionRequest) => Promise<SttCandidateSelectionResponse>;
   getLatestSttCandidateSelection: () => Promise<SttCandidateSelectionResponse | null>;
+  saveDatasetBuilderEntry: (request: DatasetBuilderSaveRequest) => Promise<DatasetBuilderSaveResponse>;
   exportSttDataset: () => Promise<SttDatasetExportSummary>;
   openExportFolder: (exportDir?: string) => Promise<boolean>;
   getSttBenchmarkModels: () => Promise<string[]>;
@@ -148,6 +154,19 @@ function App(): React.ReactElement {
   const [selectionError, setSelectionError] = useState("");
   const [isSelectingCandidateKey, setIsSelectingCandidateKey] = useState("");
 
+  // Dataset builder (manual two-layer entries, #78). No microphone: either
+  // paste a transcription or pick a DicTeX-recorded segment.
+  const [builderMode, setBuilderMode] = useState<"paste" | "segment">("paste");
+  const [builderSegmentKey, setBuilderSegmentKey] = useState("");
+  const [builderReferenceModel, setBuilderReferenceModel] = useState("");
+  const [builderRawTranscript, setBuilderRawTranscript] = useState("");
+  const [builderLiteral, setBuilderLiteral] = useState("");
+  const [builderNotation, setBuilderNotation] = useState("");
+  const [builderSplit, setBuilderSplit] = useState<SttBenchmarkSetSplit>("train_candidate_pool");
+  const [isSavingBuilderEntry, setIsSavingBuilderEntry] = useState(false);
+  const [builderNotice, setBuilderNotice] = useState("");
+  const [builderError, setBuilderError] = useState("");
+
   // Dataset export.
   const [datasetExportSummary, setDatasetExportSummary] = useState<SttDatasetExportSummary | null>(null);
   const [datasetExportError, setDatasetExportError] = useState("");
@@ -165,6 +184,7 @@ function App(): React.ReactElement {
       .then((models) => {
         setBenchmarkModels(models);
         setSelectedBenchmarkModels(models.slice(0, 3));
+        setBuilderReferenceModel((current) => current || (models[0] ?? ""));
       })
       .catch(() => {
         // Non-fatal; the batch selector just shows no candidates.
@@ -505,6 +525,70 @@ function App(): React.ReactElement {
     }
   }
 
+  async function saveDatasetBuilderEntry(): Promise<void> {
+    setBuilderError("");
+    setBuilderNotice("");
+
+    const literal = builderLiteral.trim();
+    if (literal.length === 0) {
+      setBuilderError("Layer 1 (literal transcript) is required");
+      return;
+    }
+
+    let source: DatasetBuilderSource;
+    let rawTranscript: string;
+
+    if (builderMode === "segment") {
+      const segment = segments.find((candidate) => getSegmentKey(candidate) === builderSegmentKey);
+      if (!segment) {
+        setBuilderError("Pick a DicTeX segment first");
+        return;
+      }
+      source = { mode: "segment", sessionId: segment.sessionId, segmentId: segment.segmentId, audioRef: segment.audioRef };
+      rawTranscript = segment.transcript;
+    } else {
+      source = { mode: "paste" };
+      rawTranscript = builderRawTranscript.trim();
+    }
+
+    const notation = builderNotation.trim();
+    if (rawTranscript.length === 0 && notation.length === 0) {
+      setBuilderError(
+        "Nothing to save: provide a raw transcript (paste one or pick a segment) for the acoustic layer, or fill Layer 2 for the math-transform layer",
+      );
+      return;
+    }
+
+    setIsSavingBuilderEntry(true);
+    try {
+      const response = await window.dictexLab.saveDatasetBuilderEntry({
+        source,
+        rawTranscript,
+        referenceModel: builderReferenceModel,
+        literalTranscript: literal,
+        notationTranscript: notation,
+        split: builderSplit,
+      });
+      const savedLayers = [
+        response.savedAcoustic ? "acoustic" : null,
+        response.savedMathTransform ? "math_transform" : null,
+      ].filter((layer): layer is string => layer !== null);
+      setBuilderNotice(
+        `Saved ${savedLayers.join(" + ")} for ${response.sessionId} / ${response.segmentId} (${formatBenchmarkSetSplit(response.split)})`,
+      );
+      setBuilderNotation("");
+      if (builderMode === "paste") {
+        setBuilderRawTranscript("");
+        setBuilderLiteral("");
+      }
+      void loadSegments();
+    } catch (saveError) {
+      setBuilderError(saveError instanceof Error ? saveError.message : "Could not save dataset entry");
+    } finally {
+      setIsSavingBuilderEntry(false);
+    }
+  }
+
   async function exportSttDataset(): Promise<void> {
     setIsExportingDataset(true);
     setDatasetExportError("");
@@ -569,6 +653,26 @@ function App(): React.ReactElement {
     return (
       <main className="app-shell">
         <DatasetView
+          segments={segments}
+          benchmarkModels={benchmarkModels}
+          builderMode={builderMode}
+          setBuilderMode={setBuilderMode}
+          builderSegmentKey={builderSegmentKey}
+          setBuilderSegmentKey={setBuilderSegmentKey}
+          builderReferenceModel={builderReferenceModel}
+          setBuilderReferenceModel={setBuilderReferenceModel}
+          builderRawTranscript={builderRawTranscript}
+          setBuilderRawTranscript={setBuilderRawTranscript}
+          builderLiteral={builderLiteral}
+          setBuilderLiteral={setBuilderLiteral}
+          builderNotation={builderNotation}
+          setBuilderNotation={setBuilderNotation}
+          builderSplit={builderSplit}
+          setBuilderSplit={setBuilderSplit}
+          isSavingBuilderEntry={isSavingBuilderEntry}
+          builderNotice={builderNotice}
+          builderError={builderError}
+          saveDatasetBuilderEntry={() => void saveDatasetBuilderEntry()}
           exportSttDataset={() => void exportSttDataset()}
           openExportFolder={() => void openExportFolder()}
           isExportingDataset={isExportingDataset}
@@ -727,7 +831,7 @@ function SegmentsView({
           Benchmark
         </button>
         <button className="nav-button" onClick={() => onNavigate("dataset")}>
-          Dataset export
+          Dataset
         </button>
       </section>
 
@@ -1314,6 +1418,26 @@ function BenchmarkView({
 }
 
 type DatasetViewProps = {
+  segments: ReconstructedSegment[];
+  benchmarkModels: string[];
+  builderMode: "paste" | "segment";
+  setBuilderMode: (mode: "paste" | "segment") => void;
+  builderSegmentKey: string;
+  setBuilderSegmentKey: (key: string) => void;
+  builderReferenceModel: string;
+  setBuilderReferenceModel: (model: string) => void;
+  builderRawTranscript: string;
+  setBuilderRawTranscript: (value: string) => void;
+  builderLiteral: string;
+  setBuilderLiteral: (value: string) => void;
+  builderNotation: string;
+  setBuilderNotation: (value: string) => void;
+  builderSplit: SttBenchmarkSetSplit;
+  setBuilderSplit: (split: SttBenchmarkSetSplit) => void;
+  isSavingBuilderEntry: boolean;
+  builderNotice: string;
+  builderError: string;
+  saveDatasetBuilderEntry: () => void;
   exportSttDataset: () => void;
   openExportFolder: () => void;
   isExportingDataset: boolean;
@@ -1323,6 +1447,26 @@ type DatasetViewProps = {
 };
 
 function DatasetView({
+  segments,
+  benchmarkModels,
+  builderMode,
+  setBuilderMode,
+  builderSegmentKey,
+  setBuilderSegmentKey,
+  builderReferenceModel,
+  setBuilderReferenceModel,
+  builderRawTranscript,
+  setBuilderRawTranscript,
+  builderLiteral,
+  setBuilderLiteral,
+  builderNotation,
+  setBuilderNotation,
+  builderSplit,
+  setBuilderSplit,
+  isSavingBuilderEntry,
+  builderNotice,
+  builderError,
+  saveDatasetBuilderEntry,
   exportSttDataset,
   openExportFolder,
   isExportingDataset,
@@ -1331,18 +1475,139 @@ function DatasetView({
   onBack,
 }: DatasetViewProps): React.ReactElement {
   const summary = datasetExportSummary;
+  const selectedBuilderSegment = segments.find((segment) => getSegmentKey(segment) === builderSegmentKey) ?? null;
+  const canSaveBuilderEntry = builderLiteral.trim().length > 0 && !isSavingBuilderEntry;
 
   return (
     <>
       <header className="titlebar">
         <div>
           <p className="eyebrow">DicTeX Lab</p>
-          <h1>Dataset export</h1>
+          <h1>Dataset</h1>
         </div>
         <button className="secondary-button" onClick={onBack}>
           Back to segments
         </button>
       </header>
+
+      <section className="panel" aria-busy={isSavingBuilderEntry}>
+        <div className="benchmark-header">
+          <div>
+            <h2>Build a dataset entry</h2>
+            <p>No microphone: paste a transcription or pick a DicTeX segment, then type the two layers by hand</p>
+          </div>
+        </div>
+
+        <div className="actions" role="group" aria-label="Transcription source">
+          <label className="candidate-checkbox">
+            <input
+              type="radio"
+              name="builder-source"
+              checked={builderMode === "paste"}
+              onChange={() => setBuilderMode("paste")}
+            />
+            Paste a transcription
+          </label>
+          <label className="candidate-checkbox">
+            <input
+              type="radio"
+              name="builder-source"
+              checked={builderMode === "segment"}
+              onChange={() => setBuilderMode("segment")}
+            />
+            Pick a DicTeX segment
+          </label>
+        </div>
+
+        {builderMode === "paste" ? (
+          <>
+            <p className="transcript-label">Reference STT model (tags the pasted transcript, if any)</p>
+            <select
+              aria-label="Reference STT model"
+              className="secondary-select"
+              value={builderReferenceModel}
+              onChange={(event) => setBuilderReferenceModel(event.target.value)}
+            >
+              {benchmarkModels.length === 0 && <option value="">no candidates</option>}
+              {benchmarkModels.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
+            <p className="transcript-label">Pasted transcription (raw STT, optional)</p>
+            <textarea
+              aria-label="Pasted transcription"
+              placeholder="Paste DicTeX's raw transcript here, or leave empty for a notation-only entry"
+              value={builderRawTranscript}
+              onChange={(event) => setBuilderRawTranscript(event.target.value)}
+            />
+          </>
+        ) : (
+          <>
+            <select
+              aria-label="DicTeX segment"
+              className="secondary-select"
+              value={builderSegmentKey}
+              onChange={(event) => setBuilderSegmentKey(event.target.value)}
+            >
+              <option value="">Choose a segment…</option>
+              {segments.map((segment) => (
+                <option key={getSegmentKey(segment)} value={getSegmentKey(segment)}>
+                  {segment.sessionId} / {segment.segmentId} — {segment.transcript.slice(0, 60)}
+                </option>
+              ))}
+            </select>
+            {segments.length === 0 && (
+              <p className="empty-state">No DicTeX segments found yet — refresh from the Segments view.</p>
+            )}
+            {selectedBuilderSegment && (
+              <p className="correction-raw">Raw: {selectedBuilderSegment.transcript || "-"}</p>
+            )}
+          </>
+        )}
+
+        <p className="transcript-label">Layer 1 — literal-correct transcript (verbal)</p>
+        <textarea
+          aria-label="Layer 1: literal transcript"
+          placeholder="e.g. x au carré plus deux"
+          value={builderLiteral}
+          onChange={(event) => setBuilderLiteral(event.target.value)}
+        />
+
+        <p className="transcript-label">Layer 2 — normalized notation (LaTeX/KaTeX-compatible)</p>
+        <textarea
+          aria-label="Layer 2: normalized notation"
+          placeholder="e.g. x^2 + 2"
+          disabled={builderLiteral.trim().length === 0}
+          value={builderNotation}
+          onChange={(event) => setBuilderNotation(event.target.value)}
+        />
+
+        <div className="actions">
+          <select
+            aria-label="Benchmark set split for this entry"
+            className="secondary-select"
+            value={builderSplit}
+            onChange={(event) => {
+              const split = event.currentTarget.value;
+              if (isSttBenchmarkSetSplit(split)) {
+                setBuilderSplit(split);
+              }
+            }}
+          >
+            <option value="train_candidate_pool">Train pool</option>
+            <option value="validation">Validation</option>
+            <option value="test_frozen">Test frozen</option>
+          </select>
+          <button className="secondary-button" disabled={!canSaveBuilderEntry} onClick={saveDatasetBuilderEntry}>
+            {isSavingBuilderEntry ? "Saving" : "Save entry"}
+          </button>
+        </div>
+
+        {builderError && <pre className="error">{builderError}</pre>}
+        {builderNotice && <p className="notice">{builderNotice}</p>}
+      </section>
 
       <section className="panel" aria-busy={isExportingDataset}>
         <div className="benchmark-header">
