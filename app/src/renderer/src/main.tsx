@@ -2034,6 +2034,41 @@ type DatasetCapturedSegment = {
   rawTranscript: string;
 };
 
+// getUserMedia normally resolves in well under a second (permission is granted
+// after the first use in Electron). If it hangs — mic held by another app, an
+// unanswered OS prompt — reject after this delay so the UI shows an actionable
+// error instead of spinning forever.
+const MIC_REQUEST_TIMEOUT_MS = 12000;
+
+async function getMicStreamWithTimeout(timeoutMs: number): Promise<MediaStream> {
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(
+        new Error(
+          "Microphone did not respond. Close other apps using the mic, or check Windows mic permissions, then retry.",
+        ),
+      );
+    }, timeoutMs);
+  });
+  const request = navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+    // If the timeout already won, release the late stream so the mic isn't left open.
+    if (timedOut) {
+      stream.getTracks().forEach((track) => track.stop());
+    }
+    return stream;
+  });
+  try {
+    return await Promise.race([request, timeout]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 /**
  * Dataset enrichment view (issue #66). Captures separable training data for one
  * freshly recorded segment as TWO explicit layers, written as two chained
@@ -2071,6 +2106,7 @@ function DatasetView({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isRequestingMic, setIsRequestingMic] = useState(false);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -2131,10 +2167,13 @@ function DatasetView({
     stopRequestedRef.current = false;
     setError("");
     setNotice("");
-    setStatus("recording");
+    // Do NOT claim "recording" yet: getUserMedia can hang (mic held by another
+    // app, unanswered permission). Show an honest "requesting mic" state so a
+    // stall is visible and recoverable instead of a fake, endless spinner.
+    setIsRequestingMic(true);
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await getMicStreamWithTimeout(MIC_REQUEST_TIMEOUT_MS);
       const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
         : MediaRecorder.isTypeSupported("audio/webm")
@@ -2162,6 +2201,8 @@ function DatasetView({
       };
 
       recorder.start();
+      // Only now is the mic actually live.
+      setStatus("recording");
 
       // A release that arrived during the getUserMedia await was deferred; honor
       // it now so the clip stops instead of recording indefinitely.
@@ -2169,10 +2210,13 @@ function DatasetView({
         stopRecording();
       }
     } catch (recordingError) {
-      setStatus("error");
+      // A hung/denied mic returns here (incl. the timeout) — surface it and go
+      // back to idle so the user can retry, never a stuck spinner.
+      setStatus("idle");
       setError(recordingError instanceof Error ? recordingError.message : "Microphone access failed");
     } finally {
       isStartingRef.current = false;
+      setIsRequestingMic(false);
     }
   }
 
@@ -2326,8 +2370,9 @@ function DatasetView({
 
   const isRecording = status === "recording";
   const isTranscribing = status === "transcribing";
-  const statusLabel =
-    status === "done"
+  const statusLabel = isRequestingMic
+    ? "requesting mic…"
+    : status === "done"
       ? "captured"
       : isRecording
         ? "recording…"
@@ -2336,7 +2381,7 @@ function DatasetView({
           : status === "idle"
             ? "ready"
             : status;
-  const isBusy = isRecording || isTranscribing || isSaving;
+  const isBusy = isRequestingMic || isRecording || isTranscribing || isSaving;
   const canEditLayers = capturedSegment !== null && !isSaving;
   const exportAvailable = typeof window.dictex.exportSttDataset === "function";
   const summary = datasetExportSummary;
@@ -2357,16 +2402,22 @@ function DatasetView({
         <h2 className="dataset-step">1 · Record a clip</h2>
         <button
           className={`record-button${isRecording ? " record-button-active" : ""}`}
-          disabled={isTranscribing || isSaving}
+          disabled={isTranscribing || isSaving || isRequestingMic}
           onClick={toggleRecording}
         >
-          {isRecording ? "◼ Stop & transcribe" : isTranscribing ? "Transcribing…" : "● Start recording"}
+          {isRequestingMic
+            ? "Requesting microphone…"
+            : isRecording
+              ? "◼ Stop & transcribe"
+              : isTranscribing
+                ? "Transcribing…"
+                : "● Start recording"}
         </button>
 
         <div className="shortcut-row">
           <span>State</span>
           <span className="dataset-state">
-            {(isRecording || isTranscribing) && <span className="spinner" aria-hidden="true" />}
+            {(isRequestingMic || isRecording || isTranscribing) && <span className="spinner" aria-hidden="true" />}
             <strong>{statusLabel}</strong>
           </span>
           <span className="signal-muted">no clipboard, no paste</span>
