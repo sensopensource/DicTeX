@@ -7,8 +7,30 @@ Before changing code, read:
 - `README.md`
 - `docs/product-decisions.md`
 - `docs/development.md`
-- `pivot_strategique_stt_normalisation.md` (current strategic direction)
+- `pivot_dictex_lab_split.md` (**current strategic direction** — DicTeX/Lab split)
+- `pivot_strategique_stt_normalisation.md` (normalization strategy; still valid,
+  but its dataset/benchmark tooling now lives in the Lab, not in DicTeX)
 - this file
+
+## Current Direction: DicTeX / Lab split (adopted 2026-07-09)
+
+See `pivot_dictex_lab_split.md`. DicTeX had grown into two products in one — a
+consumer dictation tool **and** an ML bench — and that coupling is the main
+source of complexity and bugs. We are splitting them:
+
+- **DicTeX = minimal consumer dictation tool**: voice → STT → normalizer
+  (dictionary + regex) → insert. Plus a collapsible copy/copy-raw/play history
+  and an **"Open Lab"** button. Nothing ML-ops.
+- **DicTeX Lab = separate app** for all benchmark + dataset-building + model
+  monitoring. No microphone: it reads DicTeX's real transcriptions and local
+  data folder.
+- **Monorepo** (`apps/dictex`, `apps/lab`, `packages/engine`, `packages/shared`);
+  the Lab reads DicTeX's data folder read-only.
+
+This supersedes the "in-app dataset enrichment / benchmark inside DicTeX"
+direction. The normalization strategy below is unchanged; only *where* its
+evaluation/training tooling lives moves out of the consumer app. Roadmap +
+waves are under "Open roadmap".
 
 ## Product Context
 
@@ -40,10 +62,12 @@ voice
 -> Phase 3 normalizer training, then Phase 4 STT acoustic fine-tuning (later)
 ```
 
-## Strategic Pivot (current direction)
+## Normalization Strategy (still valid, tooling now in the Lab)
 
-See `pivot_strategique_stt_normalisation.md`. The plan decouples two problems
-previously conflated in a single "fine-tune STT to emit clean math" goal:
+See `pivot_strategique_stt_normalisation.md`. This decoupling of the *product*
+problem is unchanged; only its dataset/benchmark tooling moves to the Lab (see
+"Current Direction" above). The plan decouples two problems previously conflated
+in a single "fine-tune STT to emit clean math" goal:
 
 - **Priority 1 — text-to-text normalization.** Turn literal STT output
   ("x au carré") into formal notation ("x²") with a three-layer normalizer:
@@ -52,10 +76,11 @@ previously conflated in a single "fine-tune STT to emit clean math" goal:
 - **Priority 2 (later) — STT acoustic fine-tuning.** Only for genuine acoustic
   errors tied to the user's voice/mic, on correction data tagged `acoustic`.
 
-The base dictation loop, logs, diagnostics, history, benchmark, split, and
-correction capture are now stable, so this normalization work can start. The
-existing infrastructure is reused as-is; nothing is thrown away. Its main data
-consequence is that corrections must be typed (see Data Model Notes).
+The base dictation loop, logs, diagnostics, and the dictionary + regex normalizer
+are stable in DicTeX. Benchmark, split, dataset export, and typed-correction
+capture still exist but are being **moved out to the Lab** (see Open roadmap);
+they are not thrown away, just relocated. The in-app two-layer *recording*
+(#66) has been removed (Phase 0).
 
 ## Current Implementation
 
@@ -554,27 +579,49 @@ Issue #65 / PR #70:
   itself landed separately via #43/PR #60 above).
 - Merged.
 
-Open roadmap (labels + hard deps). Per the strategic pivot, STT fine-tuning is
-deferred to Phase 4, so #44/#45 are Phase-4 prep, not the near-term goal:
+Pivot Phase 0 (PR #74, merged to main directly):
 
-- #44 export corrected datasets — `level:eleve`, Depends on #43 (done) ->
-  ready. Phase 4 prep; export should split by `correctionKind` AND read all
-  correction events of a segment (a segment can carry chained acoustic +
-  math_transform corrections from the enrichment tool #66), not just the
-  latest.
-- #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`,
-  Depends on #44. Phase 4; conditional on enough `acoustic`-tagged data.
-- #66 Dataset enrichment view: two-layer audio->text capture — `level:eleve` +
-  `needs:high-review`, Depends on #63 (done) -> ready. Writes two chained
-  `stt_correction` events (acoustic + math_transform) to keep the datasets
-  separable.
-- #58 select benchmark candidates from the UI — `level:moyen`, open but
-  **superseded in practice** by #64/PR #69 (merged), which already implements
-  1-3 candidate selection in the Benchmark view. Left open and unmodified per
-  standing instruction; worth closing as a duplicate when convenient.
+- Removed the buggy in-app two-layer audio->text *recording* capture (#66):
+  Dataset view reduced to export-only, `transcribeAudio` model/writeClipboard
+  options reverted, capture CSS removed (net -402 lines).
+- Recorded the DicTeX/Lab split plan in `pivot_dictex_lab_split.md`.
+- Done.
 
-Startable now: #44, #66 (independent of each other; #66 mostly touches the new
-Dataset view, #44 is main-process export logic — low conflict between them).
+Open roadmap — DicTeX / Lab split (see `pivot_dictex_lab_split.md`). Prior
+benchmark/dataset issues are done or folded into the phases below (#43 and #58
+closed as done/superseded; #44 export landed via PR #72 and relocates to the Lab
+in Phase 2; #66 recording reverted in Phase 0; #45 re-scoped to post-pivot).
+
+- #75 Phase 1 — npm-workspaces monorepo skeleton (`apps/dictex` +
+  `packages/engine` + `packages/shared`), no behavior change — `level:eleve`.
+  Depends on: (none). Keystone.
+- #76 Phase 2 — scaffold `apps/lab` + move benchmark / dataset / corrections /
+  splits / Vosk / export into it; Lab reads DicTeX's data folder read-only —
+  `level:eleve` + `needs:high-review`. Depends on: #75.
+- #77 Phase 3 — slim DicTeX to Home + "Open Lab" + copy/copy-raw/play history;
+  strip the benchmark/dataset/correction/split IPC — `level:eleve`.
+  Depends on: #75, #76.
+- #78 Phase 4 — Lab manual two-layer dataset builder + benchmark from the data
+  folder — `level:eleve` + `needs:high-review`. Depends on: #76.
+- #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`.
+  Re-scoped to post-pivot (Phase 5), gated on the Lab producing enough
+  `acoustic`-tagged data.
+
+Launch plan (waves):
+
+```text
+Wave 1 (ready now):     #75 (eleve)
+Wave 2 (after #75):     #76 (eleve, needs:high-review)
+Wave 3 (after #76):     #77 (eleve) + #78 (eleve, needs:high-review) in parallel
+Later (post-pivot):     #45
+```
+
+Model per level (Claude / Codex): `level:eleve` -> Opus 4.8 high / gpt-5-codex
+high; `needs:high-review` issues get a reviewer one notch up (Opus 4.8 max).
+
+Soft conflict: #76 and #77 both touch `main.tsx` / `index.ts` / `preload` /
+`localEvents` in opposite directions (add-to-lab vs remove-from-dictex) — land
+#76 before starting #77, then rebase #77.
 
 ## Product Decisions To Preserve
 
@@ -835,21 +882,21 @@ Priorities now follow the strategic pivot's phasing:
    dataset; if residual acoustic errors justify it, LoRA the selected STT model
    on that clean data only.
 
-The STT benchmark -> selection track (#39-#43) is done: candidates can be
-benchmarked, summarized, error-analyzed, and formally selected with a reason
-(#43/PR #60). A second provider (Vosk, #59/PR #68) widened the candidate
-universe beyond Whisper. #44/#45 (Phase 4 prep/plan) remain, gated on enough
-`acoustic`-tagged correction data.
+(These are the **normalization-track** phases; do not confuse them with the
+**pivot phases** #75-#78, which are about *where the tooling lives*, not the
+normalizer itself.) The STT benchmark -> selection track (#39-#43) and the Vosk
+provider (#59) are done; the UI refactor (#63-#65) is done.
 
-The UI refactor (#63-#65) is done: Home/Benchmark/Dataset views replaced the
-single-screen layout. **#66 (Dataset enrichment view) is the next priority** —
-it is what actually produces the two-layer, separable correction data (#44
-depends on this data existing in volume, not just on the export code).
+**The near-term priority is now the DicTeX / Lab split**, not more in-app
+tooling. Its phasing lives under "Open roadmap": Phase 0 (done, PR #74) removed
+the in-app recording; Phase 1 (#75) is the monorepo skeleton — the keystone —
+then #76 (Lab), #77 (slim DicTeX), #78 (Lab dataset builder). The
+normalization-track ML work (layer-3 seq2seq, STT fine-tuning) and #45 resume
+**after** the Lab can build and export the datasets.
 
-Other still-unissued candidates: event-log diagnostics and invalid-line
-visibility; safer correction UX for older segments; a small benchmark result
-history per segment. Land each phase through explicit issues; do not build a
-large generic framework ahead of need.
+Land each phase through the explicit issues above; do not build a large generic
+framework ahead of need, and keep new ML/tooling surface in the Lab, not in
+DicTeX.
 
 ## Important Nuance
 
