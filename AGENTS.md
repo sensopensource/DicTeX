@@ -498,53 +498,83 @@ Issue #50 / PR #62:
   Pivot Phase 2, layers 1 & 2 now done.
 - Merged.
 
-Issue #57:
+Issue #57 / PR #61:
 
-- Select the active STT model from the UI. Already implemented in the renderer
-  (model selector in the controls panel, `main.tsx`); the shell refactor #63
-  keeps it on the Home view. Closed as done.
+- Select the active STT model from the UI. Model selector in the controls
+  panel (`main.tsx`), listing `tiny`/`base`/`small`/`large-v3-turbo`, persisted
+  and applied to the next dictation.
+- Merged. The shell refactor #63 keeps it on the Home view.
+
+Issue #43 / PR #60:
+
+- Added STT candidate selection: a new append-only `stt_candidate_selection`
+  event (`stage`/`provider`/`model`/`variant`/`selection_reason`), a
+  "Select"/"Reselect" action on the existing candidate summary panel (#40),
+  and a banner showing the current selection + reason. No new panel needed —
+  the summary table already gave the comparison data.
+- Merged.
+
+Issue #59 / PR #68:
+
+- Added Vosk (Kaldi-based) as a second local, benchmark-only STT provider,
+  behind a minimal provider abstraction in the Python sidecar
+  (`engine/providers/`). faster-whisper output stays byte-identical; Vosk
+  candidates are optional at runtime (quiet skip if uninstalled) and never
+  block dictation or faster-whisper benchmarking.
+- Documented in `docs/product-decisions.md` ("Second local STT provider
+  (Vosk)") and `docs/development.md`.
+- Merged.
+
+Issue #63 / PR #67:
+
+- UI shell: split the single-screen renderer into three task-focused views —
+  Home (dictation, controls, diagnostics, collapsible history, correction),
+  Benchmark (segment/batch benchmark, summary, error analysis — moved
+  unchanged), Dataset (placeholder for #66). Simple `useState` navigation, no
+  routing library.
+- Merged. Keystone for the UI refactor track.
+
+Issue #64 / PR #69:
+
+- Benchmark view: 1-3 candidate checkbox selector (sourced from
+  `getSttBenchmarkModels`) + dataset selector (`test_frozen` default,
+  `validation` available); "Run analysis" scopes the batch run (filtered in
+  the main process, to avoid wasted transcription work) and the candidate
+  summary (filtered client-side) to the checked candidates.
+- Covers the intent of #58 without modifying or closing it.
+- Merged.
+
+Issue #65 / PR #70:
+
+- Benchmark view: graceful empty states for the candidate summary and
+  error-analysis panels (pre-run, and "segments exist but none match the
+  checked candidates"), reacting to the #64 candidate/dataset selection.
+  `analyzeBatchErrors` semantics untouched.
+- Covers the intent of #43's original UI-layout ask (the underlying feature
+  itself landed separately via #43/PR #60 above).
+- Merged.
 
 Open roadmap (labels + hard deps). Per the strategic pivot, STT fine-tuning is
 deferred to Phase 4, so #44/#45 are Phase-4 prep, not the near-term goal:
 
-- #43 candidate selection report — `level:moyen` + `needs:high-review`,
-  Depends on #40 (done) -> ready.
-- #44 export corrected datasets — `level:eleve`, Depends on #43. Phase 4 prep;
-  export should split by `correctionKind` AND read all correction events of a
-  segment (a segment can carry chained acoustic + math_transform corrections
-  from the enrichment tool #66), not just the latest.
+- #44 export corrected datasets — `level:eleve`, Depends on #43 (done) ->
+  ready. Phase 4 prep; export should split by `correctionKind` AND read all
+  correction events of a segment (a segment can carry chained acoustic +
+  math_transform corrections from the enrichment tool #66), not just the
+  latest.
 - #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`,
   Depends on #44. Phase 4; conditional on enough `acoustic`-tagged data.
-- #58 select benchmark candidates from the UI — `level:moyen`. Kept as-is; its
-  intent is covered by the Benchmark view refactor #64. Also would add
-  `large-v3-turbo` to the default candidate list.
-- #59 second local STT provider in the benchmark universe — `level:eleve` +
-  `needs:high-review`, no hard dependency -> ready; mostly Python sidecar, so
-  low soft-conflict with the app-side issues.
-
-UI refactor track (3 task-focused views — see UI Direction). Shell first;
-everything else rebases on it:
-
-- #63 UI shell: 3-view navigation (Home/Benchmark/Dataset) + collapsible
-  history — `level:moyen`, no dependency -> ready. Keystone.
-- #64 Benchmark view: compare 1-3 chosen candidates + dataset selector —
-  `level:moyen`, Depends on #63. Covers the intent of #58.
-- #65 Benchmark view: integrate candidate summary + error analysis —
-  `level:moyen`, Depends on #63. Covers the intent of #43.
 - #66 Dataset enrichment view: two-layer audio->text capture — `level:eleve` +
-  `needs:high-review`, Depends on #63. Writes two chained `stt_correction`
-  events (acoustic + math_transform) to keep the datasets separable.
+  `needs:high-review`, Depends on #63 (done) -> ready. Writes two chained
+  `stt_correction` events (acoustic + math_transform) to keep the datasets
+  separable.
+- #58 select benchmark candidates from the UI — `level:moyen`, open but
+  **superseded in practice** by #64/PR #69 (merged), which already implements
+  1-3 candidate selection in the Benchmark view. Left open and unmodified per
+  standing instruction; worth closing as a duplicate when convenient.
 
-Launch waves:
-
-- Wave 1: #63 alone (keystone). In parallel, independent track: #59.
-- Wave 2 (after #63 merges): #64, #65, #66 — #64/#65 touch the same Benchmark
-  view (merge sequentially + rebase, #65 after #64); #66 is mostly the new
-  Dataset view.
-- #43 (report logic) stays valid; its presentation is folded into #65.
-
-Soft conflict: all renderer issues touch `app/src/renderer/src/main.tsx` — use
-separate clones, merge sequentially and rebase. #59 is mostly `engine/`.
+Startable now: #44, #66 (independent of each other; #66 mostly touches the new
+Dataset view, #44 is main-process export logic — low conflict between them).
 
 ## Product Decisions To Preserve
 
@@ -772,10 +802,18 @@ Current STT benchmark candidates (defaults, configurable via
 - faster-whisper/base
 - faster-whisper/small
 
+Since PR #68, a second local provider is also available as benchmark
+candidates: Vosk (`vosk-model-small-fr-0.22` by default, configurable via
+`DICTEX_VOSK_BENCHMARK_MODELS` + `DICTEX_VOSK_MODEL_DIR`), optional at runtime
+(quiet skip if uninstalled). See `docs/development.md` -> "Second STT provider
+(Vosk)".
+
 These are current candidates, not the final benchmark universe. The model
 actually used for dictation on this machine is faster-whisper/large-v3-turbo
-on GPU; #58 adds it to the default candidate list (until then, include it via
-`DICTEX_STT_BENCHMARK_MODELS=tiny,base,small,large-v3-turbo`).
+on GPU (already selectable for dictation via the Home model selector, #57);
+it is not yet in the default *benchmark* candidate list — include it via
+`DICTEX_STT_BENCHMARK_MODELS=tiny,base,small,large-v3-turbo` until an issue
+adds it by default.
 
 ## Next Product Priorities
 
@@ -797,10 +835,16 @@ Priorities now follow the strategic pivot's phasing:
    dataset; if residual acoustic errors justify it, LoRA the selected STT model
    on that clean data only.
 
-The STT benchmark -> selection track (#39-#43) stays valid as evaluation
-infrastructure: it picks the base STT model the normalizer sits on top of, and
-#44/#45 prepare Phase 4. Run it in parallel, but Phase 1 (typed data) is the
-immediate next step.
+The STT benchmark -> selection track (#39-#43) is done: candidates can be
+benchmarked, summarized, error-analyzed, and formally selected with a reason
+(#43/PR #60). A second provider (Vosk, #59/PR #68) widened the candidate
+universe beyond Whisper. #44/#45 (Phase 4 prep/plan) remain, gated on enough
+`acoustic`-tagged correction data.
+
+The UI refactor (#63-#65) is done: Home/Benchmark/Dataset views replaced the
+single-screen layout. **#66 (Dataset enrichment view) is the next priority** —
+it is what actually produces the two-layer, separable correction data (#44
+depends on this data existing in volume, not just on the export code).
 
 Other still-unissued candidates: event-log diagnostics and invalid-line
 visibility; safer correction UX for older segments; a small benchmark result
