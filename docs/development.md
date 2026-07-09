@@ -79,6 +79,21 @@ scripts/npm.sh install
 `npm install` at the root installs every workspace (there is one root
 `package-lock.json`; the app has no separate lockfile).
 
+### Migrating an existing checkout to the monorepo
+
+A checkout made before the monorepo move (`app/` → `apps/dictex`, `engine/` →
+`packages/engine`) needs a fresh **root** install — dependencies are now hoisted
+to a single root `node_modules`, so the app's tools (e.g. `electron-vite`) are
+not found until you reinstall. After pulling:
+
+```powershell
+scripts\npm.cmd install        # reinstall at the root (hoists all workspaces)
+Remove-Item -Recurse -Force .\app   # optional: delete the now-orphaned old app/ (only ignored node_modules/out remain)
+```
+
+The `.venv` at the repo root is reused as-is — it is still at the (unchanged)
+repository root, so dictation keeps working with no changes.
+
 ## Validate
 
 Windows:
