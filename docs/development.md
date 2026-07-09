@@ -106,6 +106,7 @@ cd app
 19. In the `STT model` selector (controls panel), pick a different model. Confirm the `Model` diagnostic reflects it, dictate a phrase, and confirm the `stt_result` event records the chosen model. Restart the app and confirm the selector still shows the chosen model (persisted in `data/settings.json`). Corrupt `settings.json` and confirm the app still starts and dictates using the env var / default `base`.
 20. In the `Candidate summary` panel, after summarizing a split, type a selection reason and click `Select` on one candidate's row. Confirm a `Selected` badge appears on that row, the banner above the table shows the selected candidate and reason, an `stt_candidate_selection` event was appended to the events log, and selecting a different candidate updates the banner/badge without removing the earlier event.
 21. With Vosk not installed, click `Benchmark latest` and confirm faster-whisper results still appear and no Vosk `stt_benchmark_result` event is appended (the skip is a quiet `[benchmark] vosk/... unavailable` console warning only). Then install Vosk and set `DICTEX_VOSK_MODEL_DIR` (see "Second STT provider (Vosk)"), benchmark a corrected segment, and confirm a `stt_benchmark_result` with `provider:"vosk"`, `stt_engine:"vosk"`, a latency, and a CER score is appended alongside the faster-whisper ones, and that the candidate summary lists the Vosk candidate on its own row.
+22. Correct at least one segment and add it to a benchmark split, then open the `Dataset` view and click `Export dataset`. Confirm the summary shows the export folder path, a total record count, and per-split / per-kind counts, and that `data/exports/stt-dataset-<timestamp>/` contains a `manifest.json` plus one `<split>.<correction_kind>.jsonl` file per non-empty group (frozen test in its own files). Confirm `events.jsonl` is unchanged (no new events written by the export). With a segment carrying both an `acoustic` and a `math_transform` correction, confirm it produces one record in the `*.acoustic.jsonl` and one in the `*.math_transform.jsonl` file. Export again with no corrected segments in any split and confirm the UI reports nothing to export instead of writing an empty folder.
 
 ## Run
 
@@ -288,7 +289,14 @@ data/
   normalizer/
     dictionary.json
     rules.json
+  exports/
+    stt-dataset-<timestamp>/
+      manifest.json
+      <split>.<correction_kind>.jsonl
 ```
+
+The `exports/` folder holds generated dataset snapshots (see "Corrected Dataset
+Export"); it is written from, never rewritten into, the event log.
 
 Each dictation writes at least two events:
 
@@ -436,3 +444,45 @@ layer:
 
 History shows the raw transcript; the normalized inserted text is shown
 distinctly when it differs.
+
+## Corrected Dataset Export
+
+The `Dataset` view exports the corrected STT dataset to local JSONL files for
+later Phase 3 normalizer training and Phase 4 STT acoustic fine-tuning. Click
+`Export dataset`; nothing is uploaded and the event log is never rewritten. Each
+export goes to its own timestamped folder so prior exports are never clobbered:
+
+```text
+data/exports/stt-dataset-<timestamp>/
+  manifest.json
+  test_frozen.acoustic.jsonl
+  test_frozen.math_transform.jsonl
+  validation.acoustic.jsonl
+  ...
+```
+
+Files are named `<split>.<correction_kind>.jsonl`. Only segments that have a
+benchmark-set membership (`train_candidate_pool` / `validation` / `test_frozen`)
+**and** at least one typed correction produce records; frozen test lands in its
+own files. The exporter reads every correction event of a segment and keeps the
+latest of **each** `correction_kind` (not just the single latest event), so a
+segment enriched with chained `acoustic` + `math_transform` corrections yields
+one record in each dataset — the acoustic (STT) and math_transform (normalizer)
+datasets stay separable. Untyped legacy corrections cannot be routed by kind, so
+they are skipped and counted in the manifest and UI rather than dropped
+silently.
+
+Each JSONL record is traceable back to its source events:
+
+```json
+{"split":"test_frozen","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","audio_path":"C:\\Users\\...\\data\\audio\\session_...\\seg_0001.webm","language":"fr","correction_kind":"acoustic","raw_transcript":"x au carre","corrected_transcript":"x au carré","original_stt_output":"x au carre","stt_engine":"faster-whisper","stt_model":"base","correction_method":"keyboard","correction_created_at":"2026-07-09T00:00:00.000Z","selected_candidate":{"stage":"stt","provider":"faster-whisper","model":"small","variant":"cpu-int8-fr"},"selection_reason":"best tradeoff"}
+```
+
+`raw_transcript` / `corrected_transcript` are the transform's input and target
+(for `acoustic`, audio -> literal transcript; for `math_transform`, literal text
+-> notation). `original_stt_output` preserves the raw STT output even when a
+chained correction's own `raw_transcript` is a later literal transcript. The
+selected base candidate is the latest `stt_candidate_selection`; export still
+proceeds when none has been recorded (`selected_candidate` is null and the UI
+notes it). `manifest.json` records per-split / per-kind counts, the total, the
+skipped-untyped count, and the selection.

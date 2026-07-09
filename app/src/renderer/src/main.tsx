@@ -220,6 +220,30 @@ type SttCandidateSelectionResponse = {
   selectionReason: string;
 };
 
+type SttDatasetExportFileSummary = {
+  correctionKind: string;
+  file: string;
+  recordCount: number;
+};
+
+type SttDatasetExportSplitSummary = {
+  split: SttBenchmarkSetSplit;
+  segmentCount: number;
+  correctedSegmentCount: number;
+  recordCount: number;
+  files: SttDatasetExportFileSummary[];
+};
+
+type SttDatasetExportSummary = {
+  createdAt: string;
+  exportDir: string | null;
+  totalRecords: number;
+  skippedUntypedCorrections: number;
+  selectedCandidate: BenchmarkCandidateIdentity | null;
+  selectionReason: string | null;
+  splits: SttDatasetExportSplitSummary[];
+};
+
 type SttErrorCategory =
   | "empty_output"
   | "high_cer"
@@ -282,6 +306,8 @@ type DictationApi = {
   summarizeSttBenchmarkSet?: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkCandidateSummaryResponse>;
   selectSttCandidate?: (request: SttCandidateSelectionRequest) => Promise<SttCandidateSelectionResponse>;
   getLatestSttCandidateSelection?: () => Promise<SttCandidateSelectionResponse | null>;
+  exportSttDataset?: () => Promise<SttDatasetExportSummary>;
+  openExportFolder?: (exportDir?: string) => Promise<boolean>;
 };
 
 declare global {
@@ -338,6 +364,9 @@ function App(): React.ReactElement {
   const [historyCorrectionTarget, setHistoryCorrectionTarget] = useState<HistoryCorrectionTarget | null>(null);
   const [historyCorrectionDraft, setHistoryCorrectionDraft] = useState("");
   const [historyCorrectionKind, setHistoryCorrectionKind] = useState<CorrectionKind | "">("");
+  const [datasetExportSummary, setDatasetExportSummary] = useState<SttDatasetExportSummary | null>(null);
+  const [datasetExportError, setDatasetExportError] = useState("");
+  const [isExportingDataset, setIsExportingDataset] = useState(false);
   const errorAnalysis = useMemo(() => analyzeBatchErrors(batchOutcomes), [batchOutcomes]);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -732,6 +761,36 @@ function App(): React.ReactElement {
     }
   }
 
+  async function exportSttDataset(): Promise<void> {
+    if (typeof window.dictex.exportSttDataset !== "function") {
+      setDatasetExportError("Restart DicTeX to load the dataset export API");
+      return;
+    }
+
+    setIsExportingDataset(true);
+    setDatasetExportError("");
+    try {
+      const summary = await window.dictex.exportSttDataset();
+      setDatasetExportSummary(summary);
+    } catch (exportError) {
+      setDatasetExportError(exportError instanceof Error ? exportError.message : "Dataset export failed");
+    } finally {
+      setIsExportingDataset(false);
+    }
+  }
+
+  async function openExportFolder(): Promise<void> {
+    if (typeof window.dictex.openExportFolder !== "function") {
+      return;
+    }
+
+    try {
+      await window.dictex.openExportFolder(datasetExportSummary?.exportDir ?? undefined);
+    } catch {
+      // Opening the folder is a convenience; a failure here is non-fatal.
+    }
+  }
+
   async function changeSttModel(model: string): Promise<void> {
     if (typeof window.dictex.setSttModel !== "function") {
       setNotice("Restart DicTeX to load the STT model preload API");
@@ -1016,7 +1075,14 @@ function App(): React.ReactElement {
   if (view === "dataset") {
     return (
       <main className="app-shell">
-        <DatasetView onBack={() => setView("home")} />
+        <DatasetView
+          exportSttDataset={() => void exportSttDataset()}
+          openExportFolder={() => void openExportFolder()}
+          isExportingDataset={isExportingDataset}
+          datasetExportSummary={datasetExportSummary}
+          datasetExportError={datasetExportError}
+          onBack={() => setView("home")}
+        />
       </main>
     );
   }
@@ -1941,7 +2007,26 @@ function BenchmarkView({
   );
 }
 
-function DatasetView({ onBack }: { onBack: () => void }): React.ReactElement {
+type DatasetViewProps = {
+  exportSttDataset: () => void;
+  openExportFolder: () => void;
+  isExportingDataset: boolean;
+  datasetExportSummary: SttDatasetExportSummary | null;
+  datasetExportError: string;
+  onBack: () => void;
+};
+
+function DatasetView({
+  exportSttDataset,
+  openExportFolder,
+  isExportingDataset,
+  datasetExportSummary,
+  datasetExportError,
+  onBack,
+}: DatasetViewProps): React.ReactElement {
+  const exportAvailable = typeof window.dictex.exportSttDataset === "function";
+  const summary = datasetExportSummary;
+
   return (
     <>
       <header className="titlebar">
@@ -1954,11 +2039,89 @@ function DatasetView({ onBack }: { onBack: () => void }): React.ReactElement {
         </button>
       </header>
 
-      <section className="panel">
-        <p className="empty-state">Bientôt.</p>
+      <section className="panel" aria-busy={isExportingDataset}>
+        <div className="benchmark-header">
+          <div>
+            <h2>Export corrected STT dataset</h2>
+            <p>
+              Writes local JSONL under the data folder, split by train pool / validation / test frozen and by correction
+              kind. Reads the event log only — history is never rewritten, nothing is uploaded.
+            </p>
+          </div>
+          <button
+            className="secondary-button"
+            disabled={!exportAvailable || isExportingDataset}
+            onClick={exportSttDataset}
+          >
+            {!exportAvailable ? "Restart app" : isExportingDataset ? "Exporting" : "Export dataset"}
+          </button>
+        </div>
+
+        {datasetExportError && <pre className="error">{datasetExportError}</pre>}
+
+        {summary && (
+          <div className="dataset-export-summary">
+            {summary.exportDir === null ? (
+              <p className="empty-state">
+                No corrected segments in any benchmark split yet. Correct segments and add them to a split first.
+              </p>
+            ) : (
+              <>
+                <p className="dataset-export-path" title={summary.exportDir}>
+                  {summary.exportDir}
+                </p>
+                <div className="benchmark-meta">
+                  <span>{summary.totalRecords} records</span>
+                  <span>
+                    Base:{" "}
+                    {summary.selectedCandidate ? formatCandidateIdentity(summary.selectedCandidate) : "none selected"}
+                  </span>
+                  {summary.skippedUntypedCorrections > 0 && (
+                    <span title="Legacy corrections without a correction kind cannot be routed into the dataset">
+                      {summary.skippedUntypedCorrections} untyped skipped
+                    </span>
+                  )}
+                </div>
+
+                {summary.splits.length === 0 ? (
+                  <p className="empty-state">No records were written.</p>
+                ) : (
+                  <ul className="dataset-export-splits">
+                    {summary.splits.map((splitSummary) => (
+                      <li key={splitSummary.split}>
+                        <strong>{formatBenchmarkSetSplit(splitSummary.split)}</strong>{" "}
+                        <span>
+                          {splitSummary.recordCount} records · {splitSummary.correctedSegmentCount}/
+                          {splitSummary.segmentCount} corrected segments
+                        </span>
+                        <ul>
+                          {splitSummary.files.map((file) => (
+                            <li key={file.file} title={file.file}>
+                              {formatDatasetCorrectionKind(file.correctionKind)}: {file.recordCount} · {file.file}
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {typeof window.dictex.openExportFolder === "function" && (
+                  <button className="secondary-button" onClick={openExportFolder}>
+                    Open export folder
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </section>
     </>
   );
+}
+
+function formatDatasetCorrectionKind(correctionKind: string): string {
+  return isCorrectionKind(correctionKind) ? formatCorrectionKind(correctionKind) : correctionKind;
 }
 
 function Metric({ label, value }: { label: string; value: string }): React.ReactElement {

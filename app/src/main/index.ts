@@ -20,6 +20,7 @@ import {
 } from "./localEvents.js";
 import { calculateCharacterErrorRate } from "./sttScoring.js";
 import { summarizeSttBenchmarkResultsByCandidate, type SttBenchmarkCandidateSummaryResponse } from "./benchmarkSummary.js";
+import { buildSttDatasetExport, type SttDatasetExport, type SttDatasetRecord } from "./datasetExport.js";
 import { readAppSettings, writeAppSettings } from "./settings.js";
 import { normalizeTranscript, DEFAULT_RULES, type NormalizationResult } from "./normalizer.js";
 
@@ -157,6 +158,31 @@ type SttCandidateSelectionResponse = {
   createdAt: string;
   candidate: BenchmarkCandidateIdentity;
   selectionReason: string;
+};
+
+type SttDatasetExportFileSummary = {
+  correctionKind: string;
+  file: string;
+  recordCount: number;
+};
+
+type SttDatasetExportSplitSummary = {
+  split: SttBenchmarkSetSplit;
+  segmentCount: number;
+  correctedSegmentCount: number;
+  recordCount: number;
+  files: SttDatasetExportFileSummary[];
+};
+
+type SttDatasetExportSummary = {
+  createdAt: string;
+  /** Absolute path of the export folder, or null when there was nothing to export. */
+  exportDir: string | null;
+  totalRecords: number;
+  skippedUntypedCorrections: number;
+  selectedCandidate: BenchmarkCandidateIdentity | null;
+  selectionReason: string | null;
+  splits: SttDatasetExportSplitSummary[];
 };
 
 type SttBenchmarkSetRunRequest = {
@@ -445,6 +471,10 @@ function getEventsPath(): string {
 
 function getNormalizerDir(): string {
   return path.join(getDataRoot(), "normalizer");
+}
+
+function getExportsRoot(): string {
+  return path.join(getDataRoot(), "exports");
 }
 
 function getSettingsPath(): string {
@@ -781,6 +811,116 @@ async function runSttBenchmarkForAudioSegment(
     results,
     diagnostics,
   };
+}
+
+function datasetSplitFileName(split: SttBenchmarkSetSplit, correctionKind: string): string {
+  return `${split}.${correctionKind}.jsonl`;
+}
+
+/** Serializes one export record to the JSONL line shape (snake_case, matching
+ * the event log). The absolute `audio_path` is resolved from the portable
+ * `audio_ref`; it is null if the ref cannot be resolved inside the data dir. */
+function serializeDatasetRecord(record: SttDatasetRecord): Record<string, JsonValue> {
+  let audioPath: string | null = null;
+  try {
+    audioPath = resolveDataRef(record.audioRef);
+  } catch {
+    audioPath = null;
+  }
+
+  return {
+    split: record.split,
+    session_id: record.sessionId,
+    segment_id: record.segmentId,
+    audio_ref: record.audioRef,
+    audio_path: audioPath,
+    language: record.language,
+    correction_kind: record.correctionKind,
+    raw_transcript: record.rawTranscript,
+    corrected_transcript: record.correctedTranscript,
+    original_stt_output: record.originalSttOutput,
+    stt_engine: record.sttEngine,
+    stt_model: record.sttModel,
+    correction_method: record.correctionMethod,
+    correction_created_at: record.correctionCreatedAt,
+    selected_candidate: record.selectedCandidate,
+    selection_reason: record.selectionReason,
+  };
+}
+
+/**
+ * Writes the corrected STT dataset export as local JSONL files plus a manifest,
+ * one folder per export run (timestamped, never overwriting a prior export). It
+ * reads the event log but never writes to it, so history is untouched. Nothing is
+ * uploaded. Returns null exportDir when there is nothing to export (no folder is
+ * created in that case).
+ */
+async function writeSttDatasetExport(datasetExport: SttDatasetExport): Promise<SttDatasetExportSummary> {
+  const baseSummary: Omit<SttDatasetExportSummary, "exportDir" | "splits"> = {
+    createdAt: datasetExport.createdAt,
+    totalRecords: datasetExport.totalRecords,
+    skippedUntypedCorrections: datasetExport.skippedUntypedCorrections,
+    selectedCandidate: datasetExport.selectedCandidate,
+    selectionReason: datasetExport.selectionReason,
+  };
+
+  if (datasetExport.totalRecords === 0) {
+    return { ...baseSummary, exportDir: null, splits: [] };
+  }
+
+  const folderStamp = datasetExport.createdAt.replace(/[:.]/g, "-");
+  const exportDir = path.join(getExportsRoot(), `stt-dataset-${folderStamp}`);
+  await mkdir(exportDir, { recursive: true });
+
+  const splitSummaries: SttDatasetExportSplitSummary[] = [];
+
+  for (const splitGroup of datasetExport.splits) {
+    const files: SttDatasetExportFileSummary[] = [];
+
+    for (const kindGroup of splitGroup.kinds) {
+      const fileName = datasetSplitFileName(splitGroup.split, kindGroup.correctionKind);
+      const contents = kindGroup.records
+        .map((record) => `${JSON.stringify(serializeDatasetRecord(record))}\n`)
+        .join("");
+      await writeFile(path.join(exportDir, fileName), contents, { encoding: "utf8" });
+      files.push({ correctionKind: kindGroup.correctionKind, file: fileName, recordCount: kindGroup.records.length });
+    }
+
+    splitSummaries.push({
+      split: splitGroup.split,
+      segmentCount: splitGroup.segmentCount,
+      correctedSegmentCount: splitGroup.correctedSegmentCount,
+      recordCount: splitGroup.recordCount,
+      files,
+    });
+  }
+
+  const manifest: Record<string, JsonValue> = {
+    app: "DicTeX",
+    dataset: "stt_corrected",
+    created_at: datasetExport.createdAt,
+    selected_candidate: datasetExport.selectedCandidate,
+    selection_reason: datasetExport.selectionReason,
+    total_records: datasetExport.totalRecords,
+    skipped_untyped_corrections: datasetExport.skippedUntypedCorrections,
+    splits: splitSummaries.map((splitSummary) => ({
+      split: splitSummary.split,
+      segment_count: splitSummary.segmentCount,
+      corrected_segment_count: splitSummary.correctedSegmentCount,
+      record_count: splitSummary.recordCount,
+      files: splitSummary.files.map((file) => ({
+        correction_kind: file.correctionKind,
+        file: file.file,
+        record_count: file.recordCount,
+      })),
+    })),
+  };
+
+  await writeFile(path.join(exportDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, {
+    encoding: "utf8",
+  });
+
+  return { ...baseSummary, exportDir, splits: splitSummaries };
 }
 
 ipcMain.handle(
@@ -1190,6 +1330,30 @@ ipcMain.handle("candidate-selection:get-latest-stt", async (): Promise<SttCandid
     candidate: selection.candidate,
     selectionReason: selection.selectionReason ?? "",
   };
+});
+
+ipcMain.handle("dataset:export-stt", async (): Promise<SttDatasetExportSummary> => {
+  const events = await readLocalEvents(getEventsPath());
+  const datasetExport = buildSttDatasetExport(events, new Date().toISOString());
+  return writeSttDatasetExport(datasetExport);
+});
+
+ipcMain.handle("dataset:open-export-folder", async (_event, exportDir?: unknown): Promise<boolean> => {
+  const exportsRoot = getExportsRoot();
+  await mkdir(exportsRoot, { recursive: true });
+
+  let targetDir = exportsRoot;
+  if (typeof exportDir === "string" && exportDir.length > 0) {
+    // Only open folders inside the exports root; never an arbitrary caller path.
+    const resolved = path.resolve(exportDir);
+    const relative = path.relative(path.resolve(exportsRoot), resolved);
+    if (!relative.startsWith("..") && !path.isAbsolute(relative) && existsSync(resolved)) {
+      targetDir = resolved;
+    }
+  }
+
+  const error = await shell.openPath(targetDir);
+  return error.length === 0;
 });
 
 ipcMain.handle("diagnostics:open-data-folder", async (): Promise<boolean> => {
