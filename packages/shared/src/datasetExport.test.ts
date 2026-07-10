@@ -87,10 +87,11 @@ test("math_transform INPUT is the full pipeline replayed over Layer 1 (issue #10
   assert.equal(mathTransform.length, 1);
   const pair = mathTransform[0];
   // The INPUT is Layer 1 run through dictionary -> command extraction -> regex:
-  // "au carré" fires (regex operand is one letter/number), "plus deux" does NOT
-  // ("deux" spelled out is not an operand). This is exactly what layer 3 receives
-  // at inference — the residual it must learn, not raw verbatim.
-  assert.equal(pair.rawTranscript, `${NL} x² plus deux`);
+  // "au carré" fires (regex operand is one letter/number) and emits canonical
+  // LaTeX wrapped in "$…$" (#107); "plus deux" does NOT fire ("deux" spelled
+  // out is not an operand). This is exactly what layer 3 receives at inference
+  // — the residual it must learn, not raw verbatim.
+  assert.equal(pair.rawTranscript, `${NL} $x^{2}$ plus deux`);
   // The TARGET is the human-authored Layer 2 with command substitution ONLY.
   assert.equal(pair.correctedTranscript, `${NL} x² + 2`);
   // Both sides carry the sentinel so the seq2seq learns to pass it through (#92).

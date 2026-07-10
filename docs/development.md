@@ -141,7 +141,7 @@ scripts\npm.cmd run dev
 10. Click `Open data folder` and confirm the stored audio file exists under `data/audio/session_.../`.
 11. Click `Open events log` and confirm `audio_segment`, `stt_result`, and `normalization_result` events were appended. (DicTeX no longer writes corrections or benchmark events — those live in DicTeX Lab.)
 12. Click `Open dictionary`, add an entry like `{"from":"dic tex","to":"DicTeX"}`, save the file, then dictate a phrase containing "dic tex". Confirm the clipboard/pasted text and the `Inserted (normalized)` line show `DicTeX`, the `Last transcript (raw)` textarea still shows the raw STT output, and a `normalization_result` event was appended while `stt_result.stt_output` kept the raw transcript. Break the JSON on purpose and confirm the next dictation still inserts the raw text with a quiet `Normalizer:` diagnostic instead of failing.
-13. Without touching `rules.json`, dictate "deux plus trois" spoken as digits (e.g. "2 plus 3") and confirm the inserted text shows `2 + 3` from the shipped default rules alone. Then dictate an ordinary sentence containing "plus" or "moins" outside a math context (e.g. "je suis de plus en plus fatigué") and confirm it is inserted unchanged. Click `Open rules`, break the JSON on purpose, and confirm the next dictation inserts the (still dictionary-normalized) text unchanged by regex rules with a quiet `Normalizer:` diagnostic instead of failing.
+13. Without touching `rules.json`, dictate "deux plus trois" spoken as digits (e.g. "2 plus 3") and confirm the inserted text shows `$2 + 3$` (canonical LaTeX wrapped in `$…$`, #107) from the shipped default rules alone. Then dictate an ordinary sentence containing "plus" or "moins" outside a math context (e.g. "je suis de plus en plus fatigué") and confirm it is inserted unchanged. Click `Open rules`, break the JSON on purpose, and confirm the next dictation inserts the (still dictionary-normalized) text unchanged by regex rules with a quiet `Normalizer:` diagnostic instead of failing.
 14. In the `STT model` selector (controls panel), pick a different model. Confirm the `Model` diagnostic reflects it, dictate a phrase, and confirm the `stt_result` event records the chosen model. Restart the app and confirm the selector still shows the chosen model (persisted in `data/settings.json`). Corrupt `settings.json` and confirm the app still starts and dictates using the env var / default `base`.
 15. Click **Open Lab**. With the Lab built (`scripts\npm.cmd run build`), confirm the DicTeX Lab app launches; without a build, confirm DicTeX shows a graceful "build/start the Lab first" message and does not crash.
 
@@ -276,10 +276,10 @@ command effect (the storage rule, design doc §4) — only canonical words, in
 both layers.
 
 Example (from the design doc): Layer 1 `retour à la ligne x au carré plus
-deux` prefills Layer 2 with `retour à la ligne x² plus deux` — the regex
-recognizes "au carré" (a real operand on both sides) but not "plus deux"
-(spelled out, not a digit/letter operand), so the human fixes three words
-instead of typing the whole line.
+deux` prefills Layer 2 with `retour à la ligne $x^{2}$ plus deux` — the regex
+recognizes "au carré" (a real operand on both sides) and emits canonical LaTeX
+wrapped in `$…$` (#107), but not "plus deux" (spelled out, not a digit/letter
+operand), so the human fixes three words instead of typing the whole line.
 
 What changed is always shown, inline, as a compact word-level diff between
 Layer 1 and the prefill (`packages/shared/src/textDiff.ts`) — a prefilled
@@ -308,8 +308,8 @@ whatever is left in the field, same as before this issue.
    segment) and type a Layer 1 literal transcript containing a rule the
    shipped default regex recognizes plus a word it does not (e.g.
    `x au carré plus deux`); confirm Layer 2 prefills shortly after with the
-   pipeline's output (e.g. `x² plus deux`) and that a compact diff appears
-   showing "au carré" struck through and "²" highlighted as added, with
+   pipeline's output (e.g. `$x^{2}$ plus deux`) and that a compact diff appears
+   showing "au carré" struck through and "$x^{2}$" highlighted as added, with
    "plus deux" unmarked. Edit Layer 2 by hand and confirm your edit is kept
    (not overwritten) even if you then tweak Layer 1 again. Clear Layer 1 and
    confirm the prefill/diff disappear.
@@ -704,24 +704,57 @@ data/normalizer/rules.json
 ```
 
 ```json
-{"version":1,"rules":[{"pattern":"...","replacement":"$1²","flags":"i"}]}
+{"version":1,"rules":[{"pattern":"...","replacement":"$$$<p1>^{2}$$","flags":"i"}]}
 ```
 
 Each rule's `pattern` is a Unicode-aware JS regex source (always matched with
 forced `g`/`u` flags, plus any `flags` given); `replacement` may reference
-capture groups (`$1`, `$2`, ...). Rules apply in file order. Every default
-rule requires a real operand (a run of digits, or a single Unicode letter
-standing for a variable) on both sides of the keyword, and rejects a match
-where that operand is glued to a surrounding letter/digit — this is what keeps
-prose like "de plus en plus" or "je suis moins fatigué" untouched, since
-"plus"/"moins" only convert between two such operands. The default set
-covers: "x au carré" -> `x²`, "x au cube" -> `x³`, "x puissance n" -> `x^n`
-(caret notation, since there is no general Unicode superscript), "racine
-(carrée) de x" -> `√x`, "x égal(e) y" -> `x = y`, "plus grand/petit que" ->
-`>`/`<`, and "plus"/"moins"/"fois"/"divisé par" -> `+`/`-`/`×`/`/`. A malformed
-rules file (bad JSON or shape) disables the whole layer with a passthrough and
-a quiet diagnostic; a malformed individual rule (e.g. invalid regex) is
-skipped the same way individual dictionary entries are.
+capture groups (`$1`, `$2`, ... or `$<name>` for named groups), and a literal
+`$` is written as `$$` (needed to emit the delimiters below). Rules apply in
+file order. Every default rule requires a real operand (a run of digits, or a
+single Unicode letter standing for a variable) on both sides of the keyword,
+and rejects a match where that operand is glued to a surrounding letter/digit
+— this is what keeps prose like "de plus en plus" or "je suis moins fatigué"
+untouched, since "plus"/"moins" only convert between two such operands.
+
+**The rules emit canonical LaTeX, not Unicode** (issue #107, following the
+LaTeX decision in `docs/dataset-and-normalization-design.md` §8): inline maths
+is wrapped in `$…$` (the same delimiter convention `canonicalizeLatex` and
+DicTeX Lab use), prose stays bare. The default set covers: "x au carré" ->
+`$x^{2}$`, "x au cube" -> `$x^{3}$`, "x puissance n" -> `$x^{n}$`, "racine
+(carrée) de x" -> `$\sqrt{x}$`, "x égal(e) y" -> `$x = y$`, "plus grand/petit
+que" -> `$x > y$`/`$x < y$`, "plus"/"moins"/"fois" -> `$x + y$`/`$x - y$`/`$x
+\times y$`, and "divisé par" -> `$\frac{x}{y}$`. Each rule's output is already
+a fixed point of `canonicalizeLatex` (`packages/shared/src/latex.ts`), so
+scoring/export never treat it as needing repair.
+
+A regex cannot group or scope, so "au carré"/"au cube"/"puissance"/"racine
+(carrée) de"/"divisé par" — the rules that introduce a NEW brace around their
+operand — stay restricted to a single bare digit run or letter on every
+operand, exactly as before: `\frac{a}{b}` needs both operands unambiguous, so
+"a divisé par b plus un" cannot compose "b plus un" into one denominator
+("un" spelled out is not a single-token operand). The remaining rules ("x
+égale y", "plus/petit que", "plus", "moins", "fois") never add a new brace, so
+they MAY also accept an already-`$…$`-wrapped fragment as an operand — this is
+what keeps the chaining property alive under LaTeX: "x au carré plus y" first
+becomes "$x^{2}$ plus y" (the bracing "au carré" rule, bare operand "x"), then
+"plus" matches the whole wrapped fragment "$x^{2}$" as its left operand and
+merges it with "y" into one span, "$x^{2} + y$". Adopting LaTeX therefore
+*grows* what the rules cannot reach (grouping/scoping stays out of reach by
+design) — that residual is exactly what normalizer layer 3 is for (§7).
+
+A malformed rules file (bad JSON or shape) disables the whole layer with a
+passthrough and a quiet diagnostic; a malformed individual rule (e.g. invalid
+regex) is skipped the same way individual dictionary entries are.
+
+**Migrating an existing `rules.json` (issue #107):** the rules file is
+user-editable and DicTeX never rewrites it in place, so a `rules.json` written
+before #107 keeps emitting its own (Unicode) rules untouched — DicTeX does not
+migrate it automatically. To pick up the new LaTeX defaults, delete (or
+rename) the file and let DicTeX reseed it on the next `Open rules` click or
+app start; a hand-edited file that mixes both conventions is the user's own
+choice to make; the regex layer imposes no format itself, only what one's
+rules emit.
 
 The raw `stt_result` event is left untouched. Each dictation appends a separate
 append-only `normalization_result` event recording the input, the final output,
@@ -729,7 +762,7 @@ and every layer's output, so a wrong insertion can be attributed to a specific
 layer:
 
 ```json
-{"event_type":"normalization_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","input_transcript":"x au carré","output_transcript":"x²","passthrough":false,"layers":[{"layer":"personal_dictionary","input":"x au carré","output":"x au carré","applied":false,"diagnostics":[]},{"layer":"regex_rules","input":"x au carré","output":"x²","applied":true,"diagnostics":[]}],"diagnostics":[]}
+{"event_type":"normalization_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","input_transcript":"x au carré","output_transcript":"$x^{2}$","passthrough":false,"layers":[{"layer":"personal_dictionary","input":"x au carré","output":"x au carré","applied":false,"diagnostics":[]},{"layer":"regex_rules","input":"x au carré","output":"$x^{2}$","applied":true,"diagnostics":[]}],"diagnostics":[]}
 ```
 
 History shows the raw transcript; the normalized inserted text is shown
