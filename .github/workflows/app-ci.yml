@@ -8,7 +8,7 @@ on:
 
 jobs:
   app:
-    name: Typecheck and build
+    name: Typecheck, test and build
     runs-on: windows-latest
 
     steps:
@@ -27,6 +27,12 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      # Guards the no-sentinel-in-store invariant (#92). A sentinel is invisible,
+      # so a corrupted store would look healthy — this suite is the only thing
+      # that would catch it.
+      - name: Test
+        run: npm test
 
       - name: Build
         run: npm run build

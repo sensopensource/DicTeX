@@ -10,9 +10,14 @@
 //
 // Renderer-only (browser-safe) helpers live in dedicated subpath exports so
 // they never pull node built-ins into a renderer bundle:
+//   `@dictex/shared/commands`       — command table + sentinel extract/expand
 //   `@dictex/shared/formatting`     — presentation string formatting
 //   `@dictex/shared/errorAnalysis`  — heuristic benchmark error analysis
 // Those modules only TYPE-import from the node-touching modules above.
+// `commands` is pure (no node built-ins) and is also re-exported here so main-
+// process code can pull it from the barrel; see `@dictex/shared/commands` for
+// renderer-safe use.
+export * from "./commands.js";
 export * from "./localEvents.js";
 export * from "./sttScoring.js";
 export * from "./benchmarkSummary.js";

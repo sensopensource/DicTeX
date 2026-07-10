@@ -8,6 +8,7 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./commands": "./src/commands.ts",
     "./formatting": "./src/formatting.ts",
     "./errorAnalysis": "./src/errorAnalysis.ts",
     "./styles.css": "./src/styles.css"

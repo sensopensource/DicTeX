@@ -1,3 +1,4 @@
+import { extractCommands } from "./commands.js";
 import {
   CORRECTION_KIND_ORDER,
   countUntypedSttCorrections,
@@ -24,9 +25,17 @@ export const STT_DATASET_SPLITS: SttBenchmarkSetSplit[] = [
  * `correctedTranscript` come from the correction event (the transform's input ->
  * target); for an `acoustic` correction the pair is audio -> literal transcript,
  * for a `math_transform` correction it is literal text -> notation.
+ *
+ * On a `math_transform` pair BOTH transcripts additionally pass through
+ * `extractCommands` (issue #92): the store holds the canonical command words, and
+ * the sentinel exists only in the exported training pair, so the seq2seq is
+ * trained on the same convention `apps/dictex`'s normalizer serves. An `acoustic`
+ * pair is never substituted — its Layer 1 stays verbatim for the STT model.
+ *
  * `originalSttOutput` preserves the raw STT output even when the correction's own
  * `rawTranscript` is a later literal-correct transcript (chained #66 corrections),
- * so every record stays traceable to the transcription that produced it.
+ * so every record stays traceable to the transcription that produced it. It is
+ * provenance, never a training input, and is never substituted.
  */
 export type SttDatasetRecord = {
   split: SttBenchmarkSetSplit;
@@ -108,14 +117,32 @@ export function buildSttDatasetExport(events: LocalEvent[], createdAt: string): 
       const sttInfo = getSegmentSttInfo(events, segment.sessionId, segment.segmentId);
 
       for (const correction of corrections) {
+        // Command-word substitution (issue #92). The event store holds the
+        // canonical words in full; sentinels are introduced only here, when the
+        // training pair is built, so `apps/dictex`'s normalizer and this export
+        // share ONE command table (packages/shared/commands.ts). Applied to BOTH
+        // layers of a `math_transform` pair (input = literal Layer 1, target =
+        // notation Layer 2) so the seq2seq sees the sentinel on both sides and
+        // learns to pass it through. NEVER applied to an `acoustic` pair: Layer 1
+        // is verbatim forever and its command words must stay spelled out for the
+        // STT model to transcribe them. Because substitution happens at export,
+        // regenerating after adding a command retroactively fixes every pair.
+        const substitute = correction.correctionKind === "math_transform";
+        const rawTranscript = substitute
+          ? extractCommands(correction.rawTranscript)
+          : correction.rawTranscript;
+        const correctedTranscript = substitute
+          ? extractCommands(correction.correctedTranscript)
+          : correction.correctedTranscript;
+
         const record: SttDatasetRecord = {
           split,
           sessionId: segment.sessionId,
           segmentId: segment.segmentId,
           audioRef: segment.audioRef,
           correctionKind: correction.correctionKind,
-          rawTranscript: correction.rawTranscript,
-          correctedTranscript: correction.correctedTranscript,
+          rawTranscript,
+          correctedTranscript,
           originalSttOutput: sttInfo.sttOutput,
           language: sttInfo.sttLanguage,
           sttEngine: sttInfo.sttEngine,
