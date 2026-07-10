@@ -106,6 +106,13 @@ function App(): React.ReactElement {
   const [isSettingSttModel, setIsSettingSttModel] = useState(false);
   const [lastPasteState, setLastPasteState] = useState<"none" | "pasted" | "clipboard-only">("none");
   const [lastResult, setLastResult] = useState<TranscriptionResult | null>(null);
+  // Diagnostics grid state, kept separate from `lastResult` so it persists across
+  // the next recording instead of blanking out: the grid only ever grows or
+  // updates, it never reflows back to empty once a dictation has filled it.
+  const [diagnostics, setDiagnostics] = useState<{
+    result: TranscriptionResult;
+    paste: "pasted" | "clipboard-only";
+  } | null>(null);
   const [recentSegments, setRecentSegments] = useState<RecentSegment[]>([]);
   const [historyError, setHistoryError] = useState("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -128,16 +135,7 @@ function App(): React.ReactElement {
 
   useEffect(() => {
     const removeToggleListener = window.dictex.onDictationToggle(() => {
-      if (statusRef.current === "recording") {
-        stopRecording({ autoPaste: true, trigger: "global_hotkey" });
-        return;
-      }
-
-      if (statusRef.current === "transcribing") {
-        return;
-      }
-
-      void startRecording();
+      toggleDictation("global_hotkey");
     });
     const removeHotkeyStatusListener = window.dictex.onHotkeyStatus(setHotkeyStatus);
     void window.dictex.getSttConfig().then(setSttConfig).catch(() => {
@@ -222,6 +220,27 @@ function App(): React.ReactElement {
     }
   }
 
+  // Single toggle shared by the record button and the Win+Alt+Space hotkey, so
+  // the two can never desynchronise: both read the same status and drive the same
+  // start/stop. The hotkey path keeps its auto-paste into the active app; the
+  // button stays a plain manual dictation.
+  function toggleDictation(source: "manual" | "global_hotkey"): void {
+    if (statusRef.current === "recording") {
+      stopRecording(
+        source === "global_hotkey"
+          ? { autoPaste: true, trigger: "global_hotkey" }
+          : { trigger: "manual" },
+      );
+      return;
+    }
+
+    if (statusRef.current === "transcribing") {
+      return;
+    }
+
+    void startRecording();
+  }
+
   async function transcribeRecording(mimeType: string): Promise<void> {
     try {
       const audioBlob = new Blob(chunksRef.current, { type: mimeType });
@@ -234,6 +253,7 @@ function App(): React.ReactElement {
 
       setTranscript(result.transcript);
       setLastResult(result);
+      setDiagnostics({ result, paste: result.pastedToActiveApp ? "pasted" : "clipboard-only" });
       setLastPasteState(result.pastedToActiveApp ? "pasted" : "clipboard-only");
       // Surface normalizer diagnostics (e.g. a malformed dictionary) quietly,
       // without blocking the dictation.
@@ -406,6 +426,24 @@ function App(): React.ReactElement {
     await window.dictex.openRulesFile();
   }
 
+  // Idle Home hides empty diagnostics: each metric appears only once a dictation
+  // has given it a value (never seeded from config, never a "-" placeholder). The
+  // grid grows from the first dictation and then only updates in place.
+  const metrics: { label: string; value: string }[] = [];
+  if (diagnostics) {
+    const { result, paste } = diagnostics;
+    metrics.push({ label: "Engine", value: result.sttEngine });
+    metrics.push({ label: "Model", value: result.sttModel });
+    metrics.push({ label: "Language", value: result.sttLanguage });
+    metrics.push({ label: "Latency", value: `${result.transcriptionDurationMs} ms` });
+    metrics.push({ label: "Session", value: result.sessionId });
+    metrics.push({ label: "Segment", value: result.segmentId });
+    if (result.audioDurationSeconds !== null) {
+      metrics.push({ label: "Audio", value: `${result.audioDurationSeconds.toFixed(2)} s` });
+    }
+    metrics.push({ label: "Output", value: paste === "pasted" ? "pasted" : "clipboard" });
+  }
+
   const statusLabel =
     status === "done" && lastPasteState === "pasted"
       ? "pasted"
@@ -433,19 +471,9 @@ function App(): React.ReactElement {
         <button
           className="record-button"
           disabled={status === "transcribing"}
-          onMouseDown={() => void startRecording()}
-          onMouseUp={() => stopRecording()}
-          onMouseLeave={() => stopRecording()}
-          onTouchStart={(event) => {
-            event.preventDefault();
-            void startRecording();
-          }}
-          onTouchEnd={(event) => {
-            event.preventDefault();
-            stopRecording();
-          }}
+          onClick={() => toggleDictation("manual")}
         >
-          {status === "recording" ? "Release to transcribe" : "Hold to dictate"}
+          {status === "recording" ? "Arrêter" : "Démarrer"}
         </button>
 
         <div className="shortcut-row">
@@ -483,23 +511,13 @@ function App(): React.ReactElement {
         </div>
       </section>
 
-      <section className="panel diagnostics-grid">
-        <Metric label="Engine" value={lastResult?.sttEngine ?? sttConfig?.engine ?? "-"} />
-        <Metric label="Model" value={lastResult?.sttModel ?? sttConfig?.model ?? "-"} />
-        <Metric label="Language" value={lastResult?.sttLanguage ?? sttConfig?.language ?? "-"} />
-        <Metric label="Latency" value={lastResult ? `${lastResult.transcriptionDurationMs} ms` : "-"} />
-        <Metric label="Session" value={lastResult?.sessionId ?? "-"} />
-        <Metric label="Segment" value={lastResult?.segmentId ?? "-"} />
-        <Metric
-          label="Audio"
-          value={
-            lastResult?.audioDurationSeconds !== null && lastResult?.audioDurationSeconds !== undefined
-              ? `${lastResult.audioDurationSeconds.toFixed(2)} s`
-              : "-"
-          }
-        />
-        <Metric label="Output" value={lastPasteState === "pasted" ? "pasted" : lastPasteState === "clipboard-only" ? "clipboard" : "-"} />
-      </section>
+      {metrics.length > 0 && (
+        <section className="panel diagnostics-grid">
+          {metrics.map((metric) => (
+            <Metric key={metric.label} label={metric.label} value={metric.value} />
+          ))}
+        </section>
+      )}
 
       <HistoryPanel
         recentSegments={recentSegments}

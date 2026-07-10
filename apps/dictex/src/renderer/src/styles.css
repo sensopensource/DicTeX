@@ -61,10 +61,31 @@
   color: var(--text-faint);
 }
 
+/* The grid is hidden until the first dictation fills it (idle Home shows no
+   empty "-" cells). It then mounts once and only updates in place, so this
+   calm fade-in plays a single time instead of on every dictation. */
 .diagnostics-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   overflow: hidden;
+  animation: diagnostics-appear 0.18s ease-out;
+}
+
+@keyframes diagnostics-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diagnostics-grid {
+    animation: none;
+  }
 }
 
 .metric {
