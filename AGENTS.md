@@ -646,6 +646,16 @@ relocated to the Lab in Phase 2; #66 recording reverted in Phase 0).
   folder — **DONE** (PR #82; Opus-max review restricted paste sources to
   math_transform, so no audio-less `acoustic` records reach the STT dataset).
 
+Post-pivot (done):
+
+- #83 Open Lab reliability + post-pivot cleanup — **DONE** (PR #86).
+  `openLabApp()` now also requires `apps/lab/out/renderer/index.html` before
+  launching the built Lab (a partial build with only `out/main` previously
+  launched a blank/frozen window); removed the vestigial `referenceModel`
+  field/UI from the Lab dataset builder (dead since the synthetic `stt_result`
+  path was removed); swept 17 dead CSS rule blocks from
+  `apps/lab/src/renderer/src/styles.css` (Lab CSS bundle 17.00 -> 13.96 kB).
+
 Post-pivot (not started):
 
 - #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`.
