@@ -1629,8 +1629,7 @@ function DatasetView({
             </div>
             {segments.length === 0 && (
               <p className="empty-state">
-                No DicTeX segments found yet. Record a dictation in DicTeX, then go back to Segments and click
-                Refresh.
+                No DicTeX segments found yet. Record a dictation in DicTeX, then click Refresh.
               </p>
             )}
             {selectedBuilderSegment && (
