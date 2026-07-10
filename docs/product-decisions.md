@@ -346,9 +346,20 @@ Decisions:
 
 ## Math Parsing Decisions
 
-Math parsing is not part of the current working loop yet.
+**Update (2026-07-10): the notation format is LaTeX.** The normalizer's canonical
+output is LaTeX, not Unicode — Unicode cannot express integrals, structured
+fractions, sums with bounds, or matrices, and `LaTeX -> Unicode` derives while
+`Unicode -> LaTeX` does not. The hand-written Layer 2 target does not regenerate,
+so the format had to be settled before collecting data. KaTeX is a *renderer* of
+LaTeX, not a format and not a pipeline layer. A Home toggle (#105) switches the
+normalizer off so LaTeX never reaches an application that cannot render it. See
+`docs/dataset-and-normalization-design.md` §8, and issues #106 / #107.
 
-Do not add spoken-math-to-LaTeX until these foundations are stable:
+This concerns *generation* of notation by the deterministic and learned normalizer
+layers. Math **parsing** — building a semantic tree from spoken maths — is still
+not part of the working loop, and the paragraph below still holds for it.
+
+Do not add spoken-math parsing until these foundations are stable:
 
 - local dictation loop;
 - hotkey and insertion;

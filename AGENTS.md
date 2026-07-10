@@ -765,7 +765,6 @@ Do not introduce without an explicit issue:
 - Tauri migration;
 - SQLite migration;
 - math parsing;
-- LaTeX generation;
 - LLM provider integrations;
 - API key handling;
 - fine-tuning;
@@ -775,6 +774,17 @@ Do not introduce without an explicit issue:
 The strategic pivot sanctions the normalization pipeline (dictionary, regex,
 small seq2seq) and math rendering as the Priority 1 direction — still land them
 through explicit issues, not ad hoc.
+
+**LaTeX generation is now sanctioned** (decided 2026-07-10, was on the list
+above). The normalizer's canonical output format is LaTeX, not Unicode: Unicode
+cannot express integrals, structured fractions, sums with bounds, or matrices,
+and `LaTeX -> Unicode` can be derived while `Unicode -> LaTeX` cannot. Layer 2 is
+hand-written and, unlike every other artefact here, **does not regenerate** — so
+the format had to be settled before collecting. KaTeX remains a *renderer* (it
+displays LaTeX); it is not a format and not a pipeline layer. See
+`docs/dataset-and-normalization-design.md` §8, issues #106 (style subset +
+canonicalizer, blocks collection) and #107 (rules rewrite). Math *parsing* is
+still not sanctioned.
 
 ## UI Direction
 
