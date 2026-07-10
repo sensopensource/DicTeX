@@ -551,9 +551,20 @@ function App(): React.ReactElement {
     }
 
     const notation = builderNotation.trim();
-    if (rawTranscript.length === 0 && notation.length === 0) {
+    // Mirror planDatasetBuilderSave's own "nothing to save" rule exactly (see
+    // apps/lab/src/main/datasetBuilder.ts): a "paste" source has no audio and
+    // can NEVER save an acoustic pair, no matter how much raw text it has —
+    // only Layer 2 (math_transform) can save it. Checking this here (with the
+    // same wording the main process would throw) surfaces the real rule
+    // before a round trip, instead of a generic message that could imply a
+    // pasted raw transcript alone is enough.
+    const willSaveAcoustic = rawTranscript.length > 0 && builderMode === "segment";
+    const willSaveMathTransform = notation.length > 0;
+    if (!willSaveAcoustic && !willSaveMathTransform) {
       setBuilderError(
-        "Nothing to save: provide a raw transcript (paste one or pick a segment) for the acoustic layer, or fill Layer 2 for the math-transform layer",
+        builderMode === "segment"
+          ? "Nothing to save: the picked segment has no raw transcript for the acoustic layer, and Layer 2 (notation) is empty."
+          : "Nothing to save: a pasted (no-audio) entry needs Layer 2 (notation) to build a math_transform pair. Pick a recorded segment if you want an acoustic (audio -> literal) pair.",
       );
       return;
     }
@@ -568,11 +579,11 @@ function App(): React.ReactElement {
         split: builderSplit,
       });
       const savedLayers = [
-        response.savedAcoustic ? "acoustic" : null,
-        response.savedMathTransform ? "math_transform" : null,
+        response.savedAcoustic ? formatDatasetCorrectionKind("acoustic") : null,
+        response.savedMathTransform ? formatDatasetCorrectionKind("math_transform") : null,
       ].filter((layer): layer is string => layer !== null);
       setBuilderNotice(
-        `Saved ${savedLayers.join(" + ")} for ${response.sessionId} / ${response.segmentId} (${formatBenchmarkSetSplit(response.split)})`,
+        `Saved ${savedLayers.join(" + ")} -> ${formatBenchmarkSetSplit(response.split)} (${response.sessionId} / ${response.segmentId})`,
       );
       setBuilderNotation("");
       if (builderMode === "paste") {
@@ -889,7 +900,10 @@ function SegmentsView({
         {audioError && <pre className="error">{audioError}</pre>}
 
         {segments.length === 0 && !segmentsError ? (
-          <p className="empty-state">No stored dictation segments found in the DicTeX data folder.</p>
+          <p className="empty-state">
+            No stored dictation segments found in the DicTeX data folder. Record a dictation in DicTeX, then click
+            Refresh above.
+          </p>
         ) : (
           <div className="history-list">
             {segments.map((segment) => (
@@ -1131,7 +1145,7 @@ function BenchmarkView({
 
         {benchmarkError && <pre className="error">{benchmarkError}</pre>}
 
-        {benchmarkResults.length > 0 && (
+        {benchmarkResults.length > 0 ? (
           <div className="benchmark-results">
             {benchmarkResults.map((result) => (
               <article className="benchmark-result" key={formatBenchmarkCandidateKey(result)}>
@@ -1146,6 +1160,13 @@ function BenchmarkView({
               </article>
             ))}
           </div>
+        ) : (
+          !isBenchmarking &&
+          !benchmarkError && (
+            <p className="empty-state">
+              No results yet — click "Benchmark latest" above, or run a benchmark from a segment in Segments.
+            </p>
+          )
         )}
       </section>
 
@@ -1227,7 +1248,16 @@ function BenchmarkView({
         )}
 
         {batchProgress && batchProgress.total === 0 && !isRunningBatch && (
-          <p className="empty-state">No corrected segments in {formatBenchmarkSetSplit(batchSplit)} yet.</p>
+          <p className="empty-state">
+            No corrected segments in {formatBenchmarkSetSplit(batchSplit)} yet. Correct segments and set their split in
+            Segments first.
+          </p>
+        )}
+
+        {!batchProgress && batchOutcomes.length === 0 && !batchError && !isRunningBatch && (
+          <p className="empty-state">
+            No batch run yet — check 1-3 candidates above and click "Run analysis".
+          </p>
         )}
 
         {batchOutcomes.length > 0 && (
@@ -1465,7 +1495,41 @@ function DatasetView({
 }: DatasetViewProps): React.ReactElement {
   const summary = datasetExportSummary;
   const selectedBuilderSegment = segments.find((segment) => getSegmentKey(segment) === builderSegmentKey) ?? null;
-  const canSaveBuilderEntry = builderLiteral.trim().length > 0 && !isSavingBuilderEntry;
+
+  // Mirrors planDatasetBuilderSave's own rule (apps/lab/src/main/datasetBuilder.ts):
+  // a "paste" source has no audio and can therefore NEVER save an acoustic
+  // pair — only a picked segment's raw transcript can. Kept in sync with the
+  // identical computation in saveDatasetBuilderEntry (App) so the disabled
+  // state and the inline hint below never contradict the real save.
+  const trimmedLiteral = builderLiteral.trim();
+  const effectiveRawTranscript =
+    builderMode === "segment" ? (selectedBuilderSegment?.transcript.trim() ?? "") : builderRawTranscript.trim();
+  const willSaveAcoustic = builderMode === "segment" && effectiveRawTranscript.length > 0;
+  const willSaveMathTransform = builderNotation.trim().length > 0;
+  const hasBuilderSource = builderMode !== "segment" || selectedBuilderSegment !== null;
+  const canSaveBuilderEntry =
+    !isSavingBuilderEntry && trimmedLiteral.length > 0 && hasBuilderSource && (willSaveAcoustic || willSaveMathTransform);
+
+  // Live "what will this save" preview, using the exact same wording
+  // planDatasetBuilderSave throws for its "nothing to save" case, so the
+  // inline guidance and the real validation error never disagree.
+  let builderPlanHint: string;
+  if (trimmedLiteral.length === 0) {
+    builderPlanHint = "Layer 1 (literal transcript) is required before anything can be saved.";
+  } else if (!hasBuilderSource) {
+    builderPlanHint = "Pick a DicTeX segment first.";
+  } else if (!willSaveAcoustic && !willSaveMathTransform) {
+    builderPlanHint =
+      builderMode === "segment"
+        ? "Nothing to save: the picked segment has no raw transcript for the acoustic layer, and Layer 2 (notation) is empty."
+        : "Nothing to save: a pasted (no-audio) entry needs Layer 2 (notation) to build a math_transform pair. Pick a recorded segment if you want an acoustic (audio -> literal) pair.";
+  } else {
+    const planParts = [
+      willSaveAcoustic ? formatDatasetCorrectionKind("acoustic") : null,
+      willSaveMathTransform ? formatDatasetCorrectionKind("math_transform") : null,
+    ].filter((part): part is string => part !== null);
+    builderPlanHint = `Will save ${planParts.join(" + ")} -> ${formatBenchmarkSetSplit(builderSplit)} on Save entry.`;
+  }
 
   return (
     <>
@@ -1495,7 +1559,7 @@ function DatasetView({
               checked={builderMode === "paste"}
               onChange={() => setBuilderMode("paste")}
             />
-            Paste a transcription
+            Paste a transcription (no audio)
           </label>
           <label className="candidate-checkbox">
             <input
@@ -1504,16 +1568,21 @@ function DatasetView({
               checked={builderMode === "segment"}
               onChange={() => setBuilderMode("segment")}
             />
-            Pick a DicTeX segment
+            Pick a DicTeX segment (has audio)
           </label>
         </div>
+        <p className="builder-hint">
+          {builderMode === "paste"
+            ? 'No audio: this source can only ever save a math_transform entry (Layer 1 -> Layer 2). Switch to "Pick a DicTeX segment" for an acoustic entry.'
+            : "Real recorded audio: Layer 1 alone saves an acoustic entry (audio -> literal); adding Layer 2 also saves a math_transform entry."}
+        </p>
 
         {builderMode === "paste" ? (
           <>
-            <p className="transcript-label">Pasted transcription (raw STT, optional)</p>
+            <p className="transcript-label">Pasted transcription (raw STT, optional — never used for acoustic)</p>
             <textarea
               aria-label="Pasted transcription"
-              placeholder="Paste DicTeX's raw transcript here, or leave empty for a notation-only entry"
+              placeholder="Paste DicTeX's raw transcript here for reference, or leave empty for a notation-only entry"
               value={builderRawTranscript}
               onChange={(event) => setBuilderRawTranscript(event.target.value)}
             />
@@ -1534,7 +1603,10 @@ function DatasetView({
               ))}
             </select>
             {segments.length === 0 && (
-              <p className="empty-state">No DicTeX segments found yet — refresh from the Segments view.</p>
+              <p className="empty-state">
+                No DicTeX segments found yet. Record a dictation in DicTeX, then go back to Segments and click
+                Refresh.
+              </p>
             )}
             {selectedBuilderSegment && (
               <p className="correction-raw">Raw: {selectedBuilderSegment.transcript || "-"}</p>
@@ -1543,6 +1615,7 @@ function DatasetView({
         )}
 
         <p className="transcript-label">Layer 1 — literal-correct transcript (verbal)</p>
+        <p className="builder-hint">Required to save anything; also the input to Layer 2.</p>
         <textarea
           aria-label="Layer 1: literal transcript"
           placeholder="e.g. x au carré plus deux"
@@ -1551,6 +1624,10 @@ function DatasetView({
         />
 
         <p className="transcript-label">Layer 2 — normalized notation (LaTeX/KaTeX-compatible)</p>
+        <p className="builder-hint">
+          Requires Layer 1. Builds the math_transform pair (literal -&gt; notation) — the only pair a paste source can
+          ever produce.
+        </p>
         <textarea
           aria-label="Layer 2: normalized notation"
           placeholder="e.g. x^2 + 2"
@@ -1582,6 +1659,7 @@ function DatasetView({
 
         {builderError && <pre className="error">{builderError}</pre>}
         {builderNotice && <p className="notice">{builderNotice}</p>}
+        {!builderError && !builderNotice && <p className="builder-hint">{builderPlanHint}</p>}
       </section>
 
       <section className="panel" aria-busy={isExportingDataset}>
