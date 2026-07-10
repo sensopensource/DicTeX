@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import "@dictex/shared/styles.css";
 import "./styles.css";
 import type {
   AudioSegmentRecord,
@@ -874,7 +875,7 @@ function SegmentsView({
       </section>
 
       <section className="panel history-panel" aria-busy={isLoadingSegments}>
-        <div className="history-header">
+        <div className="panel-header">
           <div>
             <h2>DicTeX segments</h2>
             <p>{segments.length > 0 ? `${segments.length} segments` : "Read from the DicTeX data folder"}</p>
@@ -982,7 +983,7 @@ function SegmentsView({
 
       {historyCorrectionTarget && (
         <section className="panel correction-panel">
-          <div className="correction-header">
+          <div className="panel-header">
             <div>
               <h2>STT correction</h2>
               <p title={`${historyCorrectionTarget.sessionId} / ${historyCorrectionTarget.segmentId}`}>
@@ -1111,7 +1112,7 @@ function BenchmarkView({
       </header>
 
       <section className="panel benchmark-panel" aria-busy={isBenchmarking}>
-        <div className="benchmark-header">
+        <div className="panel-header">
           <div>
             <h2>STT benchmark</h2>
             <p title={benchmarkSource ? `${benchmarkSource.sessionId} / ${benchmarkSource.segmentId}` : undefined}>
@@ -1149,7 +1150,7 @@ function BenchmarkView({
       </section>
 
       <section className="panel benchmark-panel" aria-busy={isRunningBatch}>
-        <div className="benchmark-header">
+        <div className="panel-header">
           <div>
             <h2>Benchmark set</h2>
             <p>Compare 1-3 STT candidates over every corrected {formatBenchmarkSetSplit(batchSplit)} segment</p>
@@ -1262,7 +1263,7 @@ function BenchmarkView({
       </section>
 
       <section className="panel summary-panel">
-        <div className="benchmark-header">
+        <div className="panel-header">
           <div>
             <h2>Candidate summary</h2>
             <p>
@@ -1369,7 +1370,7 @@ function BenchmarkView({
       </section>
 
       <section className="panel error-analysis-panel">
-        <div className="benchmark-header">
+        <div className="panel-header">
           <div>
             <h2>Error analysis</h2>
             <p>Heuristic diagnostics from the last benchmark set run, not a training signal</p>
@@ -1479,7 +1480,7 @@ function DatasetView({
       </header>
 
       <section className="panel" aria-busy={isSavingBuilderEntry}>
-        <div className="benchmark-header">
+        <div className="panel-header">
           <div>
             <h2>Build a dataset entry</h2>
             <p>No microphone: paste a transcription or pick a DicTeX segment, then type the two layers by hand</p>
@@ -1584,7 +1585,7 @@ function DatasetView({
       </section>
 
       <section className="panel" aria-busy={isExportingDataset}>
-        <div className="benchmark-header">
+        <div className="panel-header">
           <div>
             <h2>Export corrected STT dataset</h2>
             <p>

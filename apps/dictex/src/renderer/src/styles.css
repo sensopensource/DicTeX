@@ -1,180 +1,64 @@
-:root {
-  color: #d8d8d8;
-  background: #101010;
-  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background: #101010;
-}
-
-button,
-textarea {
-  font: inherit;
-}
-
-.app-shell {
-  display: grid;
-  gap: 0.75rem;
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 1rem;
-}
-
-.titlebar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  min-height: 3.5rem;
-}
-
-.eyebrow {
-  margin: 0 0 0.15rem;
-  color: #8f8f8f;
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-h1 {
-  margin: 0;
-  color: #f4f4f4;
-  font-size: 1.15rem;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
-h2 {
-  margin: 0;
-  color: #f4f4f4;
-  font-size: 0.92rem;
-  font-weight: 600;
-}
-
-.status-pill {
-  border: 1px solid #303030;
-  border-radius: 999px;
-  padding: 0.35rem 0.65rem;
-  color: #d8d8d8;
-  background: #181818;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-}
-
-.status-recording {
-  border-color: #7a3a22;
-  color: #ffb088;
-}
-
-.status-transcribing {
-  border-color: #62551f;
-  color: #ead46a;
-}
-
-.status-pasted,
-.status-copied {
-  border-color: #275b37;
-  color: #93e0a8;
-}
-
-.status-error {
-  border-color: #713030;
-  color: #ff9a9a;
-}
-
-.panel {
-  border: 1px solid #2a2a2a;
-  border-radius: 0.75rem;
-  background: #151515;
-}
-
-.nav-panel {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.6rem;
-  padding: 0.75rem;
-}
-
-.nav-button {
-  min-height: 2.75rem;
-  border: 1px solid #303030;
-  border-radius: 0.55rem;
-  color: #d8d8d8;
-  background: #1c1c1c;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-}
-
-.nav-button:hover {
-  background: #252525;
-}
-
-.controls-panel {
-  display: grid;
-  gap: 0.75rem;
-  padding: 0.75rem;
-}
+/* DicTeX (consumer dictation app) renderer styles.
+ *
+ * Shared tokens, reset, panels, headers, nav, status pills, buttons, inputs,
+ * history rows, and error/notice/empty states live in @dictex/shared/styles.css
+ * (imported first). This file holds only what is unique to DicTeX Home:
+ * the record button, shortcut/model rows, the diagnostics grid, the collapsible
+ * history toggle, the normalized-output line, and the last-transcript / footer
+ * panels. Reference shared tokens (var(--…)) instead of literal colors. */
 
 .record-button {
   min-height: 4rem;
-  border: 1px solid #3a3a3a;
-  border-radius: 0.55rem;
-  color: #f4f4f4;
-  background: #222;
+  border: 1px solid var(--border-record);
+  border-radius: var(--radius-md);
+  color: var(--text-strong);
+  background: var(--record-bg);
   cursor: pointer;
   font-size: 1rem;
   font-weight: 600;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .record-button:hover:not(:disabled) {
-  background: #2a2a2a;
+  background: var(--record-bg-hover);
 }
 
 .record-button:active:not(:disabled) {
-  border-color: #888;
-  background: #303030;
+  border-color: var(--border-emphasis);
+  background: var(--surface-active);
 }
 
 .record-button:disabled {
-  cursor: default;
-  opacity: 0.7;
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .shortcut-row {
   display: grid;
   grid-template-columns: minmax(5rem, auto) 1fr auto;
-  gap: 0.75rem;
+  gap: var(--space-3);
   align-items: center;
-  color: #8f8f8f;
+  color: var(--text-muted);
   font-size: 0.8rem;
 }
 
 .shortcut-row strong {
-  color: #f4f4f4;
+  color: var(--text-strong);
   font-weight: 500;
 }
 
 .signal-good {
-  color: #93e0a8;
+  color: var(--good);
 }
 
 .signal-bad {
-  color: #ff9a9a;
+  color: var(--danger);
 }
 
 .signal-muted {
-  color: #777;
+  color: var(--text-faint);
 }
 
 .diagnostics-grid {
@@ -185,10 +69,10 @@ h2 {
 
 .metric {
   display: grid;
-  gap: 0.25rem;
+  gap: var(--space-1);
   min-width: 0;
-  border-right: 1px solid #2a2a2a;
-  border-bottom: 1px solid #2a2a2a;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 0.65rem;
 }
 
@@ -201,43 +85,25 @@ h2 {
 }
 
 .metric span {
-  color: #777;
+  color: var(--text-faint);
   font-size: 0.68rem;
   text-transform: uppercase;
 }
 
 .metric strong {
   overflow: hidden;
-  color: #e8e8e8;
+  color: var(--text-value);
   font-size: 0.8rem;
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.transcript-panel {
-  display: grid;
-  gap: 0.65rem;
-  padding: 0.75rem;
-}
-
-.history-panel {
-  display: grid;
-  gap: 0.7rem;
-  padding: 0.75rem;
-}
-
-.history-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
+/* Collapsible history header toggle (DicTeX Home only). */
 .history-toggle {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
   border: none;
   padding: 0;
@@ -248,124 +114,20 @@ h2 {
 }
 
 .history-chevron {
-  color: #8f8f8f;
+  color: var(--text-muted);
   font-size: 0.8rem;
-  transition: transform 0.12s ease;
+  transition: transform var(--transition-fast);
 }
 
 .history-chevron-open {
   transform: rotate(90deg);
 }
 
-.history-header div {
-  min-width: 0;
-}
-
-.history-header p {
-  overflow: hidden;
-  margin: 0.15rem 0 0;
-  color: #8f8f8f;
-  font-size: 0.74rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.history-list {
-  display: grid;
-  gap: 0.5rem;
-  max-height: 22rem;
-  overflow: auto;
-  padding-right: 0.1rem;
-}
-
-.history-item {
-  display: grid;
-  gap: 0.5rem;
-  min-width: 0;
-  border: 1px solid #2a2a2a;
-  border-radius: 0.45rem;
-  padding: 0.6rem;
-  background: #101010;
-}
-
-.history-heading {
-  display: grid;
-  grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) auto;
-  gap: 0.55rem;
-  align-items: center;
-  min-width: 0;
-}
-
-.history-heading span {
-  color: #8f8f8f;
-  font-size: 0.72rem;
-  white-space: nowrap;
-}
-
-.history-heading strong {
-  overflow: hidden;
-  color: #f4f4f4;
-  font-size: 0.74rem;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.correction-state {
-  border: 1px solid #343434;
-  border-radius: 999px;
-  padding: 0.18rem 0.42rem;
-  color: #8f8f8f;
-  background: #151515;
-  font-size: 0.64rem;
-  font-style: normal;
-  text-transform: uppercase;
-}
-
-.correction-state-done {
-  border-color: #275b37;
-  color: #93e0a8;
-}
-
-.history-transcripts {
-  display: grid;
-  gap: 0.35rem;
-  min-width: 0;
-}
-
-.history-transcript {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  color: #d8d8d8;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-}
-
-.history-transcript-corrected {
-  color: #f0f0f0;
-}
-
-.history-raw-transcript {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  color: #8f8f8f;
-  font-size: 0.74rem;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
 .history-normalized-transcript {
   display: -webkit-box;
   margin: 0;
   overflow: hidden;
-  color: #9fc7a6;
+  color: var(--good-dim);
   font-size: 0.74rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -373,143 +135,34 @@ h2 {
   -webkit-line-clamp: 2;
 }
 
-.history-footer {
+/* Last transcript (raw STT) panel. */
+.last-transcript-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.5rem;
-  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
 }
 
-.normalized-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid #2f3a30;
-  border-radius: 8px;
-  background: #1a211b;
-}
-
-.normalized-preview-label {
-  color: #9fc7a6;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.normalized-preview-text {
+.transcript {
   margin: 0;
-  color: #e8e8e8;
-  font-size: 0.82rem;
-  line-height: 1.45;
+  max-height: 14rem;
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  color: var(--text-strong);
+  background: var(--bg);
+  font-size: 0.86rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.history-meta {
+/* Footer: data-folder / log / dictionary / rules shortcuts. */
+.footer-panel {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  min-width: 0;
-  color: #8f8f8f;
-  font-size: 0.7rem;
-}
-
-.history-meta span {
-  overflow: hidden;
-  max-width: 8rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.history-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  justify-content: flex-end;
-}
-
-.transcript-label {
-  color: #8f8f8f;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-}
-
-textarea {
-  width: 100%;
-  min-height: 9rem;
-  resize: vertical;
-  border: 1px solid #2f2f2f;
-  border-radius: 0.55rem;
-  padding: 0.75rem;
-  color: #f4f4f4;
-  background: #101010;
-  font-size: 0.86rem;
-  line-height: 1.55;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.secondary-button {
-  border: 1px solid #303030;
-  border-radius: 0.45rem;
-  padding: 0.5rem 0.65rem;
-  color: #d8d8d8;
-  background: #1c1c1c;
-  cursor: pointer;
-  font-size: 0.78rem;
-}
-
-.secondary-button:hover:not(:disabled) {
-  background: #252525;
-}
-
-.secondary-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.secondary-select {
-  min-width: 7.25rem;
-  border: 1px solid #303030;
-  border-radius: 0.45rem;
-  padding: 0.5rem 0.55rem;
-  color: #d8d8d8;
-  background: #1c1c1c;
-  cursor: pointer;
-  font-size: 0.78rem;
-}
-
-.secondary-select:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.error {
-  overflow: auto;
-  margin: 0;
-  border: 1px solid #713030;
-  border-radius: 0.45rem;
-  padding: 0.6rem;
-  color: #ffb5b5;
-  background: #261616;
-  font-size: 0.78rem;
-  white-space: pre-wrap;
-}
-
-.notice {
-  margin: 0;
-  color: #9a9a9a;
-  font-size: 0.78rem;
-}
-
-.empty-state {
-  margin: 0;
-  color: #8f8f8f;
-  font-size: 0.78rem;
+  gap: var(--space-2);
+  padding: var(--space-3);
 }
 
 @media (max-width: 680px) {
@@ -522,28 +175,14 @@ textarea {
   }
 
   .metric:nth-child(4n) {
-    border-right: 1px solid #2a2a2a;
+    border-right: 1px solid var(--border);
   }
 
   .metric:nth-last-child(-n + 4) {
-    border-bottom: 1px solid #2a2a2a;
+    border-bottom: 1px solid var(--border);
   }
 
   .metric:nth-last-child(-n + 2) {
     border-bottom: 0;
-  }
-
-  .history-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .history-heading,
-  .history-footer {
-    grid-template-columns: 1fr;
-  }
-
-  .history-actions {
-    justify-content: flex-start;
   }
 }

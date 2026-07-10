@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import "@dictex/shared/styles.css";
 import "./styles.css";
 
 type Status = "idle" | "recording" | "transcribing" | "done" | "error";
@@ -581,7 +582,7 @@ function HistoryPanel({
 
   return (
     <section className="panel history-panel" aria-busy={isLoadingHistory}>
-      <div className="history-header">
+      <div className="panel-header">
         <button
           className="history-toggle"
           aria-expanded={historyExpanded}

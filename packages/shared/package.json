@@ -9,7 +9,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./formatting": "./src/formatting.ts",
-    "./errorAnalysis": "./src/errorAnalysis.ts"
+    "./errorAnalysis": "./src/errorAnalysis.ts",
+    "./styles.css": "./src/styles.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
