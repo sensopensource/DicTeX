@@ -14,7 +14,7 @@
   color: var(--text-strong);
   background: var(--record-bg);
   cursor: pointer;
-  font-size: 1rem;
+  font-size: var(--text-xl);
   font-weight: 600;
   transition:
     background var(--transition-fast),
@@ -41,7 +41,7 @@
   gap: var(--space-3);
   align-items: center;
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--text-base);
 }
 
 .shortcut-row strong {
@@ -86,14 +86,14 @@
 
 .metric span {
   color: var(--text-faint);
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
 }
 
 .metric strong {
   overflow: hidden;
   color: var(--text-value);
-  font-size: 0.8rem;
+  font-size: var(--text-base);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -115,7 +115,7 @@
 
 .history-chevron {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--text-base);
   transition: transform var(--transition-fast);
 }
 
@@ -128,7 +128,7 @@
   margin: 0;
   overflow: hidden;
   color: var(--good-dim);
-  font-size: 0.74rem;
+  font-size: var(--text-sm);
   line-height: 1.45;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
@@ -151,7 +151,7 @@
   padding: var(--space-3);
   color: var(--text-strong);
   background: var(--bg);
-  font-size: 0.86rem;
+  font-size: var(--text-lg);
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
