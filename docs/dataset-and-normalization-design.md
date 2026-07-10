@@ -355,7 +355,7 @@ No, and the question mistakes what the `math_transform` dataset is for.
 
 ### The regex layer is structurally bounded
 
-Layer 2's operand is a single token (`apps/dictex/src/main/normalizer.ts`):
+Layer 2's operand is a single token (`packages/shared/src/normalizer.ts`):
 
 ```js
 const OPERAND = "(\\d+[²³]?|\\p{L}[²³]?)";
@@ -394,9 +394,11 @@ training set of a model.
 ### Decided — what layer 3 consumes
 
 > **Decision: resolution 1, layer 3 learns the residual.** Recorded 2026-07-10.
-> Implemented by #100 (move the normalizer into `packages/shared`, replay the
-> pipeline over Layer 1 at export) and #101 (the builder prefills Layer 2 from the
-> pipeline output). The reasoning is below; the alternative is kept for the record.
+> Implemented by #100 (**landed**: the normalizer now lives in
+> `packages/shared/src/normalizer.ts` and `buildSttDatasetExport` replays the
+> pipeline over Layer 1 at export, recording the rules/dictionary hash in the
+> export metadata) and #101 (the builder prefills Layer 2 from the pipeline
+> output). The reasoning is below; the alternative is kept for the record.
 
 The principle that decided it: **never make a model learn what a rule does with
 certainty.** A seq2seq allowed to rewrite `x²` is also allowed to write `x³`. The
@@ -433,11 +435,14 @@ rules/dictionary version so a dataset can be traced to the pipeline that built i
 **The human-authored target never changes.** Layer 2 is what you validated; it is
 independent of the regex version. Corrections never rot, and you never retype.
 
-**The normalizer must move into `packages/shared`** (#100). It currently lives in
-`apps/dictex/src/main/normalizer.ts` while the export lives in
-`packages/shared/src/datasetExport.ts`. Replaying the pipeline at export from a
-second copy would recreate exactly the train/serve divergence that §4 eliminated
-for command words — one pipeline for DicTeX, another for the dataset.
+**The normalizer moved into `packages/shared`** (#100, landed). It now lives in
+`packages/shared/src/normalizer.ts` (the main-process-only `.` barrel — it imports
+`node:fs`) alongside the export at `packages/shared/src/datasetExport.ts`, imported
+by both `apps/dictex`'s main process and the export. Replaying the pipeline at
+export from a second copy would have recreated exactly the train/serve divergence
+that §4 eliminated for command words — one pipeline for DicTeX, another for the
+dataset — so a test asserts the exported `math_transform` input equals what
+`apps/dictex` serves for the same Layer 1.
 
 **The builder should prefill Layer 2 with the pipeline output** (#101), so the
 correction the human types *is* the residual: instead of writing

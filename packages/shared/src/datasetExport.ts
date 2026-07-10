@@ -1,4 +1,8 @@
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { extractCommands } from "./commands.js";
+import { createTranscriptNormalizer, type NormalizeOptions } from "./normalizer.js";
 import {
   CORRECTION_KIND_ORDER,
   countUntypedSttCorrections,
@@ -26,11 +30,24 @@ export const STT_DATASET_SPLITS: SttBenchmarkSetSplit[] = [
  * target); for an `acoustic` correction the pair is audio -> literal transcript,
  * for a `math_transform` correction it is literal text -> notation.
  *
- * On a `math_transform` pair BOTH transcripts additionally pass through
- * `extractCommands` (issue #92): the store holds the canonical command words, and
- * the sentinel exists only in the exported training pair, so the seq2seq is
- * trained on the same convention `apps/dictex`'s normalizer serves. An `acoustic`
- * pair is never substituted — its Layer 1 stays verbatim for the STT model.
+ * On a `math_transform` pair the two sides are built differently (issue #100):
+ *
+ * - `rawTranscript` (the training INPUT, what layer 3 receives at inference) is
+ *   the stored Layer 1 replayed through the FULL normalizer pipeline —
+ *   dictionary -> command extraction -> regex — via the one shared normalizer
+ *   `apps/dictex` serves. So "x au carré plus deux" is exported as "x² plus deux":
+ *   the regex rule that DicTeX would have applied is applied here too, and layer 3
+ *   is trained on the residual it will actually be asked to fix, not on raw
+ *   verbatim. Command extraction is part of that pipeline, so the sentinel is
+ *   present exactly as before (#92).
+ * - `correctedTranscript` (the human-authored TARGET, Layer 2) passes through
+ *   `extractCommands` ONLY — never the dictionary or regex. Layer 2 is the
+ *   validated notation and is independent of the rules version, so it must not be
+ *   rewritten by them; it only receives the same command-word substitution so the
+ *   seq2seq sees the sentinel on both sides and learns to pass it through.
+ *
+ * An `acoustic` pair is never touched — its Layer 1 stays verbatim for the STT
+ * model, and neither the normalizer nor `extractCommands` is applied to it.
  *
  * `originalSttOutput` preserves the raw STT output even when the correction's own
  * `rawTranscript` is a later literal-correct transcript (chained #66 corrections),
@@ -70,18 +87,53 @@ export type SttDatasetSplitGroup = {
   kinds: SttDatasetKindGroup[];
 };
 
+/**
+ * Content fingerprint of the normalizer configuration that built the
+ * `math_transform` training INPUTS (issue #100). Because the input is now the
+ * pipeline output over Layer 1, adding or editing a regex rule changes every
+ * input — by design — so a dataset must be traceable to the pipeline that
+ * produced it. A sha256 (hex) of each config file's bytes is enough.
+ *
+ * `null` means the file was absent at export time, which is a normal, meaningful
+ * state, not an error:
+ * - `dictionaryHash: null` — no personal dictionary; that layer was passthrough.
+ * - `rulesHash: null` — no user rules file; the built-in `DEFAULT_RULES` applied,
+ *   traceable through the source/git version of `@dictex/shared`.
+ *
+ * The human-authored TARGET (Layer 2) is independent of this version and never
+ * changes — corrections never rot.
+ */
+export type NormalizerVersion = {
+  dictionaryHash: string | null;
+  rulesHash: string | null;
+};
+
 export type SttDatasetExport = {
   createdAt: string;
   /** Base STT candidate selected at export time (embedded on every record). Null
    * when no selection has been recorded yet — export still proceeds. */
   selectedCandidate: BenchmarkCandidateIdentity | null;
   selectionReason: string | null;
+  /** Fingerprint of the dictionary/rules that produced the `math_transform`
+   * inputs, recorded alongside `selectedCandidate` so the dataset is traceable to
+   * the pipeline version that built it (issue #100). */
+  normalizerVersion: NormalizerVersion;
   splits: SttDatasetSplitGroup[];
   totalRecords: number;
   /** Correction events skipped because they carry no correction_kind and cannot
    * be routed into a kind-partitioned dataset. Reported, never silent. */
   skippedUntypedCorrections: number;
 };
+
+/**
+ * Options for building the export. The dictionary/rules paths point at the
+ * SOURCE (DicTeX) data folder's normalizer config and are read READ-ONLY (the
+ * normalizer only reads them); the Lab never writes into DicTeX's folder (see
+ * `docs/product-decisions.md`). They are the same `NormalizeOptions` DicTeX
+ * passes at inference, which is what makes the exported `math_transform` input
+ * equal to what DicTeX would serve for the same Layer 1.
+ */
+export type BuildSttDatasetExportOptions = NormalizeOptions;
 
 /**
  * Builds the corrected STT dataset export from the append-only event log without
@@ -91,16 +143,35 @@ export type SttDatasetExport = {
  * data-integrity requirement for this export (see AGENTS.md). Records are grouped
  * by split, then by correction kind, so acoustic (STT) and math_transform
  * (normalizer) datasets land in distinct files.
+ *
+ * For a `math_transform` pair the training INPUT is built by replaying the full
+ * normalizer pipeline over the stored Layer 1 (issue #100), using the ONE shared
+ * normalizer `apps/dictex` serves — so layer 3 trains on exactly what it will be
+ * given at inference. The config that produced those inputs is fingerprinted into
+ * `normalizerVersion`. Async because loading the dictionary/rules touches disk.
  */
-export function buildSttDatasetExport(events: LocalEvent[], createdAt: string): SttDatasetExport {
+export async function buildSttDatasetExport(
+  events: LocalEvent[],
+  createdAt: string,
+  options: BuildSttDatasetExportOptions,
+): Promise<SttDatasetExport> {
   const selection = getLatestSttCandidateSelection(events);
   const selectedCandidate = selection?.candidate ?? null;
   const selectionReason = selection?.selectionReason ?? null;
 
+  // Load the dictionary + rules once and reuse the pipeline for every record.
+  // `createTranscriptNormalizer` is the exact same fold DicTeX runs through
+  // `normalizeTranscript`, so the exported input and the served text are
+  // byte-identical for a given config — the invariant this issue exists to
+  // create (asserted directly in datasetExport.test.ts).
+  const normalizer = await createTranscriptNormalizer(options);
+  const normalizerVersion = await fingerprintNormalizerConfig(options);
+
   let totalRecords = 0;
   let skippedUntypedCorrections = 0;
 
-  const splits: SttDatasetSplitGroup[] = STT_DATASET_SPLITS.map((split) => {
+  const splits: SttDatasetSplitGroup[] = [];
+  for (const split of STT_DATASET_SPLITS) {
     const segments = getSttBenchmarkSetSegments(events, split);
     const recordsByKind = new Map<CorrectionKind, SttDatasetRecord[]>();
     let correctedSegmentCount = 0;
@@ -117,21 +188,30 @@ export function buildSttDatasetExport(events: LocalEvent[], createdAt: string): 
       const sttInfo = getSegmentSttInfo(events, segment.sessionId, segment.segmentId);
 
       for (const correction of corrections) {
-        // Command-word substitution (issue #92). The event store holds the
-        // canonical words in full; sentinels are introduced only here, when the
-        // training pair is built, so `apps/dictex`'s normalizer and this export
-        // share ONE command table (packages/shared/commands.ts). Applied to BOTH
-        // layers of a `math_transform` pair (input = literal Layer 1, target =
-        // notation Layer 2) so the seq2seq sees the sentinel on both sides and
-        // learns to pass it through. NEVER applied to an `acoustic` pair: Layer 1
-        // is verbatim forever and its command words must stay spelled out for the
-        // STT model to transcribe them. Because substitution happens at export,
-        // regenerating after adding a command retroactively fixes every pair.
-        const substitute = correction.correctionKind === "math_transform";
-        const rawTranscript = substitute
-          ? extractCommands(correction.rawTranscript)
+        // A `math_transform` pair is transformed at export; an `acoustic` pair is
+        // taken verbatim (Layer 1 is the STT target and must never be normalized).
+        // The event store holds plain, sentinel-free text in every case — the
+        // transformation below is a pure function of the derived training pair, so
+        // regenerating after a rule/command change retroactively fixes every pair
+        // without touching the store.
+        const isMathTransform = correction.correctionKind === "math_transform";
+
+        // INPUT (issue #100): replay the FULL pipeline — dictionary -> command
+        // extraction -> regex — over the stored Layer 1, through the one shared
+        // normalizer DicTeX serves at inference. Command extraction is a pipeline
+        // layer, so the sentinel is introduced here exactly as in #92; the regex
+        // rule DicTeX would have applied is applied too, so layer 3 trains on the
+        // residual it will actually be asked to fix.
+        const rawTranscript = isMathTransform
+          ? (await normalizer.normalize(correction.rawTranscript)).output
           : correction.rawTranscript;
-        const correctedTranscript = substitute
+
+        // TARGET: the human-authored Layer 2 notation, with command-word
+        // substitution ONLY (issue #92) — never the dictionary or regex, which
+        // would rewrite validated notation and couple the target to the rules
+        // version. `extractCommands` is the same shared table the pipeline uses,
+        // so the sentinel matches on both sides.
+        const correctedTranscript = isMathTransform
           ? extractCommands(correction.correctedTranscript)
           : correction.correctedTranscript;
 
@@ -167,15 +247,47 @@ export function buildSttDatasetExport(events: LocalEvent[], createdAt: string): 
 
     const recordCount = kinds.reduce((sum, group) => sum + group.records.length, 0);
 
-    return { split, segmentCount: segments.length, correctedSegmentCount, recordCount, kinds };
-  });
+    splits.push({ split, segmentCount: segments.length, correctedSegmentCount, recordCount, kinds });
+  }
 
   return {
     createdAt,
     selectedCandidate,
     selectionReason,
+    normalizerVersion,
     splits,
     totalRecords,
     skippedUntypedCorrections,
   };
+}
+
+/**
+ * Fingerprint the dictionary and rules files that drive the `math_transform`
+ * inputs. Reads the SAME two files the normalizer just loaded, read-only. A
+ * missing file yields `null` (see `NormalizerVersion`): an absent dictionary is
+ * passthrough, and absent rules mean the built-in `DEFAULT_RULES` applied.
+ *
+ * The two files are read once more here rather than threaded out of the
+ * normalizer; for a local single-user export the window in which a config file
+ * could change between the pipeline load and this hash is not a concern.
+ */
+async function fingerprintNormalizerConfig(options: NormalizeOptions): Promise<NormalizerVersion> {
+  return {
+    dictionaryHash: await hashFileIfPresent(options.dictionaryPath),
+    rulesHash: await hashFileIfPresent(options.rulesPath),
+  };
+}
+
+async function hashFileIfPresent(filePath: string): Promise<string | null> {
+  if (!existsSync(filePath)) {
+    return null;
+  }
+  try {
+    const contents = await readFile(filePath);
+    return createHash("sha256").update(contents).digest("hex");
+  } catch {
+    // Unreadable file: the normalizer already degrades this to passthrough with a
+    // diagnostic, so the export must not crash either. Record it as absent.
+    return null;
+  }
 }
