@@ -13,7 +13,7 @@
     "dev": "npm run dev --workspace apps/dictex",
     "dev:dictex": "npm run dev --workspace apps/dictex",
     "dev:lab": "npm run dev --workspace apps/lab",
-    "test": "node --import tsx --test packages/shared/src/commands.test.ts packages/shared/src/datasetExport.test.ts packages/shared/src/sttEngine.test.ts"
+    "test": "node --import tsx --test packages/shared/src/commands.test.ts packages/shared/src/datasetExport.test.ts packages/shared/src/sttEngine.test.ts packages/shared/src/textDiff.test.ts"
   },
   "devDependencies": {
     "tsx": "^4.23.0"

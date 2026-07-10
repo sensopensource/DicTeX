@@ -13,8 +13,12 @@
  *   - `packages/shared` dataset export: `extractCommands` is applied to both
  *     layers of a `math_transform` training pair AT EXPORT TIME, so the seq2seq is
  *     trained on the same convention DicTeX serves.
+ *   - DicTeX Lab's dataset builder (issue #101): `restoreCommandWords` turns a
+ *     sentinel back into its CANONICAL WORDS (not its effect — that's
+ *     `expandCommands`'s job) so the Lab can prefill Layer 2 with the full
+ *     pipeline's output while keeping the storage rule below.
  *
- * If these two callers used different tables the seq2seq would be trained on one
+ * If these callers used different tables the seq2seq would be trained on one
  * convention and served with another — a silent corruption of the whole
  * normalization track. Hence one table, here, and nowhere else.
  *
@@ -112,6 +116,10 @@ const EXPANSION_BY_SENTINEL: Map<string, string> = new Map(
   COMMANDS.map((command) => [command.sentinel, command.expansion]),
 );
 
+const CANONICAL_BY_SENTINEL: Map<string, string> = new Map(
+  COMMANDS.map((command) => [command.sentinel, command.canonical]),
+);
+
 /**
  * Replace every spoken command in `text` with its inert sentinel. Non-command
  * text is returned untouched. Idempotent: a sentinel already present is left as
@@ -137,4 +145,29 @@ export function extractCommands(text: string): string {
  */
 export function expandCommands(text: string): string {
   return text.replace(SENTINEL_PATTERN_GLOBAL, (char) => EXPANSION_BY_SENTINEL.get(char) ?? "");
+}
+
+/**
+ * Replace every command sentinel in `text` with its CANONICAL SPOKEN PHRASE —
+ * the exact inverse of `extractCommands` for the sentinel -> words direction
+ * (as opposed to `expandCommands`, which is the sentinel -> effect direction).
+ *
+ * Used by the Lab dataset builder's Layer 2 prefill (issue #101): the prefill
+ * runs the full normalizer pipeline (dictionary -> command extraction ->
+ * regex) so the regex sees exactly the text production gives it, but the
+ * append-only store must never hold a sentinel or a literal command effect
+ * (storage rule, `docs/dataset-and-normalization-design.md` §4) — the builder
+ * holds canonical words in both layers. Routing the pipeline's output through
+ * this function before it ever reaches a text field or a save request
+ * restores "retour à la ligne" in place of the sentinel, so a prefilled
+ * Layer 2 is exactly what a human would have typed by hand.
+ *
+ * Like `expandCommands`, this is a TOTAL sentinel eliminator: any code point
+ * in the reserved block `U+E000`-`U+E00F` is removed from the result (a known
+ * sentinel becomes its canonical words, an unknown reserved one is dropped),
+ * so the result is guaranteed sentinel-free regardless of future table
+ * changes.
+ */
+export function restoreCommandWords(text: string): string {
+  return text.replace(SENTINEL_PATTERN_GLOBAL, (char) => CANONICAL_BY_SENTINEL.get(char) ?? "");
 }

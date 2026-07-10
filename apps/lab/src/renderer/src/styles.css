@@ -408,6 +408,42 @@
   overflow-wrap: anywhere;
 }
 
+/* ---- Dataset builder Layer 2 prefill diff (issue #101) -------------------- */
+
+/* A prefilled Layer 2 invites passive acceptance, so what the pipeline
+   changed vs. Layer 1 is always shown, not hidden behind a "looks fine"
+   textarea. Kept compact and sober: one inset block, existing tokens only,
+   no decorative diff view. */
+.prefill-diff {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.prefill-diff-added,
+.prefill-diff-removed {
+  border-radius: var(--radius-xs);
+  padding: 0 0.15em;
+}
+
+.prefill-diff-added {
+  color: var(--good);
+  background: color-mix(in srgb, var(--good) 18%, transparent);
+}
+
+.prefill-diff-removed {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  text-decoration: line-through;
+}
+
 /* ---- Dataset export summary ---------------------------------------------- */
 
 .dataset-export-summary {

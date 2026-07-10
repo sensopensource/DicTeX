@@ -223,11 +223,17 @@ real transcription by hand. Two independent inputs:
   in the Segments view; the real `sessionId`/`segmentId`/`audioRef` and raw
   transcript are reused as-is.
 
-Then two layers, always typed by hand:
+Then two layers:
 
-- **Layer 1 (literal, verbal)** — e.g. `x au carré plus deux`.
+- **Layer 1 (literal, verbal)** — always typed by hand, e.g.
+  `x au carré plus deux`. Never prefilled from a script: it must match what
+  was actually said (see "Layer 2 prefill" below, and §5 of
+  `docs/dataset-and-normalization-design.md`).
 - **Layer 2 (normalized notation, LaTeX/KaTeX-compatible)** — e.g. `x^2 + 2`;
-  the field stays disabled until Layer 1 is filled.
+  the field stays disabled until Layer 1 is filled, and is **prefilled** from
+  the pipeline once Layer 1 has content (issue #101, see below) — always
+  editable, and whatever is left in the field at `Save entry` time is what
+  gets saved.
 
 Clicking `Save entry` writes chained `stt_correction` events into the Lab's
 **own** store (never DicTeX's folder), same principle as the removed #66
@@ -255,6 +261,35 @@ text-only, math_transform-only entry. A **picked-segment** entry always keeps
 its real `audio_ref`/`audio_path`, resolved against the configured (read-only)
 DicTeX data folder.
 
+### Layer 2 prefill + diff (issue #101)
+
+Once Layer 1 has content, the Lab prefills Layer 2 by running the FULL
+normalizer pipeline (dictionary -> command extraction -> regex, the SAME fold
+`apps/dictex` serves at inference and the export replays, #100) over Layer 1,
+reading the SOURCE folder's dictionary/rules read-only (a main-process call —
+the renderer cannot touch `node:fs` — behind the
+`dataset-builder:prefill-layer2` IPC channel). Command extraction turns a
+spoken command into a sentinel; before the result ever reaches the renderer,
+`restoreCommandWords` (`packages/shared/src/commands.ts`) maps it back to its
+canonical spoken phrase, so the field never holds a sentinel or a literal
+command effect (the storage rule, design doc §4) — only canonical words, in
+both layers.
+
+Example (from the design doc): Layer 1 `retour à la ligne x au carré plus
+deux` prefills Layer 2 with `retour à la ligne x² plus deux` — the regex
+recognizes "au carré" (a real operand on both sides) but not "plus deux"
+(spelled out, not a digit/letter operand), so the human fixes three words
+instead of typing the whole line.
+
+What changed is always shown, inline, as a compact word-level diff between
+Layer 1 and the prefill (`packages/shared/src/textDiff.ts`) — a prefilled
+field invites passive acceptance, and a subtly wrong regex output accepted
+without looking would teach layer 3 that error, or enter `validation` as
+ground truth. The prefill is only ever a starting point: further edits to
+Layer 2 are never overwritten by a later prefill unless the field still holds
+an earlier, untouched auto-prefill (or is empty); `Save entry` writes exactly
+whatever is left in the field, same as before this issue.
+
 ### Manual Lab smoke test
 
 1. `scripts\npm.cmd run dev:lab`, confirm the window opens to the Segments
@@ -269,9 +304,18 @@ DicTeX data folder.
    `DICTEX_PYTHON`); confirm `tiny`/`base`/`small` transcripts + latency
    appear. Run `Run analysis` over `Test frozen`, `Summarize by candidate`,
    and `Select` a candidate.
-5. In `Dataset`, use **Build a dataset entry**: pick a DicTeX segment, type a
-   Layer 1 literal transcript, leave Layer 2 empty, choose `Test frozen`, and
-   click `Save entry`; confirm the notice reports an `acoustic` save only.
+5. In `Dataset`, use **Build a dataset entry**: paste a transcription (no
+   segment) and type a Layer 1 literal transcript containing a rule the
+   shipped default regex recognizes plus a word it does not (e.g.
+   `x au carré plus deux`); confirm Layer 2 prefills shortly after with the
+   pipeline's output (e.g. `x² plus deux`) and that a compact diff appears
+   showing "au carré" struck through and "²" highlighted as added, with
+   "plus deux" unmarked. Edit Layer 2 by hand and confirm your edit is kept
+   (not overwritten) even if you then tweak Layer 1 again. Clear Layer 1 and
+   confirm the prefill/diff disappear.
+   Then: pick a DicTeX segment, type a Layer 1 literal transcript, leave
+   Layer 2 empty, choose `Test frozen`, and click `Save entry`; confirm the
+   notice reports an `acoustic` save only.
    Paste a transcription (no segment), leave the raw text empty, fill Layer 1
    and Layer 2, and save; confirm the notice reports a `math_transform` save
    only, with a freshly minted `lab_manual_…` identity. Pick another segment,

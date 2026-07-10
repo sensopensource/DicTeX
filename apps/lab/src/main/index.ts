@@ -14,6 +14,8 @@ import {
   calculateCharacterErrorRate,
   summarizeSttBenchmarkResultsByCandidate,
   buildSttDatasetExport,
+  normalizeTranscript,
+  restoreCommandWords,
   transcribeWithPython,
   ProviderUnavailableError,
   getSttBenchmarkModels,
@@ -991,6 +993,45 @@ ipcMain.handle(
     };
   },
 );
+
+// ---- dataset builder Layer 2 prefill (issue #101) ----
+
+/**
+ * Prefills Layer 2 from the SOURCE folder's normalizer, run over the given
+ * Layer 1 text — the same full pipeline (dictionary -> command extraction ->
+ * regex) `apps/dictex` serves at inference and the export replays (#100), so
+ * the prefill reflects precisely what the regex layer sees in production
+ * rather than a second, possibly-diverging codepath.
+ *
+ * Command extraction is a real pipeline layer, so its output MAY contain a
+ * sentinel; `restoreCommandWords` (the sentinel -> canonical WORDS direction,
+ * as opposed to `expandCommands`'s sentinel -> EFFECT direction) turns it
+ * back into spelled-out command words before this ever reaches the renderer,
+ * so the builder never displays — and can therefore never save — a sentinel
+ * or a literal command effect (storage rule, design doc §4). Renderer-side
+ * this is asserted by construction: nothing downstream of this handler can
+ * introduce a sentinel back in.
+ *
+ * Read-only against the SOURCE (DicTeX) data folder, same as the export; this
+ * never writes anywhere.
+ */
+ipcMain.handle("dataset-builder:prefill-layer2", async (_event, literalTranscript: unknown): Promise<string> => {
+  if (typeof literalTranscript !== "string") {
+    throw new Error("Layer 1 (literal transcript) must be a string");
+  }
+
+  const trimmed = literalTranscript.trim();
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  const result = await normalizeTranscript(trimmed, {
+    dictionaryPath: getSourceDictionaryPath(),
+    rulesPath: getSourceRulesPath(),
+  });
+
+  return restoreCommandWords(result.output);
+});
 
 // ---- dataset export (own store) ----
 
