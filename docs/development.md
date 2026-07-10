@@ -1,5 +1,10 @@
 # Development
 
+> Ce guide décrit l'état réellement implémenté. La direction future vit dans
+> `docs/roadmap.md` et la convention de langue dans `CONTRIBUTING.md`. Les
+> anciennes sections anglaises sont conservées ; toute nouvelle instruction est
+> rédigée en français.
+
 ## Requirements
 
 - Node.js LTS
@@ -362,6 +367,26 @@ The UI also exposes diagnostics shortcuts:
 
 The local engine uses `faster-whisper`.
 
+### Durée de vie actuelle et cible
+
+Aujourd'hui, `transcribeWithPython` lance `packages/engine/transcribe.py` pour
+une requête, `faster_whisper_provider.py` construit le modèle, puis le processus
+s'arrête. Le cache d'un objet Python dans ce processus ne résoudrait donc pas le
+rechargement entre deux dictées.
+
+La prochaine évolution de DicTeX est un processus Python persistant :
+
+- démarrage et préchauffage asynchrones avec états `preparation` et `pret` ;
+- un seul modèle actif afin de respecter les 8 Go de mémoire vidéo ;
+- requêtes contenant l'audio, la configuration et un `initial_prompt` éventuel ;
+- redémarrage sur changement de modèle, de périphérique ou de type de calcul ;
+- reprise explicite après incident ;
+- mesure séparée de `model_load_ms` et de la durée de transcription chaude.
+
+Le Lab peut conserver provisoirement le chemin ponctuel lorsqu'il compare des
+modèles différents. Ne pas généraliser ce processus persistant à tous les cas
+avant que le flux quotidien en ait besoin.
+
 Defaults:
 
 ```text
@@ -482,15 +507,19 @@ reported unavailable. Vosk needs 16 kHz mono PCM and does not decode compressed
 audio, so the sidecar decodes stored segments with PyAV (already installed by
 faster-whisper) — no extra decode dependency.
 
-### STT system-prompt variants (faster-whisper `initial_prompt`)
+### Variantes de contexte initial STT (`initial_prompt` de faster-whisper)
 
-`faster-whisper`'s `initial_prompt` is the cheapest lever on STT quality (see
-`docs/dataset-and-normalization-design.md` §6): it costs no training data and
-no GPU, and it is already representable in the existing benchmark candidate
-identity — `{stage, provider, model, variant}` — as a new `variant`, with no
-schema change (issue #93). With no prompt configured, transcription is
-byte-for-byte identical to before this feature existed; a prompt is only ever
-applied when explicitly requested by name.
+`initial_prompt` fournit un contexte initial au décodeur faster-whisper ; ce
+n'est pas un « system prompt » de LLM. Le mécanisme est implémenté par #93 et
+s'intègre à l'identité `{stage, provider, model, variant}` sans changer le
+schéma. Sans variante demandée, la transcription suit exactement le chemin
+historique. Une variante n'est appliquée que lorsqu'elle est nommée
+explicitement.
+
+Le texte doit rester court et orienté vocabulaire/contexte. Il peut améliorer
+les noms et termes scientifiques, mais aussi biaiser la sortie : #94 doit donc
+comparer l'absence de contexte et plusieurs variantes sur les mêmes audios de
+`validation` avant de choisir la valeur de la dictée quotidienne.
 
 1. Define named variants as a JSON object mapping variant name -> prompt text,
    via `DICTEX_STT_PROMPT_VARIANTS`:
@@ -747,14 +776,13 @@ A malformed rules file (bad JSON or shape) disables the whole layer with a
 passthrough and a quiet diagnostic; a malformed individual rule (e.g. invalid
 regex) is skipped the same way individual dictionary entries are.
 
-**Migrating an existing `rules.json` (issue #107):** the rules file is
-user-editable and DicTeX never rewrites it in place, so a `rules.json` written
-before #107 keeps emitting its own (Unicode) rules untouched — DicTeX does not
-migrate it automatically. To pick up the new LaTeX defaults, delete (or
-rename) the file and let DicTeX reseed it on the next `Open rules` click or
-app start; a hand-edited file that mixes both conventions is the user's own
-choice to make; the regex layer imposes no format itself, only what one's
-rules emit.
+**Migration d'un `rules.json` antérieur à #107 :** ce fichier est modifiable par
+l'utilisateur et DicTeX ne le réécrit jamais. Une ancienne installation continue
+donc à produire ses règles Unicode. Avant les essais quotidiens, fermer DicTeX,
+copier le fichier sous un nom horodaté, puis renommer l'original et laisser
+DicTeX créer les nouvelles règles LaTeX au prochain démarrage. Vérifier ensuite
+les éventuelles règles personnelles et les reporter volontairement. Ne jamais
+supprimer l'unique copie ni mélanger silencieusement les deux conventions.
 
 The raw `stt_result` event is left untouched. Each dictation appends a separate
 append-only `normalization_result` event recording the input, the final output,

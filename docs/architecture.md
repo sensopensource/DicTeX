@@ -1,68 +1,83 @@
 # Architecture
 
-The first architecture is simple and local.
+DicTeX est un monorepo local composé d'un outil quotidien, d'un laboratoire et
+de deux paquets partagés.
+
+```text
+apps/dictex       microphone, raccourci, normalisation, insertion, historique
+apps/lab          écoute, corrections, mesures, ensembles et exports
+packages/engine   fournisseurs STT Python
+packages/shared   événements, normaliseur, LaTeX, mesures et exports TypeScript
+```
+
+## Flux actuel de DicTeX
 
 ```mermaid
 flowchart LR
-    A[Voice] --> B[Electron Renderer]
-    B --> C[Python STT Engine]
-    C --> D[Clipboard / Active App]
-    C --> E[JSONL STT Logs]
-    E --> F[Future Correction Data]
+    A[Audio] --> B[DicTeX]
+    B --> C[Processus Python STT ponctuel]
+    C --> D[Texte littéral]
+    D --> E[Normaliseur partagé]
+    E --> F[Markdown + LaTeX en ligne]
+    F --> G[Presse-papiers / application active]
+    B --> H[(Audio local)]
+    C --> I[(Événements JSONL)]
+    E --> I
 ```
 
-## Pipeline
+Le processus Python est encore lancé pour une transcription puis arrêté. La
+prochaine architecture STT quotidienne remplace cette frontière ponctuelle par
+un processus persistant qui garde un seul modèle actif en mémoire.
 
-Current pipeline:
+## Flux cible du moteur STT
+
+```mermaid
+sequenceDiagram
+    participant D as DicTeX
+    participant W as Processus STT persistant
+    D->>W: Démarrer et préchauffer le modèle
+    W-->>D: prêt + durée de chargement
+    loop Chaque dictée
+        D->>W: audio + configuration + initial_prompt éventuel
+        W-->>D: texte + durée de transcription
+    end
+    D->>W: arrêter avec l'application
+```
+
+Contraintes : un seul modèle chargé sur la carte graphique, redémarrage lors
+d'un changement de modèle ou de configuration, reprise explicite après un
+incident, et mesure séparée du chargement initial et des requêtes chaudes.
+
+## Frontière DicTeX / Lab
+
+DicTeX écrit ses données brutes dans son dossier local :
 
 ```text
-Audio capture
--> speech-to-text
--> clipboard
--> optional Windows auto-paste
--> audio_segment + stt_result event storage
+audio_segment
+stt_result
+normalization_result
 ```
 
-Future math pipeline:
+Le Lab lit ce dossier sans le modifier. Il écrit les corrections, appartenances
+aux ensembles, résultats de comparaison, sélections et exports dans son propre
+dossier. Les deux applications partagent les fonctions de dérivation afin
+d'éviter une divergence entre ce qui est servi et ce qui est mesuré.
+
+## Modèle de données
+
+Le cœur reste centré sur :
 
 ```text
-STT output
--> transcript normalization
--> paragraph/math/command classification
--> LaTeX generation
--> correction
--> correction event storage
+session_id + segment_id + audio_ref
 ```
 
-## Current MVP Stack
+Les événements sont à ajout uniquement (`append-only`). Une correction ou une
+nouvelle sélection ajoute un événement ; elle ne réécrit pas le passé. DicTeX
+ne possède pas le document Typora et n'introduit pas de `document_id` dans le
+flux principal.
 
-- Desktop shell: Electron.
-- UI: React.
-- App language: TypeScript.
-- STT sidecar: Python.
-- STT engine: faster-whisper.
-- Storage: JSONL events plus local audio files.
-- Training export: JSONL.
+## Évolutions exclues pour l'instant
 
-Possible later additions:
-
-- whisper.cpp for packaging.
-- Ollama or llama.cpp for local math/text transformation.
-- KaTeX for math preview.
-- SymPy and latex2sympy2 for math validation.
-- SQLite when JSONL is no longer enough.
-
-## Data Model
-
-Core entities:
-
-- dictation session;
-- audio segment;
-- raw transcript;
-- STT result;
-- correction event later;
-- user preference later.
-
-The current data model must preserve the link between what was spoken and what the STT model produced.
-
-For the MVP, DicTeX should not assume that it owns the document. It acts like a local dictation layer that outputs text into another application. LaTeX generation is a future layer.
+Pas d'éditeur interne, de base SQLite, d'analyseur mathématique complet, de
+nuage, de registre de modèles ni de service multiutilisateur sans décision
+explicite dans la feuille de route.

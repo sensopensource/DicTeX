@@ -1,93 +1,108 @@
 # AGENTS.md
 
-Repository guidance for agents working on DicTeX.
+Consignes du dépôt pour les agents qui travaillent sur DicTeX.
 
-Before changing code, read:
+Avant toute modification, lire :
 
 - `README.md`
+- `docs/roadmap.md` (**source canonique de la priorité courante**)
+- `CONTRIBUTING.md` (**langue et conventions de contribution**)
 - `docs/product-decisions.md`
 - `docs/development.md`
-- `pivot_dictex_lab_split.md` (**current strategic direction** — DicTeX/Lab split)
-- `pivot_strategique_stt_normalisation.md` (normalization strategy; still valid,
-  but its dataset/benchmark tooling now lives in the Lab, not in DicTeX)
-- `docs/dataset-and-normalization-design.md` (**settled data design**: verbatim
-  Layer 1, split semantics, command sentinels, how to produce the data). Read it
-  before adding a correction kind, a normalizer layer, or a dataset export field.
-- this file
+- `docs/dataset-and-normalization-design.md` avant de modifier un type de
+  correction, une couche du normaliseur ou un champ d'export ;
+- `pivot_dictex_lab_split.md` et `pivot_strategique_stt_normalisation.md`
+  uniquement pour comprendre les pivots historiques ;
+- ce fichier.
 
-## Current Direction: DicTeX / Lab split (adopted 2026-07-09)
+## Langue du projet — obligatoire depuis le 10 juillet 2026
 
-See `pivot_dictex_lab_split.md`. DicTeX had grown into two products in one — a
-consumer dictation tool **and** an ML bench — and that coupling is the main
-source of complexity and bugs. We are splitting them:
+Tous les nouveaux artefacts humains sont rédigés en français : commits,
+tickets, demandes de fusion, commentaires de revue, documentation, textes
+d'interface et transmissions entre agents. L'historique antérieur n'a pas à
+être traduit.
 
-- **DicTeX = minimal consumer dictation tool**: voice → STT → normalizer
-  (dictionary + regex) → insert. Plus a collapsible copy/copy-raw/play history
-  and an **"Open Lab"** button. Nothing ML-ops.
-- **DicTeX Lab = separate app** for all benchmark + dataset-building + model
-  monitoring. No microphone: it reads DicTeX's real transcriptions and local
-  data folder.
-- **Monorepo** (`apps/dictex`, `apps/lab`, `packages/engine`, `packages/shared`);
-  the Lab reads DicTeX's data folder read-only.
+L'anglais est réservé à ce qui l'exige : identifiants, API, bibliothèques,
+champs de schéma, commandes, chemins, sorties d'outils, étiquettes existantes
+et syntaxe imposée. La ligne machine `Depends on: #…` conserve exactement cette
+forme. Consulter `CONTRIBUTING.md` pour les exemples et les exceptions.
 
-This supersedes the "in-app dataset enrichment / benchmark inside DicTeX"
-direction. The normalization strategy below is unchanged; only *where* its
-evaluation/training tooling lives moves out of the consumer app. Roadmap +
-waves are under "Open roadmap".
+## Direction actuelle — cahier quotidien et données fiables
 
-## Product Context
+La séparation DicTeX / Lab adoptée le 9 juillet 2026 est **terminée**. Elle
+reste une décision d'architecture, mais n'est plus la prochaine feuille de
+route.
+`docs/roadmap.md` est désormais l'unique source canonique de l'ordre des travaux.
 
-DicTeX is a local-first dictation layer for mathematical writing.
+Le point de concentration est :
 
-It is OpenWhispr-like, not document-first. The MVP should not own documents,
-notebooks, LaTeX files, or editor state. DicTeX listens, transcribes,
-optionally transforms later, inserts into the active application, and stores
-local data for future improvement.
+1. utiliser **Typora** comme premier cahier Markdown + LaTeX réel ;
+2. terminer l'interrupteur du normaliseur (#105), puis fiabiliser
+   **Démarrer/Arrêter** (#96) et ajouter un mécanisme explicite de mathématiques
+   en bloc ;
+3. remplacer le processus STT ponctuel par un processus persistant qui garde un
+   seul modèle actif en mémoire ;
+4. comparer des variantes courtes de `initial_prompt` sur `validation` (#94),
+   puis appliquer le gagnant à la dictée quotidienne ;
+5. auditer un chemin complet Typora → correction → Lab → export ;
+6. commencer l'usage quotidien, les mesures et la collecte propre ;
+7. améliorer les règles avant tout entraînement.
 
-Current product loop:
+#45 (premier entraînement STT) reste différé. #95 (typographie) est une voie de
+maintenance. Les nouveaux chantiers encore sans ticket doivent être découpés en
+français avant leur implémentation. Toujours vérifier l'état GitHub en direct :
+une photographie de la feuille de route dans un document peut vieillir.
+
+## Contexte produit
+
+DicTeX est une couche locale de dictée pour l'écriture scientifique.
+
+Le produit ressemble à OpenWhispr et n'est pas centré sur le document. Il ne
+possède ni cahier, ni fichier LaTeX, ni état d'éditeur. DicTeX écoute,
+transcrit, transforme facultativement, insère dans l'application active et
+conserve localement ce qui permettra de l'améliorer.
+
+Boucle produit actuelle :
 
 ```text
-voice -> local STT -> clipboard / active app insertion -> local logs
+voix -> STT local -> normaliseur déterministe facultatif
+-> presse-papiers / application active -> journaux locaux
 ```
 
-Target product loop (from the strategic pivot):
+Boucle cible :
 
 ```text
-voice
--> local STT (raw literal text)
--> normalization pipeline
-   -> layer 1: personal dictionary (deterministic)
-   -> layer 2: regex math-verbalization rules
-   -> layer 3: small seq2seq text-to-text model
--> math rendering (KaTeX)
--> fast correction, tagged by correctionKind
--> two separable datasets: acoustic (STT) and math_transform (normalizer)
--> Phase 3 normalizer training, then Phase 4 STT acoustic fine-tuning (later)
+voix
+-> STT local maintenu en mémoire, avec texte littéral conservé
+-> pipeline de normalisation
+   -> couche 1 : dictionnaire personnel déterministe
+   -> couche 2 : règles regex de verbalisation mathématique
+   -> couche 3 : petit modèle seq2seq apprenant seulement le résidu
+-> prose Markdown portable + LaTeX canonique
+-> cahier externe, Typora en premier
+-> correction visible et rapide dans le cahier
+-> qualification typée dans DicTeX Lab
+-> deux jeux séparés : acoustic pour le STT, math_transform pour le normaliseur
+-> entraînement résiduel, puis adaptation acoustique seulement si elle est justifiée
 ```
 
-## Normalization Strategy (still valid, tooling now in the Lab)
+## Stratégie de normalisation
 
-See `pivot_strategique_stt_normalisation.md`. This decoupling of the *product*
-problem is unchanged; only its dataset/benchmark tooling moves to the Lab (see
-"Current Direction" above). The plan decouples two problems previously conflated
-in a single "fine-tune STT to emit clean math" goal:
+Le découplage défini dans `pivot_strategique_stt_normalisation.md` reste valide :
 
-- **Priority 1 — text-to-text normalization.** Turn literal STT output
-  ("x au carré") into formal notation ("x²") with a three-layer normalizer:
-  personal dictionary, regex rules, then a small seq2seq model. Dictionary and
-  regex already cover much of the need with zero ML.
-- **Priority 2 (later) — STT acoustic fine-tuning.** Only for genuine acoustic
-  errors tied to the user's voice/mic, on correction data tagged `acoustic`.
+- **Priorité 1 — normalisation texte-vers-texte.** Transformer une sortie STT
+  littérale comme « x au carré » en `$x^{2}$` avec un dictionnaire, des règles
+  regex, puis un petit modèle seq2seq pour le seul résidu complexe.
+- **Priorité 2 — adaptation acoustique ultérieure.** Ne traiter que les erreurs
+  réellement liées à la voix ou au micro, à partir de corrections `acoustic`.
 
-The base dictation loop, logs, diagnostics, and the dictionary + regex normalizer
-are stable in DicTeX. Benchmark, split, dataset export, and typed-correction
-capture still exist but are being **moved out to the Lab** (see Open roadmap);
-they are not thrown away, just relocated. The in-app two-layer *recording*
-(#66) has been removed (Phase 0).
+La boucle de dictée, les journaux, le dictionnaire et les regex existent dans
+DicTeX. Le banc d'essai, les ensembles, les corrections typées et les exports
+sont maintenant dans le Lab. L'enregistrement deux-couches de #66 a été retiré.
 
-## Current Implementation
+## Implémentation actuelle
 
-Stack:
+Socle technique :
 
 - Electron desktop app.
 - React + TypeScript renderer.
@@ -98,49 +113,51 @@ Stack:
 - Windows-first auto-paste.
 - Global hotkey toggle: `Win+Alt+Space`.
 
-Current flow:
+Flux actuel :
 
 ```text
-manual button or hotkey
--> browser MediaRecorder captures audio
--> renderer sends bytes to Electron main
--> main saves audio under Electron userData
--> main calls Python sidecar
--> faster-whisper transcribes
--> main writes audio_segment + stt_result to events.jsonl
--> main copies transcript to clipboard
--> hotkey path also sends Ctrl+V on Windows
--> renderer refreshes recent segment history
--> user may replay local audio or copy the raw / inserted transcript
-   (corrections + benchmark now live in DicTeX Lab, not DicTeX)
+bouton manuel ou raccourci
+-> MediaRecorder capture l'audio
+-> le renderer envoie les octets au processus principal Electron
+-> le processus principal enregistre l'audio sous userData
+-> il lance le processus Python ponctuel
+-> faster-whisper charge le modèle et transcrit
+-> Python s'arrête : le modèle est actuellement rechargé à chaque dictée
+-> écriture de audio_segment + stt_result dans events.jsonl
+-> copie du résultat dans le presse-papiers
+-> le chemin raccourci envoie aussi Ctrl+V sous Windows
+-> actualisation de l'historique récent
+-> réécoute ou copie du texte brut / inséré
 ```
 
-Current benchmark flow:
+Flux actuel du banc d'essai dans DicTeX Lab :
 
 ```text
-latest or selected stored audio segment
--> replay through faster-whisper tiny/base/small
--> show transcript + latency + STT candidate metadata
--> when a corrected transcript exists, compute CER against it
--> append stt_benchmark_result events
+segment audio enregistré et sélectionné
+-> rejeu avec les candidats STT choisis
+-> affichage du texte, de la latence et de l'identité du candidat
+-> calcul du CER si une référence corrigée existe
+-> ajout d'événements stt_benchmark_result
 ```
 
-Current correction flow:
+Flux actuel de correction dans DicTeX Lab :
 
 ```text
-latest transcript or recent segment
--> user edits transcript in compact UI
--> main appends stt_correction to events.jsonl
--> history derives corrected/raw state from append-only events
+segment DicTeX sélectionné ou texte collé
+-> écoute de l'audio lorsqu'il existe
+-> saisie de la couche 1 littérale et de la couche 2 en notation
+-> ajout d'événements stt_correction typés dans le stockage propre au Lab
+-> export séparé des paires acoustic et math_transform
 ```
 
-Current history/playback flow:
+Flux actuel de l'historique et de la réécoute :
 
 ```text
 events.jsonl
--> local event reader reconstructs recent segments by session_id + segment_id
--> renderer shows recent dictations
--> user can copy raw/corrected transcript, replay stored audio, or benchmark a segment
+-> reconstruction locale des segments par session_id + segment_id
+-> affichage des dictées récentes
+-> copie du texte brut ou inséré et réécoute dans DicTeX
+-> correction et comparaison séparées dans DicTeX Lab
 ```
 
 Local runtime data path on this machine:
@@ -208,6 +225,11 @@ Rule:
 one agent = one clone = one folder = one branch = one PR
 ```
 
+Depuis le 10 juillet 2026, le sujet et le corps des commits, le titre et la
+description des tickets, ainsi que le titre et la description des demandes de
+fusion sont en français. Les noms de branches restent des identifiants ASCII ;
+utiliser un slug français sans accent lorsqu'il reste clair.
+
 When told to solve an issue, the implementing agent does not work in the main
 checkout. It clones the repo into a fresh sibling folder and works entirely
 there. Parallel agents are then isolated by construction: they never share a
@@ -219,9 +241,10 @@ cd ../DicTeX-issue-<N>
 git checkout -b issue-<N>-<slug>
 ```
 
-Then read README.md, docs/product-decisions.md, docs/development.md, AGENTS.md,
-and the assigned issue; do the work in that folder; push the branch and open a
-PR; do not merge.
+Lire ensuite `README.md`, `docs/roadmap.md`, `CONTRIBUTING.md`,
+`docs/product-decisions.md`, `docs/development.md`, `AGENTS.md` et le ticket
+attribué. Faire tout le travail dans ce dossier, pousser la branche et ouvrir
+une demande de fusion en français ; ne pas fusionner.
 
 ## Agent Reasoning Levels
 
@@ -352,22 +375,22 @@ Rules:
 First read the live issue state with `gh` (open/closed issues, labels, and
 `Depends on:` lines) — the roadmap snapshot in this file may be stale.
 
-When asked to plan the next N issues, the orchestrator:
+Lorsqu'il doit planifier les N prochains tickets, l'orchestrateur :
 
-1. Writes each issue with clear Goal / Scope / Out of scope / Acceptance
-   criteria.
+1. Rédige chaque ticket en français avec **Objectif / Pourquoi / Périmètre /
+   Hors périmètre / Critères d'acceptation**.
 2. Scores each with the five-axis rubric and applies the correct `level:*` label
    (plus `needs:high-review` when a higher-tier review is warranted).
 3. Adds a `Depends on:` line listing only hard dependencies.
 4. Proposes a model per issue from the level table (Claude and OpenAI/Codex
    columns), so any provider can pick it up.
-5. Emits a **launch plan in waves** — which issues are startable now in parallel
-   vs which must wait:
+5. Produit un **plan de lancement par vagues** indiquant les tickets qui peuvent
+   commencer et ceux qui doivent attendre :
 
 ```text
-Wave 1 (ready now, parallel): #42 (faible), #38 (élevé)
-Wave 2 (after #38):           #39 (très-élevé)
-Wave 3 (after #39):           #40 (moyen), #41 (moyen)
+Vague 1 (prêts, en parallèle) : #42 (faible), #38 (élevé)
+Vague 2 (après #38)           : #39 (très-élevé)
+Vague 3 (après #39)           : #40 (moyen), #41 (moyen)
 ```
 
 6. Flags **soft conflicts**: issues with no hard dependency that still touch the
@@ -681,13 +704,11 @@ Post-pivot (done):
   never on an `acoustic` one). `npm test` guards the no-sentinel-in-store
   invariant and now runs in CI.
 
-Post-pivot (open):
-- #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`.
-  Phase 5, gated on the Lab producing enough `acoustic`-tagged data. **Reconsider
-  the ordering**: benchmarking STT system-prompt variants costs no training data
-  and no GPU, and is representable today as a new `variant` in the existing
-  `{stage, provider, model, variant}` candidate identity. See
-  `docs/dataset-and-normalization-design.md` §6.
+Après le pivot, la priorité courante n'est plus tenue dans cette chronologie de
+travaux terminés. Consulter `docs/roadmap.md` et l'état GitHub en direct. #45,
+qui planifie le premier entraînement STT, reste différé jusqu'à la comparaison
+des variantes de `initial_prompt` (#94), la constitution d'un volume acoustique
+minimal et la démonstration d'un résidu réellement acoustique.
 
 Layer-3 input, **decided 2026-07-10** (see `docs/dataset-and-normalization-design.md`
 §7): **resolution 1 — layer 3 learns the residual.** The exported training input
@@ -729,8 +750,10 @@ Deferred UX proposals (from `docs/ux-review.md`, human decisions recorded):
   apps, so it is a merge-conflict magnet. Land it alone, never bundled.
 - **Idle DicTeX Home (B)** — decision: **hide empty metrics** until they have a
   value, rather than showing eight `-` cells or seeding from config.
-- **Record-button wording (F)** — decision: **align the button on the toggle**
-  (Start / Stop), matching `Win+Alt+Space`. One mental model; push-to-hold goes.
+- **Libellé du bouton d'enregistrement (F)** — décision : aligner le bouton sur
+  le fonctionnement à bascule. La règle de langue adoptée ensuite fixe les
+  libellés futurs à **Démarrer / Arrêter**, avec le même état que
+  `Win+Alt+Space`.
 - **Footer actions (C)** and **collapsible Lab data-folder panel (E)** — still
   open, no decision.
 - **Unified navigation model (D)** — deliberately deferred. Structural, purely
@@ -753,7 +776,8 @@ Do preserve:
 - Corrections typed by `correctionKind` (acoustic / math_transform /
   normalization / rephrasing), keeping acoustic and semantic problems separable.
 - French-first spoken input.
-- English public docs for GitHub discoverability.
+- Français pour tout nouvel artefact humain ; anglais technique seulement
+  lorsqu'il est nécessaire (`CONTRIBUTING.md`).
 - Windows-first auto-paste, Linux later.
 - Compact utility UI direction.
 - Benchmarking as an evaluation loop, not just a developer tool.
@@ -775,16 +799,15 @@ The strategic pivot sanctions the normalization pipeline (dictionary, regex,
 small seq2seq) and math rendering as the Priority 1 direction — still land them
 through explicit issues, not ad hoc.
 
-**LaTeX generation is now sanctioned** (decided 2026-07-10, was on the list
-above). The normalizer's canonical output format is LaTeX, not Unicode: Unicode
-cannot express integrals, structured fractions, sums with bounds, or matrices,
-and `LaTeX -> Unicode` can be derived while `Unicode -> LaTeX` cannot. Layer 2 is
-hand-written and, unlike every other artefact here, **does not regenerate** — so
-the format had to be settled before collecting. KaTeX remains a *renderer* (it
-displays LaTeX); it is not a format and not a pipeline layer. See
-`docs/dataset-and-normalization-design.md` §8, issues #106 (style subset +
-canonicalizer, blocks collection) and #107 (rules rewrite). Math *parsing* is
-still not sanctioned.
+**La génération LaTeX est autorisée** depuis le 10 juillet 2026. Le format
+canonique du normaliseur est LaTeX, pas Unicode : intégrales, fractions
+structurées, sommes bornées et matrices ne sont pas représentables honnêtement
+en Unicode. La couche 2 est écrite à la main et ne se régénère pas ; son format
+devait donc être figé avant la collecte. KaTeX reste un moteur de rendu, pas un
+format ni une couche du pipeline. Voir
+`docs/dataset-and-normalization-design.md` §8. #106 et #107 sont terminés ;
+`$…$` est implémenté, tandis que `$$…$$` exige un nouveau ticket français et une
+extension explicite du contrat. L'analyse mathématique sémantique reste exclue.
 
 ## UI Direction
 
@@ -806,28 +829,22 @@ Avoid:
 - generic AI SaaS dashboard feel;
 - broad settings pages too early.
 
-Navigation (sanctioned by the UI refactor, issues #63-#66): a **small number of
-task-focused views** is allowed — Home, Benchmark, Dataset (enrichment) — reached
-from big entry buttons on Home, with a back-to-home control in each view. This is
-a deliberate exception to "one compact screen", but the compact, sober,
-minimal-color, clear-state feel MUST hold *within* each view. Do not let the
-multi-view shell drift into a SaaS dashboard, a decorative hero, or broad
-settings pages. Keep dictation + last transcript + correction on Home; the
-Benchmark and Dataset views host only their own task.
+La navigation actuelle est séparée par application :
 
-Useful visible information:
+- **DicTeX** conserve une seule vue Home : dictée, normaliseur, modèle STT,
+  diagnostic minimal, historique repliable avec copie/réécoute et bouton
+  **Open Lab**. Pas de correction, de banc d'essai ou d'ensemble de données dans
+  cette application.
+- **DicTeX Lab** possède les vues Segments, Benchmark et Dataset, chacune
+  limitée à sa tâche.
 
-- status: ready, recording, transcribing, copied/pasted, error;
-- hotkey status;
-- STT engine/model/language;
-- last session and segment;
-- latency;
-- audio duration;
-- output mode: pasted or clipboard;
-- recent segment history;
-- correction status;
-- benchmark results;
-- buttons to open data folder and events log.
+Ne pas réintroduire dans DicTeX ce que le pivot #75–#78 a extrait. Le caractère
+compact, sobre et utilitaire s'applique aux deux applications.
+
+Informations utiles dans DicTeX : état prêt/enregistrement/transcription/
+copie/erreur, état du raccourci, modèle et langue STT, session, segment, latence,
+durée audio, mode de sortie et historique récent. Les corrections, mesures de
+candidats et exports apparaissent uniquement dans le Lab.
 
 ## Data Model Notes
 
@@ -851,10 +868,11 @@ Current benchmark events also include candidate metadata and may include STT sco
 {"event_type":"stt_benchmark_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","stage":"stt","provider":"faster-whisper","model":"small","variant":"cpu-int8-fr","candidate":{"stage":"stt","provider":"faster-whisper","model":"small","variant":"cpu-int8-fr"},"stt_engine":"faster-whisper","stt_model":"small","stt_language":"fr","transcript":"...","audio_duration_seconds":2.4,"transcription_duration_ms":1830,"score_metric":"cer","score_value":0.12,"score_reference_type":"stt_correction"}
 ```
 
-Current STT corrections use separate event types and must not overwrite history:
+Les corrections STT sont des événements séparés et ne doivent jamais réécrire
+l'historique :
 
 ```json
-{"event_type":"stt_correction","created_at":"2026-07-05T00:00:00.000Z","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","raw_transcript":"...","corrected_transcript":"...","correction_method":"keyboard"}
+{"event_type":"stt_correction","created_at":"2026-07-05T00:00:00.000Z","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","raw_transcript":"...","corrected_transcript":"...","correction_method":"keyboard","correction_kind":"acoustic"}
 ```
 
 Each dictation also appends a normalization record (pivot Phase 2, layer 1).
@@ -866,42 +884,31 @@ attributable to a specific layer:
 {"event_type":"normalization_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","input_transcript":"dic tex","output_transcript":"DicTeX","passthrough":false,"layers":[{"layer":"personal_dictionary","input":"dic tex","output":"DicTeX","applied":true,"diagnostics":[]}],"diagnostics":[]}
 ```
 
-Corrections stay append-only and must not overwrite history.
+Les corrections restent à ajout uniquement (`append-only`). Le typage est
+implémenté :
 
-Future correction typing (from the strategic pivot): tag each correction with a
-`correctionKind` so acoustic and semantic problems feed different datasets:
+- `acoustic` : le STT a mal entendu ; produit une cible littérale associée à
+  l'audio ;
+- `math_transform` : le texte parlé correctement reconnu devient une notation
+  canonique, par exemple « x au carré » → `$x^{2}$` ;
+- `normalization` : nettoyage indépendant ;
+- `rephrasing` : reformulation libre.
 
-- `acoustic`: the STT misheard (e.g. "égalé" -> "égal"). Feeds Phase 4 STT
-  fine-tuning.
-- `math_transform`: spoken text -> notation (e.g. "x au carré" -> "x²"). Feeds
-  Phase 3 normalizer training.
-- `normalization`: cleanup (e.g. "euh donc on a" -> "on a").
-- `rephrasing`: free user rewording.
+L'outil de saisie à deux couches actuel se trouve dans DicTeX Lab (#78). #66, qui
+enregistrait directement depuis une ancienne vue Dataset de DicTeX, a été
+retiré. Pour un segment réel, le Lab peut écrire deux événements
+`stt_correction` chaînés :
 
-Prefer extending the existing `stt_correction` event with `correctionKind` over
-inventing separate event types. The `train_candidate_pool` / `validation` /
-`test_frozen` split is kept and read alongside `correctionKind` to build each
-dataset.
+1. `correction_kind = "acoustic"` : sortie STT brute → transcription littérale
+   correcte, avec le véritable audio ;
+2. `correction_kind = "math_transform"` : transcription littérale → notation
+   humaine, sans utiliser l'audio comme entrée du transformateur.
 
-Two-layer dataset enrichment (issue #66): to keep the acoustic (STT) and
-math_transform (normalizer) datasets separable, the enrichment tool captures two
-layers for one recorded segment and writes **two chained `stt_correction`
-events** — no new event type:
-
-1. `correction_kind = "acoustic"`: `raw_transcript` = raw STT output,
-   `corrected_transcript` = acoustically-correct literal transcript (notation
-   still verbal). Feeds the acoustic dataset paired with the segment audio.
-2. `correction_kind = "math_transform"`: `raw_transcript` = the literal-correct
-   transcript, `corrected_transcript` = normalized notation. Feeds the
-   normalizer dataset as a text->text pair (no audio).
-
-A single fully-normalized pasted text would collapse both transformations and
-make the datasets non-separable — so the stage is encoded by which layer is
-filled, not by one blended tag. Consequence: a segment can carry more than one
-correction event. `reconstructRecentSegments` keeps latest-event-wins for
-history display, but **dataset extraction (#44) must read all correction events
-of a segment**, not just the last. `correctionKind` still applies as a single
-tag for quick inline corrections (short, single-purpose).
+Un texte collé sans audio ne peut produire qu'une paire `math_transform`. Un
+segment peut porter plusieurs corrections ; l'export doit conserver la dernière
+correction de **chaque type**, pas seulement la dernière du segment. Les
+ensembles `train_candidate_pool`, `validation` et `test_frozen` sont lus avec ce
+type pour construire deux jeux qui restent séparés.
 
 ## Benchmark Vision
 
@@ -990,44 +997,32 @@ it is not yet in the default *benchmark* candidate list — include it via
 `DICTEX_STT_BENCHMARK_MODELS=tiny,base,small,large-v3-turbo` until an issue
 adds it by default.
 
-## Next Product Priorities
+## Prochaines priorités
 
-The correction/evaluation loop (#11-#14, #21-#24) merged through PR #36.
-Corrected-segment correction (#37) and benchmark-set membership (#38) are done,
-so the foundations the pivot relies on are in place.
+La liste détaillée et les portes de sortie vivent uniquement dans
+`docs/roadmap.md`. Ordre résumé :
 
-Priorities now follow the strategic pivot's phasing:
+1. valider Typora sur une vraie session de brouillon ;
+2. livrer #105, puis #96, puis la sortie explicite en bloc et la migration sûre
+   des anciennes règles locales ;
+3. maintenir un modèle STT actif dans un processus Python persistant et mesurer
+   séparément son chargement et ses requêtes chaudes ;
+4. définir deux ou trois variantes courtes de `initial_prompt`, terminer #94 sur
+   `validation`, puis brancher le gagnant dans DicTeX ;
+5. auditer Typora → correction → Lab → export ;
+6. atteindre cent dictées réelles sans perte de données ;
+7. améliorer les règles sur les erreurs observées et mesurer le résidu ;
+8. envisager le seq2seq, puis l'adaptation acoustique, uniquement après gain
+   démontré face à une référence.
 
-1. **Phase 1 — typed correction data (done, issue #48 / PR #52).**
-   `correctionKind` is now required on every new correction; unlabeled data is
-   no longer collected.
-2. **Phase 2 — code normalizer (layers 1 & 2, issues #49 / PR #55 and #50 /
-   PR #62) — done.** Personal dictionary + regex math-verbalization rules
-   landed; rendering-quality gains with zero ML.
-3. **Phase 3 — ML normalizer (layer 3).** After some usage, extract the
-   `math_transform`-tagged dataset and fine-tune a small seq2seq model.
-4. **Phase 4 — STT acoustic fine-tuning.** Extract the `acoustic`-tagged
-   dataset; if residual acoustic errors justify it, LoRA the selected STT model
-   on that clean data only.
+#95 ne coupe pas ce chemin critique. #45 doit être réécrit en français lorsque
+les conditions acoustiques seront enfin réunies. Ne pas créer de grande
+infrastructure générique pour anticiper ces étapes ; garder toute surface de
+mesure et d'apprentissage dans le Lab.
 
-(These are the **normalization-track** phases; do not confuse them with the
-**pivot phases** #75-#78, which are about *where the tooling lives*, not the
-normalizer itself.) The STT benchmark -> selection track (#39-#43) and the Vosk
-provider (#59) are done; the UI refactor (#63-#65) is done.
+## Nuance importante
 
-**The near-term priority is now the DicTeX / Lab split**, not more in-app
-tooling. Its phasing lives under "Open roadmap": Phase 0 (done, PR #74) removed
-the in-app recording; Phase 1 (#75) is the monorepo skeleton — the keystone —
-then #76 (Lab), #77 (slim DicTeX), #78 (Lab dataset builder). The
-normalization-track ML work (layer-3 seq2seq, STT fine-tuning) and #45 resume
-**after** the Lab can build and export the datasets.
-
-Land each phase through the explicit issues above; do not build a large generic
-framework ahead of need, and keep new ML/tooling surface in the Lab, not in
-DicTeX.
-
-## Important Nuance
-
-The user cares about not losing correction and improvement data. Even before correction UI exists, preserve raw audio, raw STT outputs, benchmark outputs, and later human corrections.
-
-If a future feature changes how outputs are generated, preserve enough intermediate state to know which layer made the mistake.
+La perte de données est un échec produit. Toujours préserver l'audio, le texte
+STT brut, la sortie de chaque couche, les résultats de mesure et les corrections
+humaines. Lorsqu'une fonctionnalité change la génération, conserver assez
+d'intermédiaires pour identifier précisément la couche fautive.

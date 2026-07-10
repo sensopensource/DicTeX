@@ -1,5 +1,12 @@
 # UX / UI design review — DicTeX + DicTeX Lab (issue #84)
 
+> **Revue historique terminée.** La direction courante vit dans
+> `docs/roadmap.md`. Les propositions B et F ont reçu leur décision produit et
+> sont regroupées dans #96, qui appartient au chemin de l'outil quotidien. La
+> règle de langue postérieure précise que les futurs libellés sont
+> **Démarrer / Arrêter**. La proposition A est #95 et reste une maintenance hors
+> chemin critique. Les autres propositions restent différées.
+
 A design pass over both renderers: DicTeX Home (`apps/dictex`) and the Lab views
 (`apps/lab` — Segments, Benchmark, Dataset). The goal is to keep the two apps
 coherent and to close small quality gaps **without drifting from the product

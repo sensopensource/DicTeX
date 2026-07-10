@@ -1,5 +1,9 @@
 # Dataset & Normalization Design
 
+> Ce document fixe les invariants de données. La priorité courante et les portes
+> de sortie vivent dans `docs/roadmap.md`. Les sections historiques anglaises
+> sont conservées ; toute nouvelle décision est rédigée en français.
+
 How DicTeX Lab's data is structured, why it is split the way it is, and how the
 normalizer pipeline consumes it. This document settles the questions that were
 left implicit after the DicTeX/Lab split (`pivot_dictex_lab_split.md`) and the
@@ -20,7 +24,7 @@ flowchart TD
     AUDIO["audio (real, DicTeX)"]
     RAW["raw STT output"]
     L1["<b>Layer 1 — verbatim</b><br/>what was actually said<br/>hesitations included"]
-    L2["<b>Layer 2 — notation</b><br/>clean, formal<br/>'x² + 2'"]
+    L2["<b>Layer 2 — notation</b><br/>clean, formal<br/>'$x^{2} + 2$'"]
 
     AUDIO --> RAW --> L1 --> L2
 
@@ -33,7 +37,7 @@ flowchart TD
     L2 --> DM
 
     FT["STT fine-tuning (LoRA)<br/><i>gain: a few %</i>"]
-    BS["STT benchmark (CER/WER)<br/>+ system-prompt variants"]
+    BS["STT benchmark (CER/WER)<br/>+ variantes initial_prompt"]
     SEQ["<b>Normalizer layer 3</b><br/>small seq2seq<br/><i>needs volume</i>"]
     BM["Normalizer benchmark<br/>regex vs seq2seq vs LLM"]
 
@@ -230,13 +234,13 @@ typed in full, in canonical form, in *both* layers:
 | | content |
 | --- | --- |
 | Layer 1 | `euh retour à la ligne x au carré plus deux` |
-| Layer 2 | `retour à la ligne x² + 2` |
+| Layer 2 | `retour à la ligne $x^{2} + 2$` |
 
 Substitution to sentinels is a **pure function applied at export**, using the
 command list of the day:
 
 ```text
-⟦NL⟧ x au carré plus deux   →   ⟦NL⟧ x² + 2
+⟦NL⟧ x au carré plus deux   →   ⟦NL⟧ $x^{2} + 2$
 ```
 
 Two consequences, both of which buy freedom:
@@ -313,39 +317,38 @@ microphone.
 
 ---
 
-## 6. What this implies for the roadmap
+## 6. Conséquences pour la feuille de route
 
-The two datasets are not equally expensive, nor equally valuable:
+Les deux jeux n'ont ni le même coût ni le même rôle :
 
-| | Acoustic | math_transform |
+| | Acoustique | `math_transform` |
 | --- | --- | --- |
-| Cost of one sample | dictate, then transcribe by hand | type two lines |
-| Needs a segment / audio | yes | no |
-| Reachable volume | low | high |
-| Expected gain | a few % CER | the core of the product |
+| Coût d'un exemple | dicter, écouter et transcrire littéralement | corriger deux textes |
+| Audio obligatoire | oui | non |
+| Volume réaliste | faible | élevé |
+| Mesure principale | CER | exactitude LaTeX canonicalisée et rendu valide |
 
-The cheapest lever on STT quality is not fine-tuning at all: it is the **system
-prompt** (faster-whisper's `initial_prompt`). It costs no training data and no
-GPU, and it is already representable in the existing candidate identity —
-`{stage, provider, model, variant}` — as a new `variant`, with no schema change.
-Benchmark prompt variants on `validation` before committing to acoustic
-fine-tuning (#45); the prompt may already deliver what the fine-tune promises.
+Le passage de `initial_prompt` à faster-whisper est maintenant implémenté par
+#93. #94 doit permettre de comparer plusieurs variantes du même modèle sur les
+mêmes audios de `validation`. Ce paramètre est un contexte initial de décodage,
+pas un « system prompt » de LLM : le texte doit rester court et son effet peut
+être positif, nul ou biaisant.
 
-It is not free, though. `packages/engine/transcribe.py` does not pass
-`initial_prompt` to faster-whisper today, so the parameter must first be wired
-through the sidecar and surfaced as a candidate `variant` (#93) before the
-variants can be benchmarked (#94). That is still far cheaper than collecting
-hand-transcribed acoustic pairs.
+Ordre imposé par `docs/roadmap.md` :
 
-Suggested order:
+1. stabiliser le cahier et la boucle quotidienne ;
+2. garder le modèle STT en mémoire et mesurer les requêtes chaudes ;
+3. comparer l'absence de contexte à deux ou trois variantes sur `validation` ;
+4. auditer le chemin de correction et collecter des données réelles ;
+5. établir la référence du normaliseur regex ;
+6. améliorer les règles sur les erreurs observées ;
+7. entraîner un petit seq2seq uniquement sur le résidu mesuré ;
+8. adapter le STT en dernier, seulement si les erreurs restantes sont réellement
+   acoustiques.
 
-1. Freeze a small but honest `test_frozen` **before** training anything.
-2. Establish the regex normalizer's baseline on `validation`.
-3. Benchmark STT system-prompt variants on `validation` — cheapest lever.
-4. Mass-produce `math_transform` pairs in paste mode; train the seq2seq; compare
-   it to the regex baseline on `validation`.
-5. Acoustic fine-tuning last, and only if the STT benchmark shows a residue of
-   genuinely acoustic errors that neither the prompt nor the normalizer fixes.
+`test_frozen` n'est jamais le terrain de mise au point. Lorsqu'un ensemble de
+validation est usé, il faut collecter de nouveaux exemples de validation plutôt
+que consulter le test final.
 
 ---
 
@@ -400,22 +403,23 @@ training set of a model.
 > export metadata) and #101 (the builder prefills Layer 2 from the pipeline
 > output). The reasoning is below; the alternative is kept for the record.
 
-The principle that decided it: **never make a model learn what a rule does with
-certainty.** A seq2seq allowed to rewrite `x²` is also allowed to write `x³`. The
-regex is not. Resolution 2 would throw away seven rules that are already correct
-and free, and pay for them again in data volume and hallucination risk.
+Le principe décisif est simple : **ne jamais faire apprendre à un modèle ce
+qu'une règle exécute avec certitude.** Un seq2seq autorisé à réécrire `$x^{2}$`
+peut aussi produire `$x^{3}$`, contrairement à la regex. La résolution 2 aurait
+jeté des règles déjà correctes pour les repayer en volume de données et en
+risque d'hallucination.
 
 There was a real inconsistency to settle before layer 3 could be built, and #92
 did not settle it (it did not have to: the sentinel survives either way).
 
-At **inference** the pipeline is
-`dictionary → command extraction → regex → layer 3`, so layer 3 receives text the
-regex has already rewritten (`euh ⟦NL⟧ x²`).
+À l'**inférence**, le pipeline est `dictionnaire → extraction des commandes →
+regex → couche 3`. La couche 3 reçoit donc un texte déjà modifié par la regex,
+par exemple `euh ⟦NL⟧ $x^{2}$`.
 
-At **export** the training pair is built from the stored correction, i.e.
-`Layer 1 (verbatim) → Layer 2 (notation)`, with no dictionary and no regex applied
-(`packages/shared/src/datasetExport.ts`). Layer 3 would therefore be trained on
-`⟦NL⟧ x au carré plus deux` and served `euh ⟦NL⟧ x²`.
+À l'**export**, la paire humaine stockée est `couche 1 littérale → couche 2 en
+notation`. Sans rejeu du pipeline, le modèle serait entraîné avec
+`⟦NL⟧ x au carré plus deux` mais recevrait en production
+`euh ⟦NL⟧ $x^{2}$`.
 
 Two coherent resolutions existed:
 
@@ -444,10 +448,11 @@ that §4 eliminated for command words — one pipeline for DicTeX, another for t
 dataset — so a test asserts the exported `math_transform` input equals what
 `apps/dictex` serves for the same Layer 1.
 
-**The builder should prefill Layer 2 with the pipeline output** (#101, **landed**),
-so the correction the human types *is* the residual: instead of writing
-`retour à la ligne x² + 2` from scratch, they are shown
-`retour à la ligne x² plus deux` and fix three words. Two constraints:
+**L'outil de saisie préremplit la couche 2 avec la sortie du pipeline** (#101,
+terminé), afin que la correction humaine corresponde au résidu. Au lieu d'écrire
+`retour à la ligne $x^{2} + 2$` depuis zéro, l'utilisateur reçoit
+`retour à la ligne $x^{2}$ plus deux` et ne corrige que ce qui reste. Deux
+contraintes s'appliquent :
 
 - the prefill must never let a sentinel or a literal command effect (a real line
   break) reach the builder's Layer 2 field — that would violate the storage rule
@@ -473,17 +478,17 @@ so the correction the human types *is* the residual: instead of writing
 
 ## 8. Notation format: LaTeX, not Unicode
 
-> **Decision: LaTeX is the canonical notation.** Recorded 2026-07-10. Blocks
-> collection until #106 lands. Implemented by #106 (style subset + canonicalizer)
-> and #107 (rules rewrite). The Unicode examples earlier in this document predate
-> the decision and illustrate pipeline mechanics, not the target format.
+> **Décision : LaTeX est la notation canonique.** Décision du 10 juillet 2026,
+> désormais implémentée par #106 (sous-ensemble de style + canonicaliseur) et
+> #107 (règles regex). Les exemples Unicode plus anciens illustrent la mécanique
+> du pipeline, pas le format cible.
 
 ### Why
 
 Unicode cannot express what the product is for. There is no honest Unicode
 rendering of `\int_{0}^{1} x^{2} \, dx`, of a structured fraction, or of a matrix.
-The regex layer's Unicode output (`x²`, `√x`, `×`) covers inline algebra and stops
-there.
+L'ancienne sortie Unicode de la couche regex (`x²`, `√x`, `×`) couvrait
+l'algèbre en ligne et s'arrêtait là.
 
 The asymmetry decides it: **`LaTeX → Unicode` can be derived** for simple cases;
 **`Unicode → LaTeX` cannot**, once an integral is in the corpus — the information
@@ -528,8 +533,9 @@ So a strict style subset and a pure, idempotent `canonicalizeLatex(text)` applie
 condition under which the corpus is worth collecting (#106). Same pattern as
 `extractCommands`: a pure function replayed on demand, never stored.
 
-**Do not collect a single `math_transform` pair before #106 lands.** Targets are
-hand-written and do not repair.
+La porte qui interdisait la collecte avant #106 est maintenant franchie. Toute
+nouvelle paire `math_transform` doit respecter ce contrat ; une extension du
+format exige sa propre migration, car les cibles humaines ne se régénèrent pas.
 
 ### The canonical style subset (#106, landed)
 
@@ -539,17 +545,22 @@ hand-written and do not repair.
 > `sttScoring` (before CER/WER) and in `datasetExport` (to the Layer 2 target,
 > before the pair is written). The append-only store is never mutated.
 
-**Delimiter decision — settled: inline maths is wrapped in `$…$`; prose stays
-bare.** Without a delimiter, KaTeX cannot know what to render and the seq2seq has
-no signal for where maths begins. `canonicalizeLatex` therefore splits the input
-into prose / math segments on unescaped `$`, canonicalizes only the maths, and
-returns prose verbatim. Consequently a string with no maths (including raw STT
-output in scoring) is returned unchanged — the identity that makes it safe to
-apply everywhere. `\(…\)` is accepted as an alias and normalized to `$…$`; `\$`
-is a literal dollar; delimiter spacing is normalized (`$ x $` → `$x$`); an
-unbalanced `$` leaves the remainder as prose (never corrupts). Display math
-(`$$…$$`, `\[…\]`) is out of scope — the corpus is inline. **This affects #107**
-(the rules rewrite): the regex/seq2seq layers must emit the `$…$` delimiters.
+**Délimiteurs : les mathématiques en ligne sont entourées par `$…$` et la prose
+reste nue.** Sans délimiteur, le cahier ne sait pas quoi rendre et le seq2seq ne
+sait pas où commencent les mathématiques. `canonicalizeLatex` sépare donc prose
+et mathématiques sur les `$` non échappés, ne canonicalise que les segments
+mathématiques et restitue la prose à l'identique. Une chaîne sans mathématiques,
+y compris une sortie STT brute, reste inchangée. `\(…\)` est accepté comme alias
+et devient `$…$` ; `\$` représente un dollar littéral ; les espaces de bord sont
+normalisés (`$ x $` → `$x$`) ; un `$` non refermé laisse la suite en prose sans
+la corrompre.
+
+**État des blocs :** les mathématiques affichées (`$$…$$`, `\[…\]`) restent
+hors du contrat implémenté aujourd'hui. La feuille de route prévoit un mécanisme
+explicite de bloc pour le cahier scientifique. Jusqu'à ce ticket et sa revue,
+les données existantes restent en ligne et aucune règle ne doit émettre `$$…$$`
+par anticipation. L'extension devra préciser ses délimiteurs, sa
+canonicalisation, son comportement dans le Lab et sa migration.
 
 **One spelling per construct:**
 

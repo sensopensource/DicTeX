@@ -1,41 +1,59 @@
 # Vision
 
-DicTeX is a local-first tool for mathematical dictation.
-
-The goal is to let users speak naturally while mixing paragraphs, equations, and editing commands. The system should output text and LaTeX into the active application, then make correction fast and reusable for future improvement.
-
-Current implementation status: DicTeX has the local dictation foundation only. Paragraph/math detection, LaTeX generation, and correction UI are future layers.
-
-## Problem
-
-General speech-to-text tools are not good enough for mathematical reasoning.
-
-They usually fail at:
-
-- distinguishing prose from equations;
-- preserving mathematical structure;
-- handling ambiguity in fractions, powers, indices, and parentheses;
-- making corrections fast enough to preserve the user's flow;
-- learning from repeated corrections.
-
-## Product Thesis
-
-The core product is not just speech-to-LaTeX.
-
-The core product is:
+DicTeX doit devenir un système personnel de brouillon scientifique : parler
+librement, obtenir un mélange lisible de prose et de mathématiques, corriger
+rapidement, puis réutiliser chaque correction pour améliorer le système local.
 
 ```text
-voice -> text/LaTeX output -> fast correction -> reusable improvement data
+voix + micro
+-> STT local adapté à l'utilisateur
+-> texte littéral conservé
+-> normalisation déterministe
+-> petit modèle résiduel texte-vers-LaTeX
+-> brouillon Markdown + LaTeX
+-> correction rapide
+-> amélioration continue locale
 ```
 
-DicTeX should make mathematical dictation practical by treating correction as a first-class part of the system.
+La [feuille de route](roadmap.md) traduit cette vision en étapes et en portes de
+sortie mesurables.
 
-## Principles
+## Problème
 
-- Local-first by default.
-- French-first spoken input for the initial product.
-- English-first public documentation for open source discoverability.
-- Correction speed matters as much as model accuracy.
-- Store structured correction data from day one.
-- Session-first data model for the MVP, not document-first.
-- Fine-tuning comes later, after enough clean correction data exists.
+Les outils STT généralistes ne suffisent pas au raisonnement mathématique. Ils
+doivent composer avec la prose, les équations, les ambiguïtés de portée, les
+hésitations et les corrections sans interrompre la pensée.
+
+Les erreurs ne forment pas un seul problème :
+
+- une erreur **acoustique** signifie que le STT a mal entendu ;
+- une erreur de **transformation mathématique** signifie que le texte entendu
+  correctement n'a pas été converti dans la bonne notation ;
+- une erreur de **flux** signifie que l'enregistrement, l'insertion ou la
+  correction a coûté trop de temps ou perdu une donnée.
+
+DicTeX conserve ces couches séparées afin d'appliquer le bon remède à chacune.
+
+## Forme du produit
+
+DicTeX n'est pas un éditeur de documents. Il agit comme une couche locale de
+dictée et insère son résultat dans un cahier externe. Typora est le premier
+environnement réel retenu ; les fichiers restent du Markdown portable avec du
+LaTeX, donc le cahier pourra changer sans invalider les données.
+
+DicTeX Lab est l'atelier séparé : réécoute, corrections typées, ensembles de
+validation, mesures et exports. La complexité expérimentale ne doit pas envahir
+l'outil quotidien.
+
+## Principes
+
+- local et personnel par défaut ;
+- français parlé en premier ;
+- documentation et coordination du projet en français ;
+- texte brut, audio et intermédiaires jamais sacrifiés ;
+- correction aussi importante que l'exactitude initiale ;
+- Markdown pour la prose, LaTeX canonique pour les mathématiques ;
+- session et segment avant document ;
+- règles déterministes avant apprentissage ;
+- entraînement seulement sur une cible stable et un gain mesurable ;
+- pas d'éditeur complet tant que le cahier externe ne bloque pas le flux réel.

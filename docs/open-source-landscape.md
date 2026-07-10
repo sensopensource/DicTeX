@@ -1,52 +1,39 @@
-# Open Source Landscape
+# Composants libres étudiés
 
-DicTeX should reuse existing open source building blocks where possible.
+Ce document est un inventaire technique, pas une feuille de route. Toute
+intégration doit répondre à un blocage observé dans
+[la direction actuelle](roadmap.md).
 
-## Speech-To-Text
+## Reconnaissance vocale
 
-- whisper.cpp: local Whisper inference, useful for packaging.
-- faster-whisper: practical Python implementation for MVP experiments.
-- WhisperX: alignment and timestamps, useful for linking corrections to audio.
-- sherpa-onnx: offline speech stack based on ONNX Runtime.
-- Silero VAD: voice activity detection.
+- `faster-whisper` : moteur STT principal et local ;
+- Vosk : second fournisseur utilisé dans le banc d'essai ;
+- `whisper.cpp` : option éventuelle de distribution ;
+- WhisperX : alignement et horodatage si les corrections fines l'exigent ;
+- Silero VAD : détection de voix éventuelle.
 
-## Local LLM Runtime
+## Exécution locale de modèles
 
-- Ollama: simplest local model runner for early experiments.
-- llama.cpp: lower-level local model runtime for packaging.
-- vLLM: useful later for hosted GPU inference.
+- Ollama : exécution simple pour une expérience locale ;
+- `llama.cpp` : exécution et distribution de bas niveau ;
+- bibliothèques Hugging Face et PEFT : expériences seq2seq ou adaptateurs,
+  seulement après les portes de données et de mesure.
 
-## Math Rendering And Validation
+## Rendu et validation mathématiques
 
-- KaTeX: fast browser math rendering.
-- MathJax: broader math rendering support.
-- SymPy: symbolic validation and manipulation.
-- latex2sympy2: LaTeX to SymPy conversion.
+- KaTeX et MathJax : rendu de LaTeX ;
+- SymPy et `latex2sympy2` : validation symbolique éventuelle, pas dans le chemin
+  critique actuel.
 
-## UI
+Typora fournit le premier cahier réel. Zettlr reste la solution de repli. TipTap
+et CodeMirror ne deviennent pertinents que si un éditeur DicTeX dédié est un
+jour justifié par l'usage.
 
-- Electron: current desktop application shell.
-- React: current UI layer.
-- Tauri: possible future lightweight desktop shell, not current.
-- TipTap: possible future rich document editor, not part of the current MVP.
-- CodeMirror: possible future structured text and LaTeX editor, not part of the current MVP.
+## Interface
 
-## Learning And Fine-Tuning Later
+- Electron : enveloppe de bureau actuelle ;
+- React : interface actuelle ;
+- Tauri : migration non prévue.
 
-- Hugging Face Datasets.
-- PEFT.
-- TRL.
-- Unsloth.
-- Axolotl.
-
-## Positioning
-
-Existing projects cover parts of the pipeline, but DicTeX aims to eventually combine:
-
-- local-first mathematical dictation;
-- paragraph/math distinction;
-- fast correction;
-- structured correction logs;
-- improvement over time.
-
-The current implementation only covers the local dictation foundation: faster-whisper transcription, active-app insertion, and local STT event logging.
+Le projet ne doit pas assembler ces composants par anticipation. Il garde le
+plus petit ensemble qui améliore le flux quotidien et ses mesures.

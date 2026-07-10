@@ -1,79 +1,61 @@
-# MVP
+# Périmètre du MVP
 
-The MVP should prove one thing:
+Le MVP doit prouver que DicTeX peut servir chaque jour comme couche de dictée
+scientifique sans perdre la pensée ni les données nécessaires à son
+amélioration.
 
-DicTeX can turn spoken input into text that can be inserted into the active app, while preserving local audio and STT logs for future improvement.
+## Utilisateur cible
 
-## Target User
+L'utilisateur initial est le créateur du projet, en français, sur sa machine et
+avec son micro. L'élargissement à d'autres utilisateurs vient après la
+stabilisation de ce flux personnel.
 
-Initial target:
+## Déjà dans le MVP
 
-- the creator using it personally;
-- students, researchers, and teachers who write mathematical text;
-- French-speaking users first.
+- enregistrement de segments courts ;
+- transcription locale faster-whisper ;
+- choix du modèle STT ;
+- raccourci global et collage sous Windows ;
+- conservation locale de chaque audio et texte brut ;
+- normaliseur déterministe : dictionnaire, commandes et regex ;
+- sortie LaTeX canonique en ligne ;
+- historique de copie et de réécoute ;
+- Lab séparé pour les corrections typées, les mesures et les exports.
 
-## Core Features
+## À terminer avant l'usage quotidien
 
-- Record short voice segments.
-- Transcribe locally.
-- Insert the output into the active application.
-- Trigger dictation with a global hotkey.
-- Auto-paste on Windows.
-- Store every audio segment locally.
-- Store every STT result locally.
+- choisir et valider Typora comme cahier externe ;
+- pouvoir activer ou désactiver clairement le normaliseur ;
+- unifier Démarrer/Arrêter entre le bouton et le raccourci ;
+- produire explicitement des mathématiques en ligne ou en bloc ;
+- garder le modèle STT en mémoire entre les dictées ;
+- comparer puis choisir un contexte initial STT ;
+- valider une correction complète jusqu'à l'export du Lab.
 
-Future MVP layers:
+## Portée mathématique initiale
 
-- classify each segment as paragraph, math, or command;
-- convert spoken math into LaTeX;
-- allow fast correction;
-- store correction events locally;
-- optionally expose Markdown/LaTeX output for copy, paste, or export.
+Les règles déterministes restent volontairement étroites :
 
-## Initial Math Scope
+- variables et nombres simples ;
+- opérations arithmétiques ;
+- puissances et racines simples ;
+- fractions à opérandes non ambiguës ;
+- relations et équations simples.
 
-The first math scope is not implemented yet. When it starts, it should stay narrow:
+Les intégrales, sommes, matrices et expressions imbriquées doivent déjà pouvoir
+être représentées dans le contrat LaTeX et saisies/corrigées dans le cahier,
+mais leur compréhension vocale composée appartient au résidu à mesurer. Une
+regex ne doit pas inventer une portée qu'elle ne connaît pas.
 
-- variables;
-- basic arithmetic;
-- fractions;
-- powers;
-- roots;
-- indices;
-- parentheses;
-- basic functions;
-- simple equations.
+## Hors périmètre
 
-Examples:
+- propriété ou gestion des documents ;
+- éditeur interne complet ;
+- démonstration ou vérification symbolique générale ;
+- synchronisation en nuage et collaboration ;
+- application mobile ;
+- entraînement d'un modèle avant une référence et des données propres ;
+- infrastructure générique de modèles ou d'expériences.
 
-```text
-f de x egal x au carre moins trois x plus deux
-```
-
-```latex
-f(x) = x^2 - 3x + 2
-```
-
-```text
-un sur x plus un
-```
-
-Ambiguous result candidates:
-
-```latex
-\frac{1}{x} + 1
-\frac{1}{x + 1}
-```
-
-## Out Of Scope
-
-- complete LaTeX authoring;
-- full document ownership;
-- internal document editor;
-- full theorem proving;
-- automatic proof checking;
-- advanced symbolic computation;
-- collaborative editing;
-- cloud sync;
-- mobile support;
-- model fine-tuning in the first version.
+La [feuille de route](roadmap.md) fixe les critères permettant de quitter ce
+périmètre.

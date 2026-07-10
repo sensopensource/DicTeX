@@ -1,63 +1,70 @@
-# Correction Loop
+# Boucle de correction
 
-Correction is a core part of DicTeX.
+La correction visible se fait d'abord dans le cahier externe afin de préserver
+le flux de pensée. La qualification et la conservation structurée des exemples
+se font ensuite dans DicTeX Lab.
 
-The system should not only replace visible output. It should record correction events that can later improve rules, prompts, preferences, and models.
+## Chemin actuel à valider
 
-Correction UI is not implemented yet. The current app only stores `audio_segment` and `stt_result` events. This document describes the future correction layer that should build on those records.
-
-## Correction Event
-
-Example:
-
-```json
-{
-  "event_type": "correction",
-  "timestamp": "2026-07-05T12:00:00Z",
-  "session_id": "session_2026_07_05_001",
-  "segment_id": "seg_042",
-  "target_app": "obsidian",
-  "audio_ref": "audio/seg_042.wav",
-  "raw_transcript": "un sur x plus un",
-  "normalized_transcript": "un sur x plus un",
-  "predicted_latex": "\\frac{1}{x} + 1",
-  "corrected_latex": "\\frac{1}{x + 1}",
-  "correction_method": "voice",
-  "error_type": "fraction_scope"
-}
+```text
+dictée dans DicTeX
+-> insertion dans Typora
+-> correction immédiate du brouillon dans Typora
+-> ouverture du segment correspondant dans le Lab
+-> réécoute de l'audio
+-> couche 1 : transcription littérale exacte
+-> couche 2 : prose et LaTeX corrigés
+-> choix de l'ensemble
+-> enregistrement à ajout uniquement
+-> export et contrôle
 ```
 
-## Correction Methods
+DicTeX ne lit pas automatiquement les modifications faites dans Typora. Pour le
+premier usage, le transfert vers le Lab reste volontaire et manuel. Une capture
+automatique des corrections externes ne sera envisagée que si ce chemin devient
+le goulot d'étranglement observé.
 
-MVP priority:
+## Deux corrections distinctes
 
-- keyboard edit;
-- select-and-replace;
-- choose between alternatives.
+Une correction acoustique produit la paire :
 
-Later:
-
-- voice correction;
-- personalized commands;
-- automatic preference learning.
-
-## Improvement Levels
-
-Corrections should not immediately mutate the global system.
-
-Use separate levels:
-
-- local output correction;
-- user preference;
-- rule improvement;
-- prompt improvement;
-- evaluation example;
-- fine-tuning example.
-
-## Dataset Export
-
-Correction events should be exportable as JSONL:
-
-```jsonl
-{"input":"un sur x plus un","wrong":"\\frac{1}{x} + 1","correct":"\\frac{1}{x + 1}","error_type":"fraction_scope"}
+```text
+audio -> transcription littérale exacte
 ```
+
+Elle porte `correction_kind = "acoustic"` et conserve les hésitations réellement
+prononcées.
+
+Une correction mathématique produit la paire :
+
+```text
+texte littéral -> prose et notation LaTeX canoniques
+```
+
+Elle porte `correction_kind = "math_transform"`. Elle ne doit jamais prétendre
+posséder un audio lorsqu'elle provient d'un texte collé.
+
+Les corrections `normalization` et `rephrasing` restent distinctes et ne doivent
+pas contaminer les deux jeux d'entraînement précédents.
+
+## Règles de conservation
+
+- Ne jamais modifier un ancien `stt_result`.
+- Ajouter un événement `stt_correction` pour chaque nouvelle vérité humaine.
+- Conserver `session_id`, `segment_id` et `audio_ref` afin de retrouver la
+  source.
+- Garder la dernière correction de chaque type, pas seulement la dernière
+  correction globale du segment.
+- Canonicaliser le LaTeX au moment de la mesure et de l'export, sans réécrire la
+  cible humaine stockée.
+- Ne jamais stocker un marqueur interne de commande dans une correction.
+
+## Premier contrôle obligatoire
+
+Avant toute collecte en volume, auditer manuellement un exemple complet : audio
+présent, texte brut inchangé, couches 1 et 2 correctes, appartenance à
+`validation`, export lisible et chemins audio valides. `test_frozen` ne sert pas
+à ce contrôle courant.
+
+Les détails de schéma et d'export sont définis dans
+`dataset-and-normalization-design.md`.

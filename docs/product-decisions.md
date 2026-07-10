@@ -2,10 +2,41 @@
 
 This document captures the product and implementation context that future agents should preserve when working on DicTeX.
 
+> **Direction actuelle :** `docs/roadmap.md` est la source canonique de l'ordre
+> des travaux. Ce document conserve les décisions durables ; les sections
+> anglaises antérieures restent comme historique. Toute nouvelle décision est
+> rédigée en français conformément à `CONTRIBUTING.md`.
+
+## Décisions de la boucle quotidienne — 10 juillet 2026
+
+- **Cahier externe :** Typora est le premier environnement réel. Zettlr est le
+  repli si une friction concrète apparaît. DicTeX ne possède toujours pas les
+  documents.
+- **Format :** prose Markdown et LaTeX canonique. `$…$` est implémenté pour les
+  mathématiques en ligne ; un mécanisme explicite `$$…$$` est la prochaine
+  extension du contrat. Le rendu appartient au cahier, pas au normaliseur.
+- **Contrôle :** le normaliseur doit être activable manuellement (#105). Aucun
+  changement automatique selon l'application cible pour l'instant.
+- **Interaction :** les libellés français Démarrer/Arrêter doivent partager le
+  même état entre le bouton et `Win+Alt+Space` (#96).
+- **Latence :** DicTeX doit garder un seul modèle STT actif dans un processus
+  Python persistant. Le chargement initial et la transcription chaude sont deux
+  mesures distinctes.
+- **Contexte STT :** le `initial_prompt` de faster-whisper est choisi par une
+  comparaison sur `validation` (#94), jamais par intuition ni sur
+  `test_frozen`.
+- **Correction :** la correction visible reste d'abord dans le cahier ; le Lab
+  qualifie ensuite les exemples en couches acoustique et mathématique.
+- **Apprentissage :** règles d'abord, petit modèle sur le résidu ensuite,
+  adaptation acoustique en dernier et seulement si le résidu le justifie.
+- **Langue du projet :** nouveaux commits, tickets, demandes de fusion,
+  documents, textes d'interface et transmissions en français ; anglais
+  technique seulement lorsqu'il est nécessaire.
+
 ## DicTeX / Lab split (monorepo)
 
-DicTeX is being split into two Electron apps in one npm-workspaces monorepo
-(see `pivot_dictex_lab_split.md` / AGENTS.md "Current Direction"):
+DicTeX est séparé en deux applications Electron dans un même monorepo npm
+(voir `pivot_dictex_lab_split.md` et la « Direction actuelle » d'`AGENTS.md`) :
 
 - **`apps/dictex`** — the consumer dictation tool (voice → STT → normalizer →
   insert). Has the microphone, hotkey, clipboard/paste, and normalizer.
@@ -44,23 +75,26 @@ It is not document-first. In the MVP, DicTeX should not own, manage, or edit ful
 Current product loop:
 
 ```text
-voice
--> local STT
--> clipboard / active app insertion
--> local event logging
--> future correction and improvement
+voix
+-> STT local
+-> normaliseur déterministe facultatif
+-> presse-papiers / application active
+-> événements locaux
+-> correction visible dans un cahier externe
+-> qualification typée et évaluation dans DicTeX Lab
 ```
 
 Future product loop:
 
 ```text
-voice
--> local STT
--> paragraph/math/command detection
--> text + LaTeX
--> fast correction
--> correction logs
--> rules/prompts/fine-tuning later
+voix
+-> STT local maintenu en mémoire
+-> texte littéral conservé
+-> règles déterministes
+-> modèle résiduel texte-vers-LaTeX
+-> Markdown + LaTeX dans un cahier externe
+-> correction rapide + données typées dans le Lab
+-> règles, puis modèles seulement après mesure
 ```
 
 ## Current MVP Reality
@@ -239,7 +273,10 @@ DICTEX_STT_DEVICE=cpu
 DICTEX_STT_COMPUTE_TYPE=int8
 ```
 
-French is the first spoken language target. English documentation is still preferred for GitHub discoverability.
+Le français est la première langue parlée cible. Depuis le 10 juillet 2026, la
+documentation et les autres artefacts humains du projet sont également rédigés
+en français ; l'anglais ne reste que pour les éléments techniques nécessaires
+(`CONTRIBUTING.md`).
 
 Future model comparison should be based on actual stored segments, not assumptions. Useful candidates:
 
@@ -327,11 +364,12 @@ Decisions:
   `correction_kind`. Files are named `<split>.<correction_kind>.jsonl`, so the
   acoustic (STT) dataset and the math_transform (normalizer) dataset land in
   distinct files and stay separable.
-- The export reads **all** correction events of a segment, taking the latest
-  correction of **each** kind — not the single latest event. A segment enriched
-  by #66 carries chained `acoustic` + `math_transform` corrections; collapsing to
-  the last event would silently drop the acoustic pair. Within one kind,
-  latest-event-wins still applies so a re-correction supersedes its predecessor.
+- L'export lit **toutes** les corrections d'un segment et conserve la dernière
+  de **chaque type**, pas uniquement la dernière correction globale. L'outil de
+  saisie actuel du Lab (#78) peut produire une chaîne `acoustic` +
+  `math_transform` ; réduire le segment à un seul événement supprimerait
+  silencieusement la paire acoustique. Dans un même type, la correction la plus
+  récente remplace toujours la précédente.
 - Untyped legacy corrections (no `correction_kind`) cannot be routed into a
   kind-partitioned dataset, so they are skipped and their count is reported in
   the manifest and UI rather than dropped silently.
@@ -344,50 +382,52 @@ Decisions:
   per-kind counts and the selection. Export proceeds even when no base candidate
   has been selected yet (`selected_candidate` is then null and the UI notes it).
 
-## Math Parsing Decisions
+## Décisions sur la notation et l'analyse mathématique
 
-**Update (2026-07-10): the notation format is LaTeX.** The normalizer's canonical
-output is LaTeX, not Unicode — Unicode cannot express integrals, structured
-fractions, sums with bounds, or matrices, and `LaTeX -> Unicode` derives while
-`Unicode -> LaTeX` does not. The hand-written Layer 2 target does not regenerate,
-so the format had to be settled before collecting data. KaTeX is a *renderer* of
-LaTeX, not a format and not a pipeline layer. A Home toggle (#105) switches the
-normalizer off so LaTeX never reaches an application that cannot render it. See
-`docs/dataset-and-normalization-design.md` §8, and issues #106 / #107.
+Depuis le 10 juillet 2026, le format canonique du normaliseur est LaTeX, pas
+Unicode. Unicode ne peut pas représenter honnêtement intégrales, fractions
+structurées, sommes bornées ou matrices. La cible humaine de couche 2 ne se
+régénère pas ; le format devait donc être fixé avant la collecte. KaTeX rend du
+LaTeX mais n'est ni un format ni une couche du pipeline. Le futur interrupteur
+Home (#105) permettra de désactiver le normaliseur dans une application qui ne
+rend pas LaTeX. #106 et #107 sont terminés ; voir
+`docs/dataset-and-normalization-design.md` §8.
 
-This concerns *generation* of notation by the deterministic and learned normalizer
-layers. Math **parsing** — building a semantic tree from spoken maths — is still
-not part of the working loop, and the paragraph below still holds for it.
+Cette décision concerne la génération de notation. La construction d'un arbre
+sémantique à partir de mathématiques parlées ne fait toujours pas partie de la
+boucle de travail.
 
-Do not add spoken-math parsing until these foundations are stable:
+L'analyse mathématique reste au parking. Ne pas l'ajouter tant que la boucle
+Typora, le modèle STT persistant, la correction Lab et cent dictées fiables
+n'ont pas montré qu'elle bloque réellement le flux. Si elle devient justifiée,
+commencer avec une portée étroite :
 
-- local dictation loop;
-- hotkey and insertion;
-- STT event logging;
-- compact utility UI;
-- basic diagnostics/settings.
+- variables ;
+- arithmétique ;
+- fractions ;
+- puissances ;
+- racines ;
+- indices ;
+- parenthèses ;
+- équations simples.
 
-When math parsing starts, keep the scope narrow:
-
-- variables;
-- arithmetic;
-- fractions;
-- powers;
-- roots;
-- indices;
-- parentheses;
-- simple equations.
-
-Ambiguity is expected. Future correction UX should make it easy to choose or correct parse scope.
+L'ambiguïté est normale. Une éventuelle interface devra permettre de choisir ou
+de corriger facilement la portée de l'analyse.
 
 ## Agent Handoff Guidance
 
 When handing a task to another agent, tell it to read at least:
 
 - `README.md`
+- `docs/roadmap.md`
+- `CONTRIBUTING.md`
 - `docs/product-decisions.md`
 - `docs/development.md`
 - the GitHub issue it is implementing
+
+La transmission, le ticket, les commits et la demande de fusion sont rédigés
+en français. Conserver l'anglais uniquement dans les identifiants, syntaxes et
+termes techniques qui l'imposent.
 
 Good tasks for another agent:
 

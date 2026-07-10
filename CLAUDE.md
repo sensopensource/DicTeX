@@ -1,17 +1,16 @@
 # CLAUDE.md
 
-Guidance for AI agents in this repository lives in **AGENTS.md**. Read it first
-and treat it as the source of truth — everything in it applies to Claude Code
-sessions as written.
+Les consignes destinées aux agents de ce dépôt se trouvent dans `AGENTS.md`.
+Elles s'appliquent intégralement aux sessions Claude Code.
 
-- `AGENTS.md` — reasoning-level labels, the implementer operating protocol,
-  issue orchestration, product context, and the current strategic direction.
-- `pivot_dictex_lab_split.md` — **current strategic direction**: split DicTeX
-  (consumer dictation tool) from a separate DicTeX Lab app (benchmark + dataset
-  + monitoring).
-- `pivot_strategique_stt_normalisation.md` — normalization strategy (dictionary
-  → regex → seq2seq); still valid, but its dataset/benchmark tooling now lives
-  in the Lab.
+Avant d'agir, lire en priorité :
 
-When acting as the orchestrator or as an implementing agent, follow the roles
-and protocol defined in AGENTS.md.
+- `AGENTS.md` pour le protocole de travail et les invariants ;
+- `docs/roadmap.md` pour la direction actuelle ;
+- `CONTRIBUTING.md` pour la convention de langue ;
+- `docs/product-decisions.md` pour les décisions produit ;
+- le ticket concerné et ses dépendances.
+
+Les anciens pivots expliquent l'histoire du projet, mais ne remplacent pas la
+feuille de route actuelle. Toute nouvelle rédaction humaine est en français,
+sauf syntaxe ou terme technique qui exige l'anglais.

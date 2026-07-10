@@ -1,9 +1,14 @@
 # Pivot: split DicTeX (consumer) from DicTeX Lab (tooling)
 
-Status: adopted 2026-07-09. Supersedes the "in-app dataset enrichment" direction
-of `pivot_strategique_stt_normalisation.md` for *where* dataset/benchmark work
-lives. The normalization strategy (dictionary → regex → seq2seq) is unchanged;
-only its evaluation/training tooling moves out of the consumer app.
+> **Archive historique.** Pivot adopté le 9 juillet 2026 et entièrement terminé
+> par les PR #74, #79, #80, #81 et #82. La séparation reste une décision
+> d'architecture, mais la priorité actuelle vit dans `docs/roadmap.md`. Les
+> nouveaux travaux et leur documentation sont rédigés en français.
+
+Ce pivot a remplacé la capture de données intégrée à DicTeX pour tout ce qui
+concerne l'emplacement des corrections, mesures et exports. La stratégie de
+normalisation dictionnaire → regex → seq2seq reste inchangée ; seul l'outillage
+d'évaluation et d'apprentissage a quitté l'application quotidienne.
 
 ## Why
 
@@ -72,29 +77,30 @@ copy/play (correct, benchmark, set-split); Vosk provider.
 Inputs: paste a transcription from DicTeX, or pick a DicTeX-recorded segment
 (read from DicTeX's data folder → audio + raw transcript). Features:
 
-1. **Dataset builder** — choose a reference model, enter the two layers (literal
-   + notation) by hand, attach/paste the transcription, export →
-   test_frozen-compatible JSONL.
-2. **Benchmark** — run STT candidates (faster-whisper/Vosk) over segments/a
-   dataset; CER/WER; summary; error analysis; candidate selection.
-3. **Monitoring** — candidate summaries/selections over time.
+1. **Outil de saisie** — sélectionner un segment DicTeX ou coller un texte,
+   saisir les deux couches, choisir un ensemble et exporter au format JSONL
+   compatible avec `test_frozen`. Le champ obsolète `referenceModel` a été
+   retiré par #83.
+2. **Banc d'essai** — exécuter les candidats STT faster-whisper ou Vosk sur des
+   segments, puis calculer CER/WER, résumé, analyse d'erreurs et sélection.
+3. **Suivi** — conserver les résumés et sélections de candidats dans le temps.
 
-## Phases (each: green typecheck+build, one PR, `main` always shippable)
+## Phases — toutes terminées
 
-- **Phase 0 — stabilize now**: remove the in-app two-layer *recording* capture
-  from DicTeX (keep the #44 export panel for now). The buggy surface is gone.
-- **Phase 1 — monorepo skeleton**: npm workspaces; current app → `apps/dictex`;
-  `engine/` → `packages/engine`; create `packages/shared`. No behavior change.
-- **Phase 2 — create `apps/lab`**: scaffold the 2nd Electron app; move Benchmark
-  + dataset + corrections + splits + Vosk + export into it; read DicTeX's data
-  folder + own store.
-- **Phase 3 — slim DicTeX**: reduce `main.tsx` to Home (dictation + normalizer +
-  model select + Open Lab + collapsible copy/play history); strip benchmark/
-  dataset/correction/split IPC from `index.ts`/`preload`; delete now-unused
-  modules.
-- **Phase 4 — Lab dataset builder + benchmark**: manual two-layer entry + export;
-  benchmark from DicTeX's data folder.
-- **Phase 5 (later)** — integrate selected/fine-tuned models back into DicTeX.
+- **Phase 0 — terminée, PR #74** : retrait de la capture deux-couches intégrée à
+  DicTeX.
+- **Phase 1 — terminée, #75 / PR #79** : création du monorepo npm et déplacement
+  vers `apps/dictex`, `packages/engine` et `packages/shared`.
+- **Phase 2 — terminée, #76 / PR #80** : création d'`apps/lab`, déplacement des
+  corrections, mesures, ensembles, Vosk et exports, avec stockage propre.
+- **Phase 3 — terminée, #77 / PR #81** : réduction de DicTeX à la dictée, au
+  normaliseur, au choix du modèle, à l'historique copie/réécoute et à l'ouverture
+  du Lab.
+- **Phase 4 — terminée, #78 / PR #82** : saisie manuelle des deux couches,
+  export et banc d'essai depuis le dossier de données DicTeX.
+- **Ancienne phase 5** — remplacée par `docs/roadmap.md` ; aucun modèle n'est
+  intégré avant que la boucle quotidienne, les données et les mesures aient
+  franchi leurs portes de sortie.
 
 ## Revertability
 

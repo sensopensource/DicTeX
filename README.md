@@ -1,134 +1,140 @@
 # DicTeX
 
-DicTeX is a local-first voice tool for mathematical dictation.
+DicTeX est un outil local de dictée scientifique, d'abord conçu pour une voix,
+un micro et un usage personnel en français.
 
-It currently turns spoken language into text that can be inserted into the active application, while storing local STT data that can later support correction, evaluation, and fine-tuning.
+Il transcrit la parole, conserve l'audio et le texte littéral, applique
+facultativement des règles déterministes, puis insère un brouillon mêlant prose
+Markdown et mathématiques LaTeX dans l'application active.
 
-## Core Idea
-
-Mathematical dictation is not only speech-to-text.
-
-Users mix natural language, equations, commands, hesitation, and corrections. DicTeX is designed around that reality, but the current implementation intentionally starts with the dictation foundation:
-
-```text
-Voice
--> transcription
--> clipboard / active app insertion
--> local STT event logging
-```
-
-Future math loop:
+## Boucle produit actuelle
 
 ```text
-Voice
--> transcription
--> paragraph/math detection
--> text + LaTeX generation
--> insertion into the active app
--> fast correction
--> correction logs
--> future improvement
+voix
+-> STT local avec faster-whisper
+-> conservation de l'audio et du texte brut
+-> normaliseur : dictionnaire personnel, commandes, règles regex
+-> texte et mathématiques LaTeX en ligne
+-> presse-papiers et collage dans l'application active
 ```
 
-## Product Loop
+Le normaliseur produit du LaTeX canonique délimité par `$…$`. Le texte brut et
+les sorties intermédiaires restent conservés afin qu'une erreur puisse être
+attribuée à la bonne couche.
 
-```mermaid
-flowchart LR
-    A[Voice] --> B[Local STT]
-    B --> C[Clipboard / active app]
-    C --> D[STT event logs]
-    D --> E[Future correction + improvement]
-```
+## Deux applications, un dépôt
 
-## Repository Layout
+Le dépôt est un monorepo npm contenant deux applications Electron :
 
-DicTeX is an npm-workspaces monorepo with two Electron apps:
+- **`apps/dictex`** : l'outil quotidien avec microphone, raccourci global,
+  transcription, normalisation, historique et collage ;
+- **`apps/lab`** : le **DicTeX Lab**, sans microphone, destiné à l'écoute des
+  segments, aux corrections typées, aux ensembles d'évaluation, aux mesures et
+  aux exports de données.
 
-- **`apps/dictex`** — the consumer dictation app (this README's product).
-- **`apps/lab`** — **DicTeX Lab**, a separate tooling app (no microphone) for
-  STT benchmarking, typed corrections, benchmark-set splits, and dataset
-  export. It reads DicTeX's local data folder **read-only** and keeps its own
-  store. See `docs/development.md` → "DicTeX Lab" and
-  `pivot_dictex_lab_split.md`.
+Les composants partagés se trouvent dans :
 
-Shared Python STT (`packages/engine`) and shared TypeScript
-(`packages/shared`) back both apps.
+- **`packages/engine`** : moteur STT Python ;
+- **`packages/shared`** : schémas d'événements, normaliseur, mesures et exports
+  TypeScript.
 
-## MVP Scope
+Le Lab lit le dossier de données de DicTeX sans l'écrire et conserve ses propres
+corrections, mesures et exports dans son dossier local.
 
-The current MVP focuses on a small but useful local workflow:
+## Direction actuelle
 
-- local speech-to-text;
-- insertion into the active application;
-- global hotkey dictation;
-- Windows auto-paste;
-- local audio segment storage;
-- local STT result logging.
+DicTeX reste une couche de dictée : il ne possède pas les documents et ne
+devient pas un éditeur complet. **Typora** est le premier cahier de brouillon
+réel retenu, avec Zettlr comme solution de repli si une friction concrète
+apparaît.
 
-Future MVP layers include:
-
-- paragraph vs math detection;
-- spoken math to LaTeX;
-- fast correction loop;
-- correction event logging;
-- optional Markdown + LaTeX output.
-
-## Not In The MVP
-
-- cloud sync;
-- collaborative editing;
-- full computer algebra system;
-- production-grade fine-tuning;
-- mobile apps;
-- multi-user backend.
-
-## Why Local Logs Matter
-
-Every segment should preserve the audio -> STT output link. Future corrections should be stored with context:
-
-```json
-{
-  "session_id": "session_2026_07_05_001",
-  "segment_id": "seg_042",
-  "target_app": "obsidian",
-  "raw_transcript": "un sur x plus un",
-  "predicted_latex": "\\frac{1}{x} + 1",
-  "corrected_latex": "\\frac{1}{x + 1}",
-  "error_type": "fraction_scope",
-  "correction_method": "voice"
-}
-```
-
-Those logs can later improve:
-
-- parsing rules;
-- prompts;
-- user preferences;
-- evaluation datasets;
-- fine-tuned models.
-
-## Francais
-
-DicTeX est un outil local-first de dictee mathematique.
-
-Il transforme la voix en texte et equations LaTeX inserables dans l'application active, tout en enregistrant un journal de corrections utilisable pour ameliorer progressivement le systeme.
-
-Objectif produit :
+Le chemin immédiat est :
 
 ```text
-Dicter des maths, corriger vite, ameliorer le systeme avec chaque correction.
+Typora
+-> Démarrer/Arrêter et normaliseur fiables
+-> modèle STT maintenu en mémoire
+-> comparaison de contextes initiaux STT
+-> test complet de correction dans le Lab
+-> usage quotidien et collecte propre
+-> amélioration des règles
+-> entraînement seulement après mesure du résidu
 ```
+
+La [feuille de route](docs/roadmap.md) est la source canonique pour l'ordre des
+travaux et leurs portes de sortie.
+
+## État du projet
+
+Déjà disponible :
+
+- transcription locale faster-whisper, dont l'exécution CUDA sur la machine de
+  développement ;
+- sélection du modèle STT ;
+- raccourci global `Win+Alt+Space` et collage automatique sous Windows ;
+- stockage local à ajout uniquement (`append-only`) de l'audio, du texte brut
+  et de la normalisation ;
+- dictionnaire personnel, mots de commande et règles mathématiques regex ;
+- convention LaTeX canonique et canonicalisation avant mesure ou export ;
+- historique de dictées avec copie et réécoute ;
+- Lab séparé pour les corrections, les comparaisons et les exports ;
+- passage d'un `initial_prompt` nommé à faster-whisper pour les expériences.
+
+Prochaines étapes :
+
+- interrupteur du normaliseur (#105) ;
+- Démarrer/Arrêter cohérent entre l'interface et le raccourci (#96) ;
+- mécanisme explicite pour les mathématiques en bloc `$$…$$` ;
+- processus STT persistant afin de ne plus recharger le modèle à chaque dictée ;
+- comparaison des variantes de contexte initial sur `validation` (#94) ;
+- validation d'un chemin complet de correction et d'export.
+
+## Principes
+
+- local par défaut ;
+- entrée vocale française en premier ;
+- prose Markdown et mathématiques LaTeX portables ;
+- modèle de données centré sur les sessions et les segments, pas sur les
+  documents ;
+- événements à ajout uniquement et aucune perte d'intermédiaire ;
+- correction acoustique séparée de la transformation mathématique ;
+- règles déterministes avant modèle appris ;
+- `validation` pour les décisions, `test_frozen` une seule fois à la fin ;
+- aucun entraînement intégré avant d'avoir battu une référence dans le Lab.
+
+## Développement
+
+Depuis la racine du dépôt, sous Windows :
+
+```powershell
+scripts\npm.cmd install
+scripts\npm.cmd run typecheck
+scripts\npm.cmd test
+scripts\npm.cmd run build
+scripts\npm.cmd run dev
+```
+
+Consulter le [guide de développement](docs/development.md) pour le Lab, Python,
+CUDA, les variables d'environnement et les vérifications manuelles.
 
 ## Documentation
 
+- [Feuille de route](docs/roadmap.md)
 - [Vision](docs/vision.md)
-- [MVP](docs/mvp.md)
+- [Décisions produit](docs/product-decisions.md)
 - [Architecture](docs/architecture.md)
-- [Correction Loop](docs/correction-loop.md)
-- [Open Source Landscape](docs/open-source-landscape.md)
-- [Development](docs/development.md)
-- [Product Decisions](docs/product-decisions.md)
+- [Conception des données et du normaliseur](docs/dataset-and-normalization-design.md)
+- [Boucle de correction](docs/correction-loop.md)
+- [Périmètre MVP](docs/mvp.md)
+- [Développement](docs/development.md)
+- [Contribuer et convention de langue](CONTRIBUTING.md)
 
-## Status
+Les documents de pivot restent disponibles comme historique :
+`pivot_dictex_lab_split.md` et `pivot_strategique_stt_normalisation.md`.
 
-Early MVP. The app currently supports local faster-whisper transcription, local STT event logging, global Windows hotkey dictation, and Windows auto-paste.
+## Langue
+
+Depuis le 10 juillet 2026, les nouveaux commits, tickets, demandes de fusion,
+documents, textes d'interface et transmissions sont rédigés en français.
+L'anglais reste réservé aux termes et syntaxes techniques qui l'exigent. Les
+détails et exceptions sont définis dans [CONTRIBUTING.md](CONTRIBUTING.md).
