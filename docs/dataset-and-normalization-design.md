@@ -323,6 +323,12 @@ GPU, and it is already representable in the existing candidate identity —
 Benchmark prompt variants on `validation` before committing to acoustic
 fine-tuning (#45); the prompt may already deliver what the fine-tune promises.
 
+It is not free, though. `packages/engine/transcribe.py` does not pass
+`initial_prompt` to faster-whisper today, so the parameter must first be wired
+through the sidecar and surfaced as a candidate `variant` (#93) before the
+variants can be benchmarked (#94). That is still far cheaper than collecting
+hand-transcribed acoustic pairs.
+
 Suggested order:
 
 1. Freeze a small but honest `test_frozen` **before** training anything.
