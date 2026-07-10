@@ -374,6 +374,20 @@
   overflow-wrap: anywhere;
 }
 
+/* ---- Dataset builder rule hints ------------------------------------------- */
+
+/* Quiet inline guidance for the two-layer builder: which source/layer rule
+   applies, and (reactively) what a click on "Save entry" would actually
+   write. Kept visually calm (muted, no border) so it reads as guidance, not
+   as an error — .error / .notice above it take priority when present. */
+.builder-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 /* ---- Dataset export summary ---------------------------------------------- */
 
 .dataset-export-summary {
