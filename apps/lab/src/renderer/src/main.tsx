@@ -46,6 +46,7 @@ import {
   type CandidateErrorAnalysis,
   type SttErrorCategory,
 } from "@dictex/shared/errorAnalysis";
+import { diffWords, type DiffSegment } from "@dictex/shared/textDiff";
 import type {
   DatasetBuilderSaveRequest,
   DatasetBuilderSaveResponse,
@@ -86,6 +87,7 @@ type LabApi = {
   selectSttCandidate: (request: SttCandidateSelectionRequest) => Promise<SttCandidateSelectionResponse>;
   getLatestSttCandidateSelection: () => Promise<SttCandidateSelectionResponse | null>;
   saveDatasetBuilderEntry: (request: DatasetBuilderSaveRequest) => Promise<DatasetBuilderSaveResponse>;
+  prefillDatasetBuilderLayer2: (literalTranscript: string) => Promise<string>;
   exportSttDataset: () => Promise<SttDatasetExportSummary>;
   openExportFolder: (exportDir?: string) => Promise<boolean>;
   getSttBenchmarkModels: () => Promise<string[]>;
@@ -167,6 +169,19 @@ function App(): React.ReactElement {
   const [builderNotice, setBuilderNotice] = useState("");
   const [builderError, setBuilderError] = useState("");
 
+  // Layer 2 prefill from the pipeline (issue #101): fires whenever Layer 1
+  // has content, so picking a segment or typing Layer 1 shows the
+  // dictionary+regex output (command words spelled out) as a starting point.
+  // `lastPrefillRef` tracks the most recent prefill so a fresh one only
+  // overwrites Layer 2 when the field still holds an EARLIER auto-prefill (or
+  // is empty) — never when the human has typed something else into it. The
+  // prefill is always a starting point; what gets saved is whatever is left
+  // in the field.
+  const [builderNotationPrefill, setBuilderNotationPrefill] = useState("");
+  const [isPrefillingLayer2, setIsPrefillingLayer2] = useState(false);
+  const [builderPrefillError, setBuilderPrefillError] = useState("");
+  const lastPrefillRef = useRef("");
+
   // Dataset export.
   const [datasetExportSummary, setDatasetExportSummary] = useState<SttDatasetExportSummary | null>(null);
   const [datasetExportError, setDatasetExportError] = useState("");
@@ -199,6 +214,59 @@ function App(): React.ReactElement {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Layer 2 prefill (#101): debounced so it fires once Layer 1 settles rather
+  // than on every keystroke. Reads the SOURCE folder's dictionary/rules
+  // through the main process (the renderer cannot touch node:fs); the result
+  // has already been through the full pipeline and back through
+  // restoreCommandWords in the main process, so it is guaranteed sentinel-
+  // and newline-free by construction before it ever reaches this component.
+  useEffect(() => {
+    const trimmed = builderLiteral.trim();
+    if (trimmed.length === 0) {
+      lastPrefillRef.current = "";
+      setBuilderNotationPrefill("");
+      setBuilderPrefillError("");
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setIsPrefillingLayer2(true);
+      void window.dictexLab
+        .prefillDatasetBuilderLayer2(trimmed)
+        .then((prefill) => {
+          if (cancelled) {
+            return;
+          }
+          const previousPrefill = lastPrefillRef.current;
+          lastPrefillRef.current = prefill;
+          setBuilderNotationPrefill(prefill);
+          setBuilderPrefillError("");
+          // Only overwrite Layer 2 if it is still empty or still holds the
+          // PREVIOUS auto-prefill untouched; a human edit is never clobbered.
+          setBuilderNotation((current) => (current.length === 0 || current === previousPrefill ? prefill : current));
+        })
+        .catch((prefillError) => {
+          if (cancelled) {
+            return;
+          }
+          setBuilderPrefillError(
+            prefillError instanceof Error ? prefillError.message : "Could not prefill Layer 2 from the pipeline",
+          );
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setIsPrefillingLayer2(false);
+          }
+        });
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [builderLiteral]);
 
   async function refreshDataFolder(): Promise<void> {
     try {
@@ -586,6 +654,9 @@ function App(): React.ReactElement {
         `Saved ${savedLayers.join(" + ")} -> ${formatBenchmarkSetSplit(response.split)} (${response.sessionId} / ${response.segmentId})`,
       );
       setBuilderNotation("");
+      lastPrefillRef.current = "";
+      setBuilderNotationPrefill("");
+      setBuilderPrefillError("");
       if (builderMode === "paste") {
         setBuilderRawTranscript("");
         setBuilderLiteral("");
@@ -679,6 +750,9 @@ function App(): React.ReactElement {
           setBuilderLiteral={setBuilderLiteral}
           builderNotation={builderNotation}
           setBuilderNotation={setBuilderNotation}
+          builderNotationPrefill={builderNotationPrefill}
+          isPrefillingLayer2={isPrefillingLayer2}
+          builderPrefillError={builderPrefillError}
           builderSplit={builderSplit}
           setBuilderSplit={setBuilderSplit}
           isSavingBuilderEntry={isSavingBuilderEntry}
@@ -1466,6 +1540,11 @@ type DatasetViewProps = {
   setBuilderLiteral: (value: string) => void;
   builderNotation: string;
   setBuilderNotation: (value: string) => void;
+  /** Latest pipeline output over Layer 1 (command words spelled out, never a
+   * sentinel), used to render the "what the pipeline changed" diff (#101). */
+  builderNotationPrefill: string;
+  isPrefillingLayer2: boolean;
+  builderPrefillError: string;
   builderSplit: SttBenchmarkSetSplit;
   setBuilderSplit: (split: SttBenchmarkSetSplit) => void;
   isSavingBuilderEntry: boolean;
@@ -1498,6 +1577,9 @@ function DatasetView({
   setBuilderLiteral,
   builderNotation,
   setBuilderNotation,
+  builderNotationPrefill,
+  isPrefillingLayer2,
+  builderPrefillError,
   builderSplit,
   setBuilderSplit,
   isSavingBuilderEntry,
@@ -1520,6 +1602,18 @@ function DatasetView({
   // identical computation in saveDatasetBuilderEntry (App) so the disabled
   // state and the inline hint below never contradict the real save.
   const trimmedLiteral = builderLiteral.trim();
+
+  // Diff between Layer 1 and the pipeline's prefill (#101): recomputed from
+  // the two final, sentinel-free strings, so it never shows a sentinel or a
+  // command effect — only the words a human would see. Shown regardless of
+  // whether the human has since edited Layer 2, since its purpose is to
+  // surface what the PIPELINE changed, not to track the human's own edits.
+  const prefillDiff: DiffSegment[] = useMemo(
+    () => (trimmedLiteral.length > 0 && builderNotationPrefill.length > 0 ? diffWords(trimmedLiteral, builderNotationPrefill) : []),
+    [trimmedLiteral, builderNotationPrefill],
+  );
+  const prefillChanged = prefillDiff.some((segment) => segment.kind !== "equal");
+
   const effectiveRawTranscript =
     builderMode === "segment" ? (selectedBuilderSegment?.transcript.trim() ?? "") : builderRawTranscript.trim();
   const willSaveAcoustic = builderMode === "segment" && effectiveRawTranscript.length > 0;
@@ -1675,6 +1769,36 @@ function DatasetView({
           value={builderNotation}
           onChange={(event) => setBuilderNotation(event.target.value)}
         />
+
+        {trimmedLiteral.length > 0 &&
+          (isPrefillingLayer2 && builderNotationPrefill.length === 0 ? (
+            <p className="builder-hint">Prefilling Layer 2 from the pipeline…</p>
+          ) : builderPrefillError ? (
+            <p className="builder-hint">Prefill unavailable ({builderPrefillError}); type Layer 2 by hand.</p>
+          ) : builderNotationPrefill.length > 0 ? (
+            <>
+              <p className="transcript-label">
+                Pipeline prefill vs Layer 1 (dictionary + regex, command words spelled out — a starting point, always
+                editable)
+              </p>
+              <p className="prefill-diff" aria-label="What the pipeline changed">
+                {prefillChanged
+                  ? prefillDiff.map((segment, index) =>
+                      segment.kind === "equal" ? (
+                        <React.Fragment key={index}>{segment.text}</React.Fragment>
+                      ) : (
+                        <mark
+                          key={index}
+                          className={segment.kind === "added" ? "prefill-diff-added" : "prefill-diff-removed"}
+                        >
+                          {segment.text}
+                        </mark>
+                      ),
+                    )
+                  : "No change from Layer 1 — dictionary and regex left it as-is."}
+              </p>
+            </>
+          ) : null)}
 
         <div className="actions">
           <select

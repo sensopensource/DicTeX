@@ -701,11 +701,21 @@ Consequences, tracked as issues:
 - #100 move the normalizer into `packages/shared` and replay the pipeline over
   Layer 1 at export — `level:eleve` + `needs:high-review`. Leaving it in
   `apps/dictex` while the export lives in `packages/shared` would recreate the
-  train/serve divergence #92 just eliminated for command words.
-- #101 the Lab builder prefills Layer 2 from the dictionary+regex output (never
-  command extraction — a sentinel must not reach the store) and **highlights what
-  the pipeline changed**, because a prefilled field invites passive acceptance —
-  `level:moyen`, depends on #100.
+  train/serve divergence #92 just eliminated for command words. **DONE**
+  (PR #103, merged as `9f64cca`).
+- #101 the Lab builder prefills Layer 2 from the pipeline output and
+  **highlights what the pipeline changed**, because a prefilled field invites
+  passive acceptance — `level:moyen`, depends on #100. **DONE**. The prefill
+  runs the FULL pipeline (dictionary -> command extraction -> regex — the same
+  fold `apps/dictex` serves) over Layer 1, then `restoreCommandWords`
+  (`packages/shared/src/commands.ts`) maps the sentinel back to its canonical
+  spoken phrase — the exact inverse of `extractCommands` for the sentinel ->
+  words direction — so the builder's Layer 2 field only ever holds canonical
+  words, never a sentinel or a literal command effect. Chosen over skipping
+  command extraction in the prefill: skipping it would run the regex on text
+  the real pipeline never gives it. The diff itself is a small word-level LCS
+  diff (`packages/shared/src/textDiff.ts`) between Layer 1 and the prefilled
+  Layer 2, rendered inline in the dataset builder panel.
 
 The regex layer is not a stopgap the seq2seq makes redundant: its operand is a
 single letter or number, so it structurally cannot do composition, scope, or

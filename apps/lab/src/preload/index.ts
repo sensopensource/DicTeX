@@ -72,6 +72,9 @@ contextBridge.exposeInMainWorld("dictexLab", {
   // Dataset builder (own store, manual two-layer entries, #78).
   saveDatasetBuilderEntry: (request: DatasetBuilderSaveRequest) =>
     ipcRenderer.invoke("dataset-builder:save-entry", request) as Promise<DatasetBuilderSaveResponse>,
+  // Layer 2 prefill from the SOURCE folder's normalizer (read-only, #101).
+  prefillDatasetBuilderLayer2: (literalTranscript: string) =>
+    ipcRenderer.invoke("dataset-builder:prefill-layer2", literalTranscript) as Promise<string>,
 
   // Dataset export (own store).
   exportSttDataset: () => ipcRenderer.invoke("dataset:export-stt") as Promise<SttDatasetExportSummary>,

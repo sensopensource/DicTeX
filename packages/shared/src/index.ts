@@ -16,6 +16,7 @@
 //   `@dictex/shared/commands`       — command table + sentinel extract/expand
 //   `@dictex/shared/formatting`     — presentation string formatting
 //   `@dictex/shared/errorAnalysis`  — heuristic benchmark error analysis
+//   `@dictex/shared/textDiff`       — word-level diff (Lab Layer 2 prefill, #101)
 // Those modules only TYPE-import from the node-touching modules above.
 // `commands` is pure (no node built-ins) and is also re-exported here so main-
 // process code can pull it from the barrel; see `@dictex/shared/commands` for

@@ -444,14 +444,27 @@ that §4 eliminated for command words — one pipeline for DicTeX, another for t
 dataset — so a test asserts the exported `math_transform` input equals what
 `apps/dictex` serves for the same Layer 1.
 
-**The builder should prefill Layer 2 with the pipeline output** (#101), so the
-correction the human types *is* the residual: instead of writing
+**The builder should prefill Layer 2 with the pipeline output** (#101, **landed**),
+so the correction the human types *is* the residual: instead of writing
 `retour à la ligne x² + 2` from scratch, they are shown
 `retour à la ligne x² plus deux` and fix three words. Two constraints:
 
-- the prefill runs **dictionary + regex only, never command extraction** —
-  extraction would yield a sentinel and expansion would yield a real line break,
-  violating the storage rule (§4). Command words stay spelled out;
+- the prefill must never let a sentinel or a literal command effect (a real line
+  break) reach the builder's Layer 2 field — that would violate the storage rule
+  (§4), which requires canonical words in both layers. **Implemented** by running
+  the FULL pipeline (dictionary → command extraction → regex — the exact same
+  fold `apps/dictex` serves and the export replays) over Layer 1, then mapping
+  each sentinel back to its canonical phrase with `restoreCommandWords`
+  (`packages/shared/src/commands.ts`), the exact inverse of `extractCommands` for
+  the sentinel → words direction. This was chosen over skipping command
+  extraction in the prefill (an earlier idea): skipping it would let the regex
+  run on text — spoken command phrases left in place — that the real pipeline
+  never gives it, since production always extracts commands before the regex
+  runs. Running the full pipeline and restoring words afterward keeps the
+  prefill an exact preview of what layer 3 will actually receive, with no
+  parallel, possibly-diverging codepath;
 - **the diff must be visible.** A prefilled field invites passive acceptance, and a
   subtly wrong regex output accepted without looking would teach layer 3 that
-  error — or enter `validation` as ground truth.
+  error — or enter `validation` as ground truth. **Implemented** as a compact
+  word-level diff (`packages/shared/src/textDiff.ts`) between Layer 1 and the
+  prefilled Layer 2, rendered inline in the Lab's dataset builder.
