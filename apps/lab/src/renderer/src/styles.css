@@ -374,6 +374,26 @@
   overflow-wrap: anywhere;
 }
 
+/* ---- Dataset builder segment picker & audio controls ---------------------- */
+
+.segment-picker-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.segment-picker-controls > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.segment-audio-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 /* ---- Dataset builder rule hints ------------------------------------------- */
 
 /* Quiet inline guidance for the two-layer builder: which source/layer rule

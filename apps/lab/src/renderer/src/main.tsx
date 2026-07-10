@@ -663,6 +663,12 @@ function App(): React.ReactElement {
       <main className="app-shell">
         <DatasetView
           segments={segments}
+          loadSegments={() => void loadSegments()}
+          isLoadingSegments={isLoadingSegments}
+          playSegmentAudio={(segment) => void playSegmentAudio(segment)}
+          loadingAudioSegmentKey={loadingAudioSegmentKey}
+          playingAudioSegmentKey={playingAudioSegmentKey}
+          audioError={audioError}
           builderMode={builderMode}
           setBuilderMode={setBuilderMode}
           builderSegmentKey={builderSegmentKey}
@@ -1444,6 +1450,12 @@ function BenchmarkView({
 
 type DatasetViewProps = {
   segments: ReconstructedSegment[];
+  loadSegments: () => void;
+  isLoadingSegments: boolean;
+  playSegmentAudio: (segment: ReconstructedSegment) => void;
+  loadingAudioSegmentKey: string;
+  playingAudioSegmentKey: string;
+  audioError: string;
   builderMode: "paste" | "segment";
   setBuilderMode: (mode: "paste" | "segment") => void;
   builderSegmentKey: string;
@@ -1470,6 +1482,12 @@ type DatasetViewProps = {
 
 function DatasetView({
   segments,
+  loadSegments,
+  isLoadingSegments,
+  playSegmentAudio,
+  loadingAudioSegmentKey,
+  playingAudioSegmentKey,
+  audioError,
   builderMode,
   setBuilderMode,
   builderSegmentKey,
@@ -1589,28 +1607,50 @@ function DatasetView({
           </>
         ) : (
           <>
-            <select
-              aria-label="DicTeX segment"
-              className="secondary-select"
-              value={builderSegmentKey}
-              onChange={(event) => setBuilderSegmentKey(event.target.value)}
-            >
-              <option value="">Choose a segment…</option>
-              {segments.map((segment) => (
-                <option key={getSegmentKey(segment)} value={getSegmentKey(segment)}>
-                  {segment.sessionId} / {segment.segmentId} — {segment.transcript.slice(0, 60)}
-                </option>
-              ))}
-            </select>
+            <div className="segment-picker-controls">
+              <div>
+                <select
+                  aria-label="DicTeX segment"
+                  className="secondary-select"
+                  value={builderSegmentKey}
+                  onChange={(event) => setBuilderSegmentKey(event.target.value)}
+                >
+                  <option value="">Choose a segment…</option>
+                  {segments.map((segment) => (
+                    <option key={getSegmentKey(segment)} value={getSegmentKey(segment)}>
+                      {segment.sessionId} / {segment.segmentId} — {segment.transcript.slice(0, 60)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button className="secondary-button" disabled={isLoadingSegments} onClick={loadSegments}>
+                {isLoadingSegments ? "Loading" : "Refresh"}
+              </button>
+            </div>
             {segments.length === 0 && (
               <p className="empty-state">
-                No DicTeX segments found yet. Record a dictation in DicTeX, then go back to Segments and click
-                Refresh.
+                No DicTeX segments found yet. Record a dictation in DicTeX, then click Refresh.
               </p>
             )}
             {selectedBuilderSegment && (
-              <p className="correction-raw">Raw: {selectedBuilderSegment.transcript || "-"}</p>
+              <>
+                <p className="correction-raw">Raw: {selectedBuilderSegment.transcript || "-"}</p>
+                <div className="segment-audio-controls">
+                  <button
+                    className="secondary-button"
+                    disabled={!selectedBuilderSegment.audioRef || loadingAudioSegmentKey === getSegmentKey(selectedBuilderSegment)}
+                    onClick={() => playSegmentAudio(selectedBuilderSegment)}
+                  >
+                    {loadingAudioSegmentKey === getSegmentKey(selectedBuilderSegment)
+                      ? "Loading"
+                      : playingAudioSegmentKey === getSegmentKey(selectedBuilderSegment)
+                        ? "Stop"
+                        : "Play"}
+                  </button>
+                </div>
+              </>
             )}
+            {audioError && <pre className="error">{audioError}</pre>}
           </>
         )}
 
