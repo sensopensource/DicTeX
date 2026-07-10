@@ -12,6 +12,10 @@
     "build": "npm run build --workspace apps/dictex && npm run build --workspace apps/lab",
     "dev": "npm run dev --workspace apps/dictex",
     "dev:dictex": "npm run dev --workspace apps/dictex",
-    "dev:lab": "npm run dev --workspace apps/lab"
+    "dev:lab": "npm run dev --workspace apps/lab",
+    "test": "node --import tsx --test packages/shared/src/commands.test.ts packages/shared/src/datasetExport.test.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.0"
   }
 }

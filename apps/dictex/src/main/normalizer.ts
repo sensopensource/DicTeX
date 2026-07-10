@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { extractCommands } from "@dictex/shared/commands";
 
 /**
  * Text-to-text normalization pipeline (strategic pivot, Phase 2).
@@ -9,8 +10,21 @@ import { readFile } from "node:fs/promises";
  * the previous layer's output as input:
  *
  *   layer 1 — personal dictionary  (deterministic substring replacement) — here
+ *   command extraction — spoken commands -> inert sentinels (shared table)  — here
  *   layer 2 — regex math-verbalization rules  (Unicode-aware, here too)
  *   layer 3 — small seq2seq model                                        — later (Phase 3)
+ *
+ * Command extraction (issue #92) sits BETWEEN the dictionary and the regex rules,
+ * exactly as the design (`docs/dataset-and-normalization-design.md` §4) requires:
+ * the dictionary first canonicalises spelling variants ("retourne à la ligne" ->
+ * "retour à la ligne") so the extractor matches one form, then each spoken command
+ * becomes a Private Use Area sentinel that survives every downstream layer (regex
+ * now, seq2seq later) untouched. The sentinel is expanded into its real action
+ * (a line break, …) only at insert time, by the caller — see `expandCommands` in
+ * `@dictex/shared/commands`. The `output` of this pipeline therefore MAY contain
+ * sentinels; the caller MUST route it (and every stored layer string) through
+ * `expandCommands` before writing it to the event log, since a sentinel must never
+ * reach a store.
  *
  * Design constraints (see AGENTS.md):
  * - We must always know which layer produced a wrong output, so every layer's
@@ -21,7 +35,11 @@ import { readFile } from "node:fs/promises";
  * - With no active layer, the output is byte-identical to the input.
  */
 
-export type NormalizationLayerName = "personal_dictionary" | "regex_rules" | "seq2seq_model";
+export type NormalizationLayerName =
+  | "personal_dictionary"
+  | "command_extraction"
+  | "regex_rules"
+  | "seq2seq_model";
 
 /** One entry of the personal dictionary: literal `from` becomes literal `to`. */
 export type DictionaryEntry = {
@@ -91,8 +109,24 @@ async function buildPipeline(options: NormalizeOptions): Promise<NormalizationLa
 
   return [
     createPersonalDictionaryLayer(dictionary.entries, dictionary.diagnostics),
+    createCommandExtractionLayer(),
     createRegexRulesLayer(rules.entries, rules.diagnostics),
   ];
+}
+
+/**
+ * Command extraction layer (issue #92). Replaces each spoken command with its
+ * inert sentinel, using the shared command table so DicTeX and the Lab's dataset
+ * export never diverge. Runs after the personal dictionary (which canonicalises
+ * spelling variants) and before the regex rules (which the sentinel passes
+ * through untouched). Has no config file and never fails; the caller expands the
+ * sentinel into a real action at insert time.
+ */
+function createCommandExtractionLayer(): NormalizationLayer {
+  return {
+    name: "command_extraction",
+    apply: (input) => ({ output: extractCommands(input), diagnostics: [] }),
+  };
 }
 
 async function runPipeline(input: string, layers: NormalizationLayer[]): Promise<NormalizationResult> {

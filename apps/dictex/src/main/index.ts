@@ -11,6 +11,7 @@ import {
   type ReconstructedSegment,
   type SttConfig,
 } from "@dictex/shared";
+import { expandCommands } from "@dictex/shared/commands";
 import { readAppSettings, writeAppSettings } from "./settings.js";
 import { normalizeTranscript, DEFAULT_RULES, type NormalizationResult } from "./normalizer.js";
 
@@ -240,16 +241,27 @@ const defaultRulesTemplate = `${JSON.stringify(
   2,
 )}\n`;
 
-// Layer 1 of the normalization pipeline records each layer's output on the event
-// so a wrong insertion can be attributed to a specific layer (see AGENTS.md).
+// Records each layer's output on the event so a wrong insertion can be attributed
+// to a specific layer (see AGENTS.md). Every stored string is routed through
+// `expandCommands` first: the command-extraction layer and everything after it
+// may carry Private Use Area sentinels, and a sentinel must NEVER reach the event
+// store (issue #92) — it is invisible, so a corrupted store would look healthy.
+// Expansion turns each sentinel into its real effect (a line break, …), so the
+// stored layer trace shows what was actually inserted and is guaranteed
+// sentinel-free. `applied` is recomputed on the expanded strings so it stays
+// truthful after substitution.
 function toNormalizationLayerRecords(normalization: NormalizationResult): JsonValue {
-  return normalization.layers.map((layer) => ({
-    layer: layer.layer,
-    input: layer.input,
-    output: layer.output,
-    applied: layer.applied,
-    diagnostics: layer.diagnostics,
-  }));
+  return normalization.layers.map((layer) => {
+    const input = expandCommands(layer.input);
+    const output = expandCommands(layer.output);
+    return {
+      layer: layer.layer,
+      input,
+      output,
+      applied: output !== input,
+      diagnostics: layer.diagnostics,
+    };
+  });
 }
 
 function getAudioExtension(mimeType: string): string {
@@ -470,6 +482,13 @@ ipcMain.handle(
       rulesPath: getRulesPath(),
     });
 
+    // Expand command sentinels into their real effect (line breaks, …) at insert
+    // time (issue #92). `normalization.output` may carry PUA sentinels from the
+    // command-extraction layer; `expandCommands` is a total sentinel eliminator,
+    // so `insertedTranscript` — what is pasted AND what is stored below — is
+    // guaranteed sentinel-free. A sentinel must never reach the event store.
+    const insertedTranscript = expandCommands(normalization.output);
+
     await appendEvent({
       event_type: "normalization_result",
       session_id: sessionId,
@@ -477,13 +496,12 @@ ipcMain.handle(
       created_at: new Date().toISOString(),
       audio_ref: audioRef,
       input_transcript: normalization.input,
-      output_transcript: normalization.output,
-      passthrough: normalization.passthrough,
+      output_transcript: insertedTranscript,
+      passthrough: insertedTranscript === normalization.input,
       layers: toNormalizationLayerRecords(normalization),
       diagnostics: normalization.diagnostics,
     });
 
-    const insertedTranscript = normalization.output;
     clipboard.writeText(insertedTranscript);
     const pastedToActiveApp =
       options.autoPaste === true && insertedTranscript.trim().length > 0

@@ -1,3 +1,4 @@
+import { extractCommands } from "./commands.js";
 import {
   CORRECTION_KIND_ORDER,
   countUntypedSttCorrections,
@@ -108,14 +109,32 @@ export function buildSttDatasetExport(events: LocalEvent[], createdAt: string): 
       const sttInfo = getSegmentSttInfo(events, segment.sessionId, segment.segmentId);
 
       for (const correction of corrections) {
+        // Command-word substitution (issue #92). The event store holds the
+        // canonical words in full; sentinels are introduced only here, when the
+        // training pair is built, so `apps/dictex`'s normalizer and this export
+        // share ONE command table (packages/shared/commands.ts). Applied to BOTH
+        // layers of a `math_transform` pair (input = literal Layer 1, target =
+        // notation Layer 2) so the seq2seq sees the sentinel on both sides and
+        // learns to pass it through. NEVER applied to an `acoustic` pair: Layer 1
+        // is verbatim forever and its command words must stay spelled out for the
+        // STT model to transcribe them. Because substitution happens at export,
+        // regenerating after adding a command retroactively fixes every pair.
+        const substitute = correction.correctionKind === "math_transform";
+        const rawTranscript = substitute
+          ? extractCommands(correction.rawTranscript)
+          : correction.rawTranscript;
+        const correctedTranscript = substitute
+          ? extractCommands(correction.correctedTranscript)
+          : correction.correctedTranscript;
+
         const record: SttDatasetRecord = {
           split,
           sessionId: segment.sessionId,
           segmentId: segment.segmentId,
           audioRef: segment.audioRef,
           correctionKind: correction.correctionKind,
-          rawTranscript: correction.rawTranscript,
-          correctedTranscript: correction.correctedTranscript,
+          rawTranscript,
+          correctedTranscript,
           originalSttOutput: sttInfo.sttOutput,
           language: sttInfo.sttLanguage,
           sttEngine: sttInfo.sttEngine,
