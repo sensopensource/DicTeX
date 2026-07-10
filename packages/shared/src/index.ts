@@ -14,6 +14,7 @@
 // Renderer-only (browser-safe) helpers live in dedicated subpath exports so
 // they never pull node built-ins into a renderer bundle:
 //   `@dictex/shared/commands`       — command table + sentinel extract/expand
+//   `@dictex/shared/latex`          — LaTeX canonicalizer (#106)
 //   `@dictex/shared/formatting`     — presentation string formatting
 //   `@dictex/shared/errorAnalysis`  — heuristic benchmark error analysis
 //   `@dictex/shared/textDiff`       — word-level diff (Lab Layer 2 prefill, #101)
@@ -22,6 +23,7 @@
 // process code can pull it from the barrel; see `@dictex/shared/commands` for
 // renderer-safe use.
 export * from "./commands.js";
+export * from "./latex.js";
 export * from "./localEvents.js";
 export * from "./sttScoring.js";
 export * from "./benchmarkSummary.js";

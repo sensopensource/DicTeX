@@ -1,3 +1,5 @@
+import { canonicalizeLatex } from "./latex.js";
+
 export function normalizeForScoring(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
@@ -27,8 +29,12 @@ export function calculateEditDistance<T>(left: T[], right: T[]): number {
 }
 
 export function calculateCharacterErrorRate(candidateTranscript: string, referenceTranscript: string): number {
-  const candidate = normalizeForScoring(candidateTranscript);
-  const reference = normalizeForScoring(referenceTranscript);
+  // Canonicalize LaTeX BEFORE scoring (issue #106): `x^2` and `x^{2}` are the
+  // same mathematics and must not score as an error. On prose (no `$…$`) this is
+  // the identity, so raw STT output is unaffected. Applied before the existing
+  // lowercase/trim so LaTeX macro case is preserved through canonicalization.
+  const candidate = normalizeForScoring(canonicalizeLatex(candidateTranscript));
+  const reference = normalizeForScoring(canonicalizeLatex(referenceTranscript));
 
   if (reference.length === 0) {
     return candidate.length === 0 ? 0 : 1;
@@ -49,7 +55,8 @@ export function calculateWordErrorRate(candidateTranscript: string, referenceTra
 }
 
 function tokenizeWords(value: string): string[] {
-  return normalizeForScoring(value)
+  // Canonicalize LaTeX before word tokenization, for the same reason CER does.
+  return normalizeForScoring(canonicalizeLatex(value))
     .split(/\s+/)
     .filter((word) => word.length > 0);
 }
