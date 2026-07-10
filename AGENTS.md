@@ -670,20 +670,35 @@ Post-pivot (done):
   fixed a guard that left Save enabled for a paste-mode entry with no Layer 2 —
   a request the main process could only reject.
 
-Post-pivot (open):
-
 - #89 Lab dataset builder: refresh the segment list + replay segment audio —
-  `level:faible`. **Blocks the dataset collection campaign**: Layer 1 must be
-  verbatim, which requires replaying the segment before validating an entry, and
-  a dictation recorded after the Lab opened never reaches the builder's picker.
-  Pure prop wiring; `loadSegments` / `playSegmentAudio` and `segments:get-audio`
-  already exist.
+  **DONE** (PR #91). Threads `loadSegments` / `playSegmentAudio` into
+  `DatasetView`; audio affordances hidden in paste mode.
+- #92 Command words: shared sentinel layer — **DONE** (PR #98). One table in
+  `packages/shared/src/commands.ts`, consumed by `apps/dictex`'s normalizer
+  (`extractCommands` between the dictionary and the regex layer), by insertion
+  and event writing (`expandCommands`, a total sentinel eliminator), and by the
+  dataset export (`extractCommands` on both layers of a `math_transform` pair,
+  never on an `acoustic` one). `npm test` guards the no-sentinel-in-store
+  invariant and now runs in CI.
+
+Post-pivot (open):
 - #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`.
   Phase 5, gated on the Lab producing enough `acoustic`-tagged data. **Reconsider
   the ordering**: benchmarking STT system-prompt variants costs no training data
   and no GPU, and is representable today as a new `variant` in the existing
   `{stage, provider, model, variant}` candidate identity. See
   `docs/dataset-and-normalization-design.md` §6.
+
+Open design decision, blocking normalizer layer 3 (see
+`docs/dataset-and-normalization-design.md` §7): layer 3 would be **trained** on
+the verbatim -> notation pair (no dictionary, no regex applied at export) but
+**served** text the regex has already rewritten. Either run the dictionary+regex
+over Layer 1 at export so layer 3 learns only the residual, or drop layer 2 when
+layer 3 is enabled. Do not build layer 3 before this is written down as a
+decision. The regex layer is not a stopgap the seq2seq makes redundant: its
+operand is a single letter or number, so it structurally cannot do composition,
+scope, or disambiguation — and the `math_transform` dataset is the *measurement*
+of the regex layer before it is fuel for a model.
 
 Deferred UX proposals (from `docs/ux-review.md`, human decisions recorded):
 
