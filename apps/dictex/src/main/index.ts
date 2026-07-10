@@ -338,16 +338,24 @@ function pasteClipboardIntoActiveApp(): Promise<boolean> {
  * Launch DicTeX Lab as a separate process. DicTeX never imports Lab code —
  * process spawn only (pivot Phase 3). Prefer a built Lab entry; fall back to
  * `npm run dev:lab` from the monorepo root. Failures return a message, never throw.
+ *
+ * A build is only usable if BOTH `out/main` and `out/renderer` exist. A partial
+ * build (e.g. interrupted `electron-vite build`) can leave `out/main/index.js`
+ * present without `out/renderer/index.html`; launching that main process opens
+ * a window with nothing to load, i.e. a blank/frozen window. Require the
+ * renderer too, and fall back to the dev path (or the "build the Lab first"
+ * error) rather than ever launching a rendererless window.
  */
 function openLabApp(): OpenLabResult {
   const labAppDir = path.join(repoRoot, "apps", "lab");
   const labMain = path.join(labAppDir, "out", "main", "index.js");
+  const labRendererHtml = path.join(labAppDir, "out", "renderer", "index.html");
   const npmHelper =
     process.platform === "win32"
       ? path.join(repoRoot, "scripts", "npm.cmd")
       : path.join(repoRoot, "scripts", "npm.sh");
 
-  if (existsSync(labMain)) {
+  if (existsSync(labMain) && existsSync(labRendererHtml)) {
     try {
       const child = spawn(process.execPath, [labMain], {
         cwd: labAppDir,
