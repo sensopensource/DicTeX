@@ -25,9 +25,17 @@ export const STT_DATASET_SPLITS: SttBenchmarkSetSplit[] = [
  * `correctedTranscript` come from the correction event (the transform's input ->
  * target); for an `acoustic` correction the pair is audio -> literal transcript,
  * for a `math_transform` correction it is literal text -> notation.
+ *
+ * On a `math_transform` pair BOTH transcripts additionally pass through
+ * `extractCommands` (issue #92): the store holds the canonical command words, and
+ * the sentinel exists only in the exported training pair, so the seq2seq is
+ * trained on the same convention `apps/dictex`'s normalizer serves. An `acoustic`
+ * pair is never substituted — its Layer 1 stays verbatim for the STT model.
+ *
  * `originalSttOutput` preserves the raw STT output even when the correction's own
  * `rawTranscript` is a later literal-correct transcript (chained #66 corrections),
- * so every record stays traceable to the transcription that produced it.
+ * so every record stays traceable to the transcription that produced it. It is
+ * provenance, never a training input, and is never substituted.
  */
 export type SttDatasetRecord = {
   split: SttBenchmarkSetSplit;
