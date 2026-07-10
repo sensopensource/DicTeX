@@ -1,0 +1,529 @@
+/* DicTeX shared design tokens + base.
+ *
+ * Single source of truth for the visual language of BOTH renderers
+ * (apps/dictex + apps/lab) so the two apps stay coherent instead of drifting.
+ * Imported once, before each app's own styles.css.
+ *
+ * Keep this sober and minimal: compact utility UI, few colors, clear state,
+ * diagnostics visible but not noisy (see AGENTS.md / docs/product-decisions.md
+ * "UI Direction"). Add tokens here and reference them from the app stylesheets
+ * rather than reintroducing literal hex values. Anything that is genuinely
+ * shared (reset, tokens, panels, headers, nav, status pills, buttons, inputs,
+ * history rows, error/notice/empty states) lives here; each app's own
+ * styles.css only holds rules unique to that app. */
+
+:root {
+  /* Surfaces (darkest -> lightest). */
+  --bg: #101010; /* app background + inset items (history rows, textareas) */
+  --surface: #151515; /* panels, status pill */
+  --surface-raised: #1c1c1c; /* buttons, selects, inputs, nav */
+  --surface-hover: #252525; /* hover on raised controls */
+  --surface-active: #303030; /* pressed / active */
+  --record-bg: #222; /* primary record button (DicTeX) */
+  --record-bg-hover: #2a2a2a;
+
+  /* Borders. */
+  --border: #2a2a2a; /* panels, list items, tables */
+  --border-strong: #303030; /* interactive controls, inputs */
+  --border-faint: #343434; /* neutral pill (correction state) */
+  --border-subtle: #202020; /* faint intra-card dividers */
+  --border-record: #3a3a3a; /* record button */
+  --border-emphasis: #888; /* record button pressed outline */
+
+  /* Text tiers (brightest -> faintest). */
+  --text-strong: #f4f4f4; /* headings, key values */
+  --text-value: #e8e8e8; /* diagnostic values, normalized preview */
+  --text: #d8d8d8; /* body */
+  --text-dim: #b8b8b8; /* secondary chips / paths */
+  --text-muted: #8f8f8f; /* labels, subtitles, meta, notices */
+  --text-faint: #777; /* smallest labels */
+
+  /* State accents (text + matching border), kept exact and shared across apps. */
+  --good: #93e0a8;
+  --good-border: #275b37;
+  --good-strong: #8fe0a4; /* "selected" badge text */
+  --good-border-strong: #2f6b3f; /* "selected" badge border */
+  --good-dim: #9fc7a6; /* normalized-output text */
+  --warn: #ead46a;
+  --warn-border: #62551f;
+  --amber: #e0c675; /* lab: error-category badge text */
+  --amber-border: #6b5a1f;
+  --danger: #ff9a9a;
+  --danger-border: #713030;
+  --danger-text: #ffb5b5; /* error body copy */
+  --danger-bg: #261616; /* error block background */
+  --recording: #ffb088;
+  --recording-border: #7a3a22;
+  --info: #b8d7ff; /* lab: benchmark-set split marker */
+  --kind: #d7c69a; /* lab: correction-kind marker */
+
+  /* Focus ring: sober desaturated blue, only shown for keyboard navigation. */
+  --focus-ring: #6b8bbd;
+
+  /* Radius. */
+  --radius-xs: 0.4rem;
+  --radius-sm: 0.45rem;
+  --radius-md: 0.55rem;
+  --radius-lg: 0.75rem;
+  --radius-pill: 999px;
+
+  /* Spacing scale. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+
+  /* Typography. */
+  --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+
+  /* Motion: subtle and functional only, never decorative. */
+  --transition-fast: 0.12s ease;
+
+  color: var(--text);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+button,
+select,
+textarea,
+input {
+  font: inherit;
+}
+
+/* Keyboard focus is clearly visible; mouse focus stays quiet. :where() keeps
+   zero specificity so a component's own color rules still win. */
+:where(a, button, select, input, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Text-entry controls also highlight their border on focus (calm cue for
+   mouse users, who don't get :focus-visible on click). */
+textarea:focus,
+input:focus,
+select:focus {
+  border-color: var(--focus-ring);
+}
+
+/* ---- Layout shell -------------------------------------------------------- */
+
+.app-shell {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--space-4);
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: 3.5rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+/* Shared panel container. Only the visual shell lives here; each view's panel
+   class sets its own display/gap/padding (e.g. .diagnostics-grid sits edge to
+   edge, .controls-panel is a padded grid). min-width: 0 lets a panel shrink to
+   the shell width so a nowrap descendant can't force a page-wide scrollbar. */
+.panel {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+/* Shared panel header: a title/subtitle block on the left, an action on the
+   right. Used by both apps so every view's header aligns identically. */
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.panel-header > div {
+  min-width: 0;
+}
+
+.panel-header p {
+  overflow: hidden;
+  margin: 0.15rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Status pill --------------------------------------------------------- */
+
+.status-pill {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 0.35rem 0.65rem;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.status-recording {
+  border-color: var(--recording-border);
+  color: var(--recording);
+}
+
+.status-transcribing {
+  border-color: var(--warn-border);
+  color: var(--warn);
+}
+
+.status-pasted,
+.status-copied {
+  border-color: var(--good-border);
+  color: var(--good);
+}
+
+.status-error {
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+/* ---- Navigation ---------------------------------------------------------- */
+
+.nav-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  padding: var(--space-3);
+}
+
+.nav-button {
+  min-height: 2.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  background: var(--surface-raised);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.nav-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.nav-button:active:not(:disabled) {
+  background: var(--surface-active);
+}
+
+.nav-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* ---- Controls / transcript panels --------------------------------------- */
+
+.controls-panel {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.transcript-panel {
+  display: grid;
+  gap: 0.65rem;
+  padding: var(--space-3);
+}
+
+.transcript-label {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+/* ---- History rows (shared core; app-specific extras stay per app) -------- */
+
+.history-panel {
+  display: grid;
+  gap: 0.7rem;
+  padding: var(--space-3);
+}
+
+.history-list {
+  display: grid;
+  gap: var(--space-2);
+  max-height: 22rem;
+  overflow: auto;
+  padding-right: 0.1rem;
+}
+
+.history-item {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem;
+  background: var(--bg);
+}
+
+.history-heading {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.history-heading span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.history-heading strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 0.74rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.correction-state {
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-pill);
+  padding: 0.18rem 0.42rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  font-size: 0.64rem;
+  font-style: normal;
+  text-transform: uppercase;
+}
+
+.correction-state-done {
+  border-color: var(--good-border);
+  color: var(--good);
+}
+
+.history-transcript {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.history-transcript-corrected {
+  color: var(--text-strong);
+}
+
+.history-raw-transcript {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.history-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.history-meta span {
+  overflow: hidden;
+  max-width: 8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+/* ---- Buttons / selects / inputs ------------------------------------------ */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.secondary-button {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.65rem;
+  color: var(--text);
+  background: var(--surface-raised);
+  cursor: pointer;
+  font-size: 0.78rem;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.secondary-button:active:not(:disabled) {
+  background: var(--surface-active);
+}
+
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.secondary-select {
+  min-width: 7.25rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.55rem;
+  color: var(--text);
+  background: var(--surface-raised);
+  cursor: pointer;
+  font-size: 0.78rem;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.secondary-select:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.secondary-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+textarea {
+  width: 100%;
+  min-height: 9rem;
+  resize: vertical;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  color: var(--text-strong);
+  background: var(--bg);
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+/* ---- Feedback: error / notice / empty ------------------------------------ */
+
+.error {
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem;
+  color: var(--danger-text);
+  background: var(--danger-bg);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.notice {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Empty states read as a clear "nothing here yet" affordance without adding
+   noise: a quiet dashed inset, centered, muted. */
+.empty-state {
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+/* ---- Responsive: stack header rows on narrow widths ---------------------- */
+
+@media (max-width: 680px) {
+  .panel-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .history-heading,
+  .history-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .history-actions {
+    justify-content: flex-start;
+  }
+}

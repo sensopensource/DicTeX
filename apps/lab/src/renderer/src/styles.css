@@ -1,220 +1,33 @@
-:root {
-  color: #d8d8d8;
-  background: #101010;
-  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-}
+/* DicTeX Lab (ML tooling app) renderer styles.
+ *
+ * Shared tokens, reset, panels, headers, nav, status pills, buttons, inputs,
+ * history rows, and error/notice/empty states live in @dictex/shared/styles.css
+ * (imported first). This file holds only what is unique to the Lab views:
+ * the data-folder line, correction panel, STT benchmark (results, batch,
+ * candidate summary, error analysis, selection), and the dataset builder /
+ * export. Reference shared tokens (var(--…)) instead of literal colors. */
 
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background: #101010;
-}
-
-button,
-textarea {
-  font: inherit;
-}
-
-.app-shell {
-  display: grid;
-  gap: 0.75rem;
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 1rem;
-}
-
-.titlebar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  min-height: 3.5rem;
-}
-
-.eyebrow {
-  margin: 0 0 0.15rem;
-  color: #8f8f8f;
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-h1 {
-  margin: 0;
-  color: #f4f4f4;
-  font-size: 1.15rem;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
-h2 {
-  margin: 0;
-  color: #f4f4f4;
-  font-size: 0.92rem;
-  font-weight: 600;
-}
-
-.status-pill {
-  border: 1px solid #303030;
-  border-radius: 999px;
-  padding: 0.35rem 0.65rem;
-  color: #d8d8d8;
-  background: #181818;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-}
-
-.status-copied {
-  border-color: #275b37;
-  color: #93e0a8;
-}
-
-.status-error {
-  border-color: #713030;
-  color: #ff9a9a;
-}
-
-.panel {
-  /* Grid items default to a min-width of their content's min-content size,
-     so a deeply nested `white-space: nowrap` descendant (e.g. .benchmark-header
-     p) can blow out .app-shell's single grid column past its max-width and
-     force a page-wide horizontal scrollbar. min-width: 0 lets each panel
-     shrink to the shell's width so overflow/ellipsis rules apply as intended. */
-  min-width: 0;
-  border: 1px solid #2a2a2a;
-  border-radius: 0.75rem;
-  background: #151515;
-}
-
-.nav-panel {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.6rem;
-  padding: 0.75rem;
-}
-
-.nav-button {
-  min-height: 2.75rem;
-  border: 1px solid #303030;
-  border-radius: 0.55rem;
-  color: #d8d8d8;
-  background: #1c1c1c;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-}
-
-.nav-button:hover {
-  background: #252525;
-}
-
-.controls-panel {
-  display: grid;
-  gap: 0.75rem;
-  padding: 0.75rem;
-}
-
-.transcript-panel {
-  display: grid;
-  gap: 0.65rem;
-  padding: 0.75rem;
-}
-
-.benchmark-panel {
+/* Padded content panels (Segments source, benchmark, summary, error analysis).
+   The shared .panel is only a visual shell, so each content panel opts into its
+   own layout here. */
+.benchmark-panel,
+.summary-panel,
+.error-analysis-panel {
   display: grid;
   gap: 0.7rem;
-  padding: 0.75rem;
+  padding: var(--space-3);
 }
 
-.history-panel {
-  display: grid;
-  gap: 0.7rem;
-  padding: 0.75rem;
-}
-
-.history-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.history-header div {
-  min-width: 0;
-}
-
-.history-header p {
+/* Muted metadata line: read-only data-folder path, benchmark model list. */
+.benchmark-models {
   overflow: hidden;
-  margin: 0.15rem 0 0;
-  color: #8f8f8f;
+  margin: 0;
+  color: var(--text-dim);
   font-size: 0.74rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
-.history-list {
-  display: grid;
-  gap: 0.5rem;
-  max-height: 22rem;
-  overflow: auto;
-  padding-right: 0.1rem;
-}
-
-.history-item {
-  display: grid;
-  gap: 0.5rem;
-  min-width: 0;
-  border: 1px solid #2a2a2a;
-  border-radius: 0.45rem;
-  padding: 0.6rem;
-  background: #101010;
-}
-
-.history-heading {
-  display: grid;
-  grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) auto;
-  gap: 0.55rem;
-  align-items: center;
-  min-width: 0;
-}
-
-.history-heading span {
-  color: #8f8f8f;
-  font-size: 0.72rem;
-  white-space: nowrap;
-}
-
-.history-heading strong {
-  overflow: hidden;
-  color: #f4f4f4;
-  font-size: 0.74rem;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.correction-state {
-  border: 1px solid #343434;
-  border-radius: 999px;
-  padding: 0.18rem 0.42rem;
-  color: #8f8f8f;
-  background: #151515;
-  font-size: 0.64rem;
-  font-style: normal;
-  text-transform: uppercase;
-}
-
-.correction-state-done {
-  border-color: #275b37;
-  color: #93e0a8;
-}
+/* ---- History extras (Lab-only, on top of shared history rows) ------------ */
 
 .history-transcripts {
   display: grid;
@@ -222,103 +35,27 @@ h2 {
   min-width: 0;
 }
 
-.history-transcript {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  color: #d8d8d8;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-}
-
-.history-transcript-corrected {
-  color: #f0f0f0;
-}
-
-.history-raw-transcript {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  color: #8f8f8f;
-  font-size: 0.74rem;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.history-footer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.history-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  min-width: 0;
-  color: #8f8f8f;
-  font-size: 0.7rem;
-}
-
-.history-meta span {
-  overflow: hidden;
-  max-width: 8rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .benchmark-set-state {
-  color: #b8d7ff;
+  color: var(--info);
 }
 
 .correction-kind-state {
-  color: #d7c69a;
+  color: var(--kind);
 }
 
-.history-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  justify-content: flex-end;
-}
+/* ---- STT correction panel ------------------------------------------------ */
 
 .correction-panel {
   display: grid;
   gap: 0.65rem;
-  padding: 0.75rem;
-}
-
-.correction-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.correction-header div {
-  min-width: 0;
-}
-
-.correction-header p {
-  overflow: hidden;
-  margin: 0.15rem 0 0;
-  color: #8f8f8f;
-  font-size: 0.74rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding: var(--space-3);
 }
 
 .correction-raw {
   display: -webkit-box;
   margin: 0;
   overflow: hidden;
-  color: #8f8f8f;
+  color: var(--text-muted);
   font-size: 0.78rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -326,53 +63,35 @@ h2 {
   -webkit-line-clamp: 2;
 }
 
-.benchmark-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.benchmark-header div {
-  min-width: 0;
-}
-
-.benchmark-header p {
-  overflow: hidden;
-  margin: 0.15rem 0 0;
-  color: #8f8f8f;
-  font-size: 0.74rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* ---- STT benchmark results ----------------------------------------------- */
 
 .benchmark-results {
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .benchmark-result {
   display: grid;
   gap: 0.45rem;
   min-width: 0;
-  border: 1px solid #2a2a2a;
-  border-radius: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   padding: 0.6rem;
-  background: #101010;
+  background: var(--bg);
 }
 
 .benchmark-meta {
   display: grid;
   grid-template-columns: minmax(4rem, 1fr) repeat(4, minmax(3.75rem, auto));
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: center;
-  color: #8f8f8f;
+  color: var(--text-muted);
   font-size: 0.72rem;
 }
 
 .benchmark-meta strong {
   overflow: hidden;
-  color: #f4f4f4;
+  color: var(--text-strong);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -387,28 +106,30 @@ h2 {
 
 .benchmark-result p {
   margin: 0;
-  color: #d8d8d8;
+  color: var(--text);
   font-size: 0.8rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
+/* ---- Candidate selection + batch run ------------------------------------- */
+
 .candidate-checkbox-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 0.5rem 0 0;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
 }
 
 .candidate-checkbox {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  border: 1px solid #2a2a2a;
-  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
   padding: 0.28rem 0.5rem;
-  color: #b8b8b8;
-  background: #101010;
+  color: var(--text-dim);
+  background: var(--bg);
   font-size: 0.72rem;
 }
 
@@ -432,28 +153,28 @@ h2 {
 }
 
 .batch-count {
-  border: 1px solid #2a2a2a;
-  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
   padding: 0.28rem 0.5rem;
-  color: #b8b8b8;
-  background: #101010;
+  color: var(--text-dim);
+  background: var(--bg);
   font-size: 0.72rem;
 }
 
 .batch-count-done {
-  border-color: #275b37;
-  color: #93e0a8;
+  border-color: var(--good-border);
+  color: var(--good);
 }
 
 .batch-count-failed {
-  border-color: #713030;
-  color: #ff9a9a;
+  border-color: var(--danger-border);
+  color: var(--danger);
 }
 
 .batch-current {
   overflow: hidden;
   margin: 0;
-  color: #8f8f8f;
+  color: var(--text-muted);
   font-size: 0.74rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -461,13 +182,13 @@ h2 {
 
 .batch-last {
   margin: 0;
-  color: #93e0a8;
+  color: var(--good);
   font-size: 0.74rem;
   overflow-wrap: anywhere;
 }
 
 .batch-last-failed {
-  color: #ff9a9a;
+  color: var(--danger);
 }
 
 .batch-outcomes {
@@ -481,26 +202,26 @@ h2 {
   display: grid;
   gap: 0.3rem;
   min-width: 0;
-  border: 1px solid #2a2a2a;
-  border-radius: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   padding: 0.5rem 0.6rem;
-  background: #101010;
+  background: var(--bg);
 }
 
 .batch-outcome-failed {
-  border-color: #713030;
+  border-color: var(--danger-border);
 }
 
 .batch-outcome-heading {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: center;
 }
 
 .batch-outcome-heading strong {
   overflow: hidden;
-  color: #f4f4f4;
+  color: var(--text-strong);
   font-size: 0.74rem;
   font-weight: 500;
   text-overflow: ellipsis;
@@ -508,29 +229,29 @@ h2 {
 }
 
 .batch-outcome-state {
-  border: 1px solid #275b37;
-  border-radius: 999px;
+  border: 1px solid var(--good-border);
+  border-radius: var(--radius-pill);
   padding: 0.16rem 0.4rem;
-  color: #93e0a8;
+  color: var(--good);
   font-size: 0.62rem;
   font-style: normal;
   text-transform: uppercase;
 }
 
 .batch-outcome-state-failed {
-  border-color: #713030;
-  color: #ff9a9a;
+  border-color: var(--danger-border);
+  color: var(--danger);
 }
 
 .batch-outcome-meta {
   margin: 0;
-  color: #8f8f8f;
+  color: var(--text-muted);
   font-size: 0.74rem;
 }
 
 .batch-outcome-error {
   margin: 0;
-  color: #ffb5b5;
+  color: var(--danger-text);
   font-size: 0.74rem;
   overflow-wrap: anywhere;
 }
@@ -538,24 +259,26 @@ h2 {
 .reason-input {
   flex: 1;
   min-width: 16rem;
-  border: 1px solid #303030;
-  border-radius: 0.45rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   padding: 0.5rem 0.6rem;
-  color: #d8d8d8;
-  background: #1c1c1c;
+  color: var(--text);
+  background: var(--surface-raised);
   font-size: 0.78rem;
 }
 
 .selected-badge {
   margin-left: 0.4rem;
-  border: 1px solid #2f6b3f;
-  border-radius: 999px;
+  border: 1px solid var(--good-border-strong);
+  border-radius: var(--radius-pill);
   padding: 0.1rem 0.4rem;
-  color: #8fe0a4;
+  color: var(--good-strong);
   font-size: 0.62rem;
   text-transform: uppercase;
   white-space: nowrap;
 }
+
+/* ---- Candidate summary table --------------------------------------------- */
 
 .summary-table {
   width: 100%;
@@ -565,26 +288,28 @@ h2 {
 
 .summary-table th,
 .summary-table td {
-  border-bottom: 1px solid #2a2a2a;
+  border-bottom: 1px solid var(--border);
   padding: 0.4rem 0.5rem;
   text-align: left;
   white-space: nowrap;
 }
 
 .summary-table th {
-  color: #8f8f8f;
+  color: var(--text-muted);
   font-weight: 500;
   text-transform: uppercase;
   font-size: 0.65rem;
 }
 
 .summary-table td {
-  color: #f4f4f4;
+  color: var(--text-strong);
 }
+
+/* ---- Error analysis ------------------------------------------------------ */
 
 .error-analysis-candidates {
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-2);
   max-height: 22rem;
   overflow: auto;
 }
@@ -593,15 +318,15 @@ h2 {
   display: grid;
   gap: 0.4rem;
   min-width: 0;
-  border: 1px solid #2a2a2a;
-  border-radius: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   padding: 0.6rem;
-  background: #101010;
+  background: var(--bg);
 }
 
 .error-analysis-candidate strong {
   overflow: hidden;
-  color: #f4f4f4;
+  color: var(--text-strong);
   font-size: 0.78rem;
   font-weight: 600;
   text-overflow: ellipsis;
@@ -615,10 +340,10 @@ h2 {
 }
 
 .error-category-badge {
-  border: 1px solid #6b5a1f;
-  border-radius: 999px;
+  border: 1px solid var(--amber-border);
+  border-radius: var(--radius-pill);
   padding: 0.16rem 0.45rem;
-  color: #e0c675;
+  color: var(--amber);
   font-size: 0.66rem;
 }
 
@@ -633,118 +358,36 @@ h2 {
 .error-example {
   display: grid;
   gap: 0.15rem;
-  border-top: 1px solid #202020;
+  border-top: 1px solid var(--border-subtle);
   padding-top: 0.35rem;
 }
 
 .error-example-heading {
-  color: #d8d8d8;
+  color: var(--text);
   font-size: 0.72rem;
   font-weight: 500;
 }
 
 .error-example-detail {
-  color: #8f8f8f;
+  color: var(--text-muted);
   font-size: 0.72rem;
   overflow-wrap: anywhere;
 }
 
-.transcript-label {
-  color: #8f8f8f;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-}
-
-textarea {
-  width: 100%;
-  min-height: 9rem;
-  resize: vertical;
-  border: 1px solid #2f2f2f;
-  border-radius: 0.55rem;
-  padding: 0.75rem;
-  color: #f4f4f4;
-  background: #101010;
-  font-size: 0.86rem;
-  line-height: 1.55;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.secondary-button {
-  border: 1px solid #303030;
-  border-radius: 0.45rem;
-  padding: 0.5rem 0.65rem;
-  color: #d8d8d8;
-  background: #1c1c1c;
-  cursor: pointer;
-  font-size: 0.78rem;
-}
-
-.secondary-button:hover:not(:disabled) {
-  background: #252525;
-}
-
-.secondary-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.secondary-select {
-  min-width: 7.25rem;
-  border: 1px solid #303030;
-  border-radius: 0.45rem;
-  padding: 0.5rem 0.55rem;
-  color: #d8d8d8;
-  background: #1c1c1c;
-  cursor: pointer;
-  font-size: 0.78rem;
-}
-
-.secondary-select:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.error {
-  overflow: auto;
-  margin: 0;
-  border: 1px solid #713030;
-  border-radius: 0.45rem;
-  padding: 0.6rem;
-  color: #ffb5b5;
-  background: #261616;
-  font-size: 0.78rem;
-  white-space: pre-wrap;
-}
-
-.notice {
-  margin: 0;
-  color: #9a9a9a;
-  font-size: 0.78rem;
-}
-
-.empty-state {
-  margin: 0;
-  color: #8f8f8f;
-  font-size: 0.78rem;
-}
+/* ---- Dataset export summary ---------------------------------------------- */
 
 .dataset-export-summary {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  margin-top: 0.75rem;
+  margin-top: var(--space-3);
 }
 
 .dataset-export-path {
   margin: 0;
-  font-family: "Cascadia Code", "Consolas", monospace;
+  font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: #b8b8b8;
+  color: var(--text-dim);
   word-break: break-all;
 }
 
@@ -754,12 +397,12 @@ textarea {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
   font-size: 0.78rem;
 }
 
 .dataset-export-splits > li > span {
-  color: #9a9a9a;
+  color: var(--text-muted);
 }
 
 .dataset-export-splits ul {
@@ -769,35 +412,13 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  color: #8f8f8f;
+  color: var(--text-muted);
   font-size: 0.74rem;
 }
 
+/* ---- Responsive ---------------------------------------------------------- */
+
 @media (max-width: 680px) {
-  .benchmark-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .history-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .history-heading,
-  .history-footer {
-    grid-template-columns: 1fr;
-  }
-
-  .history-actions {
-    justify-content: flex-start;
-  }
-
-  .correction-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
   .benchmark-meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
