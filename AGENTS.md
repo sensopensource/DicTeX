@@ -689,16 +689,29 @@ Post-pivot (open):
   `{stage, provider, model, variant}` candidate identity. See
   `docs/dataset-and-normalization-design.md` §6.
 
-Open design decision, blocking normalizer layer 3 (see
-`docs/dataset-and-normalization-design.md` §7): layer 3 would be **trained** on
-the verbatim -> notation pair (no dictionary, no regex applied at export) but
-**served** text the regex has already rewritten. Either run the dictionary+regex
-over Layer 1 at export so layer 3 learns only the residual, or drop layer 2 when
-layer 3 is enabled. Do not build layer 3 before this is written down as a
-decision. The regex layer is not a stopgap the seq2seq makes redundant: its
-operand is a single letter or number, so it structurally cannot do composition,
-scope, or disambiguation — and the `math_transform` dataset is the *measurement*
-of the regex layer before it is fuel for a model.
+Layer-3 input, **decided 2026-07-10** (see `docs/dataset-and-normalization-design.md`
+§7): **resolution 1 — layer 3 learns the residual.** The exported training input
+is the pipeline's output over Layer 1 (dictionary -> command extraction -> regex),
+i.e. what layer 3 actually receives at inference; the target stays the
+human-authored Layer 2. Rejected: letting layer 3 replace the regex. The
+principle: never make a model learn what a rule does with certainty.
+
+Consequences, tracked as issues:
+
+- #100 move the normalizer into `packages/shared` and replay the pipeline over
+  Layer 1 at export — `level:eleve` + `needs:high-review`. Leaving it in
+  `apps/dictex` while the export lives in `packages/shared` would recreate the
+  train/serve divergence #92 just eliminated for command words.
+- #101 the Lab builder prefills Layer 2 from the dictionary+regex output (never
+  command extraction — a sentinel must not reach the store) and **highlights what
+  the pipeline changed**, because a prefilled field invites passive acceptance —
+  `level:moyen`, depends on #100.
+
+The regex layer is not a stopgap the seq2seq makes redundant: its operand is a
+single letter or number, so it structurally cannot do composition, scope, or
+disambiguation. And the `math_transform` dataset is the *measurement* of the regex
+layer before it is fuel for a model — it keeps its value even if layer 3 never
+ships.
 
 Deferred UX proposals (from `docs/ux-review.md`, human decisions recorded):
 

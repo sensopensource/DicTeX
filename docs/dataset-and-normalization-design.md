@@ -391,10 +391,20 @@ just saved yourself an entire ML project. You only know that because you
 collected the data. It is the acceptance test of the rules, before it is the
 training set of a model.
 
-### Open question — what does layer 3 actually consume?
+### Decided — what layer 3 consumes
 
-There is a real inconsistency to settle before layer 3 is built, and #92 did not
-settle it (it did not have to: the sentinel survives either way).
+> **Decision: resolution 1, layer 3 learns the residual.** Recorded 2026-07-10.
+> Implemented by #100 (move the normalizer into `packages/shared`, replay the
+> pipeline over Layer 1 at export) and #101 (the builder prefills Layer 2 from the
+> pipeline output). The reasoning is below; the alternative is kept for the record.
+
+The principle that decided it: **never make a model learn what a rule does with
+certainty.** A seq2seq allowed to rewrite `x²` is also allowed to write `x³`. The
+regex is not. Resolution 2 would throw away seven rules that are already correct
+and free, and pay for them again in data volume and hallucination risk.
+
+There was a real inconsistency to settle before layer 3 could be built, and #92
+did not settle it (it did not have to: the sentinel survives either way).
 
 At **inference** the pipeline is
 `dictionary → command extraction → regex → layer 3`, so layer 3 receives text the
@@ -405,15 +415,38 @@ At **export** the training pair is built from the stored correction, i.e.
 (`packages/shared/src/datasetExport.ts`). Layer 3 would therefore be trained on
 `⟦NL⟧ x au carré plus deux` and served `euh ⟦NL⟧ x²`.
 
-Two coherent resolutions, and one must be chosen deliberately:
+Two coherent resolutions existed:
 
-1. **Layer 3 learns the residual.** Run the dictionary and the regex over Layer 1
-   at export time, so the training input matches what layer 3 will actually
-   receive. Layer 3 then only learns what the regex could not do.
-2. **Layer 3 replaces the regex.** Train it on the verbatim → notation pair as
-   today, and drop layer 2 from the pipeline when layer 3 is enabled.
+1. **Layer 3 learns the residual — CHOSEN.** Run the dictionary and the regex over
+   Layer 1 at export time, so the training input matches what layer 3 will
+   actually receive. Layer 3 then only learns what the regex could not do.
+2. **Layer 3 replaces the regex — rejected.** Train it on the verbatim → notation
+   pair, and drop layer 2 from the pipeline when layer 3 is enabled.
 
-Resolution 1 keeps the deterministic layer's guarantees and asks the model for
-less. Resolution 2 is simpler to reason about but throws away rules that are
-already correct and free. **Do not build layer 3 before this is written down as a
-decision.**
+### What resolution 1 implies
+
+**The training input becomes rules-version-dependent.** Add a regex rule and every
+training *input* changes. This is cheap — substitution is already a pure function
+replayed at export, exactly like the sentinels — but the export must record the
+rules/dictionary version so a dataset can be traced to the pipeline that built it.
+
+**The human-authored target never changes.** Layer 2 is what you validated; it is
+independent of the regex version. Corrections never rot, and you never retype.
+
+**The normalizer must move into `packages/shared`** (#100). It currently lives in
+`apps/dictex/src/main/normalizer.ts` while the export lives in
+`packages/shared/src/datasetExport.ts`. Replaying the pipeline at export from a
+second copy would recreate exactly the train/serve divergence that §4 eliminated
+for command words — one pipeline for DicTeX, another for the dataset.
+
+**The builder should prefill Layer 2 with the pipeline output** (#101), so the
+correction the human types *is* the residual: instead of writing
+`retour à la ligne x² + 2` from scratch, they are shown
+`retour à la ligne x² plus deux` and fix three words. Two constraints:
+
+- the prefill runs **dictionary + regex only, never command extraction** —
+  extraction would yield a sentinel and expansion would yield a real line break,
+  violating the storage rule (§4). Command words stay spelled out;
+- **the diff must be visible.** A prefilled field invites passive acceptance, and a
+  subtly wrong regex output accepted without looking would teach layer 3 that
+  error — or enter `validation` as ground truth.
