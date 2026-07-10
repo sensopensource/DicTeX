@@ -162,6 +162,8 @@ test("source hygiene: no literal PUA character in the command sources", () => {
     "datasetExport.test.ts",
     "textDiff.ts",
     "textDiff.test.ts",
+    "normalizer.ts",
+    "normalizer.test.ts",
   ];
   for (const file of files) {
     const contents = readFileSync(path.join(here, file), "utf8");
@@ -195,7 +197,8 @@ test("Lab Layer 2 prefill: full pipeline + restoreCommandWords carries no sentin
   // Matches the worked example in docs/dataset-and-normalization-design.md §7:
   // the regex handles "au carré" (an operand it recognizes) but not "plus deux"
   // (spelled out, not a digit/letter operand), and the spoken command survives
-  // as canonical words, never a sentinel or a real line break.
+  // as canonical words, never a sentinel or a real line break. Since #107 the
+  // regex emits canonical LaTeX wrapped in "$…$" rather than Unicode.
   const layer1 = "retour à la ligne x au carré plus deux";
   const result = await normalizeTranscript(layer1, ABSENT_NORMALIZER_CONFIG);
 
@@ -209,7 +212,7 @@ test("Lab Layer 2 prefill: full pipeline + restoreCommandWords carries no sentin
   assert.equal(containsSentinel(prefill), false);
   assert.equal(SENTINEL_PATTERN.test(prefill), false);
   assert.equal(prefill.includes("\n"), false);
-  assert.equal(prefill, "retour à la ligne x² plus deux");
+  assert.equal(prefill, "retour à la ligne $x^{2}$ plus deux");
 });
 
 test("Lab Layer 2 prefill: no change from Layer 1 still carries no sentinel (regex/dictionary passthrough)", async () => {

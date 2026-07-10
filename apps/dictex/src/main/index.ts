@@ -236,7 +236,7 @@ const defaultRulesTemplate = `${JSON.stringify(
   {
     version: 1,
     _comment:
-      'Ordered regex rules applied after the personal dictionary. "pattern" is a Unicode-aware JS regex source (matched with forced "g"/"u" flags plus any "flags" given here); "replacement" may reference capture groups via $1, $2, .... A pattern that does not match leaves the text untouched.',
+      'Ordered regex rules applied after the personal dictionary. "pattern" is a Unicode-aware JS regex source (matched with forced "g"/"u" flags plus any "flags" given here); "replacement" may reference capture groups via $1, $2, ... or $<name>, $<name>... for named groups, and a literal "$" is written as "$$" (needed to emit the "$…$" inline-math delimiters DicTeX Lab expects). A pattern that does not match leaves the text untouched.',
     rules: DEFAULT_RULES,
   },
   null,
