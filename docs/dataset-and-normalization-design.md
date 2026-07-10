@@ -468,3 +468,65 @@ so the correction the human types *is* the residual: instead of writing
   error — or enter `validation` as ground truth. **Implemented** as a compact
   word-level diff (`packages/shared/src/textDiff.ts`) between Layer 1 and the
   prefilled Layer 2, rendered inline in the Lab's dataset builder.
+
+---
+
+## 8. Notation format: LaTeX, not Unicode
+
+> **Decision: LaTeX is the canonical notation.** Recorded 2026-07-10. Blocks
+> collection until #106 lands. Implemented by #106 (style subset + canonicalizer)
+> and #107 (rules rewrite). The Unicode examples earlier in this document predate
+> the decision and illustrate pipeline mechanics, not the target format.
+
+### Why
+
+Unicode cannot express what the product is for. There is no honest Unicode
+rendering of `\int_{0}^{1} x^{2} \, dx`, of a structured fraction, or of a matrix.
+The regex layer's Unicode output (`x²`, `√x`, `×`) covers inline algebra and stops
+there.
+
+The asymmetry decides it: **`LaTeX → Unicode` can be derived** for simple cases;
+**`Unicode → LaTeX` cannot**, once an integral is in the corpus — the information
+is not there.
+
+And this is the one decision that does not regenerate. The command list, the regex
+version, the training input: all are pure functions replayed at export (§4, §7).
+Add a rule, regenerate, every historical pair becomes correct. **Layer 2 is
+hand-written.** It is the target. Changing its format later means rewriting every
+collected pair, by hand. The corpus held ~3 pairs when this was decided.
+
+**KaTeX is a renderer, not a format.** It displays LaTeX. There is no
+"KaTeX layer" to build in the pipeline; the eventual maths editor renders the
+LaTeX the normalizer already emits.
+
+### The costs, accepted knowingly
+
+**Insertion into arbitrary applications degrades.** `\int_{0}^{1}` pasted into a
+mail client is unreadable. This is answered by #105: a Home toggle that switches
+the normalizer off, so LaTeX never reaches a context that cannot render it. Turning
+it off also turns off command extraction (a pipeline layer), so command words are
+then inserted literally — intended when dictating a prompt.
+
+**The regex layer gets structurally weaker.** `\sqrt{x}` is fine, but
+`racine de x plus un → \sqrt{x+1}` requires knowing where the root's scope ends,
+and a regex cannot group. Adopting LaTeX therefore *grows* the residual layer 3
+must learn, and grows the data requirement. This is a deliberate trade: expressivity
+paid for in data. It is consistent with §7's resolution 1 — the residual is exactly
+what layer 3 is for.
+
+**LaTeX is ambiguous, and that is a measurement problem.** The same mathematics has
+many spellings (`x^2` vs `x^{2}`, `\frac` vs `\dfrac`, `\times` vs `\cdot`, `\,` vs
+nothing). If targets alternate:
+
+- **CER measures typography, not mathematics.** `x^2` and `x^{2}` are identical
+  answers scoring as a two-character error. Every candidate comparison — regex vs
+  seq2seq, prompt variants — is then decided by noise.
+- **The seq2seq learns that two answers are correct**, and hesitates forever.
+
+So a strict style subset and a pure, idempotent `canonicalizeLatex(text)` applied
+**before scoring and before export** are not optional polish; they are the
+condition under which the corpus is worth collecting (#106). Same pattern as
+`extractCommands`: a pure function replayed on demand, never stored.
+
+**Do not collect a single `math_transform` pair before #106 lands.** Targets are
+hand-written and do not repair.
