@@ -264,22 +264,27 @@ export function getSttPromptVariants(): SttPromptVariants {
 
 /**
  * Builds the candidate `variant` identity string for an STT benchmark run.
- * With no prompt variant requested, this reproduces the existing
- * `${device}-${computeType}-${language}` shape untouched. When a prompt
- * variant IS requested, the prompt name itself becomes the candidate variant
- * (e.g. `"prompt-v3-fr-math"`), since the prompt is the dimension under test —
- * matching the candidate identity example in issue #93 and
- * `docs/dataset-and-normalization-design.md` §6. Choosing which candidates to
- * run with a prompt variant is a benchmark-UI concern (#94); this only defines
- * how the resulting identity string is built so both apps compute it the same
- * way.
+ *
+ * With no prompt variant requested this reproduces the existing
+ * `${device}-${computeType}-${language}` shape byte-for-byte, so no historical
+ * `stt_benchmark_result` changes identity.
+ *
+ * When a prompt variant IS requested, the prompt name is *appended* to that base
+ * rather than replacing it: `cuda-float16-fr+prompt-v3-fr-math`. The runtime and
+ * the prompt are two independent dimensions, and `benchmarkSummary`'s candidate
+ * key is `stage/provider/model/variant` — collapsing the variant to the prompt
+ * name alone would give the same identity to the same prompt run on `cpu-int8`
+ * and on `cuda-float16`, silently averaging their CER into one row and making the
+ * latency comparison meaningless.
+ *
+ * Choosing which candidates to run with a prompt variant is a benchmark-UI
+ * concern (#94); this only defines how the identity string is built, so every
+ * caller computes it the same way.
  */
 export function buildSttVariantId(
   base: { device: string; computeType: string; language: string },
   promptVariant?: string,
 ): string {
-  if (promptVariant) {
-    return promptVariant;
-  }
-  return `${base.device}-${base.computeType}-${base.language}`;
+  const runtime = `${base.device}-${base.computeType}-${base.language}`;
+  return promptVariant ? `${runtime}+${promptVariant}` : runtime;
 }

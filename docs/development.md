@@ -476,6 +476,15 @@ applied when explicitly requested by name.
    `DICTEX_STT_PROMPT_VARIANTS` on the TS side (e.g. to list variant names in a
    future benchmark UI — see #94), mirroring `getSttBenchmarkModels()`'s style.
 
+   The resulting benchmark candidate `variant` **appends** the prompt name to the
+   runtime identity — `cuda-float16-fr+prompt-v3-fr-math` — rather than replacing
+   it. The runtime and the prompt are independent dimensions, and
+   `benchmarkSummary` keys a candidate on `stage/provider/model/variant`: a
+   variant collapsed to the prompt name alone would give the same identity to the
+   same prompt run on `cpu-int8` and on `cuda-float16`, averaging their CER into
+   one row. With no prompt requested the string is unchanged (`cpu-int8-fr`), so
+   no historical result changes identity.
+
 Relevant env vars:
 
 ```text

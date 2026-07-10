@@ -88,9 +88,18 @@ test("buildSttVariantId: with no prompt variant, reproduces the existing device-
   );
 });
 
-test("buildSttVariantId: a requested prompt variant becomes the candidate variant itself", () => {
+test("buildSttVariantId: a requested prompt variant is appended to the runtime, not substituted for it", () => {
   assert.equal(
     buildSttVariantId({ device: "cuda", computeType: "float16", language: "fr" }, "prompt-v3-fr-math"),
-    "prompt-v3-fr-math",
+    "cuda-float16-fr+prompt-v3-fr-math",
   );
+});
+
+test("buildSttVariantId: the same prompt on two runtimes keeps two distinct candidate identities", () => {
+  // benchmarkSummary keys a candidate on `stage/provider/model/variant`. If the
+  // variant collapsed to the prompt name, these two runs would merge into one
+  // row: their CER would be averaged and their latency comparison destroyed.
+  const onGpu = buildSttVariantId({ device: "cuda", computeType: "float16", language: "fr" }, "p1");
+  const onCpu = buildSttVariantId({ device: "cpu", computeType: "int8", language: "fr" }, "p1");
+  assert.notEqual(onGpu, onCpu);
 });
