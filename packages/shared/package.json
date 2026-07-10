@@ -9,6 +9,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./commands": "./src/commands.ts",
+    "./latex": "./src/latex.ts",
     "./formatting": "./src/formatting.ts",
     "./errorAnalysis": "./src/errorAnalysis.ts",
     "./textDiff": "./src/textDiff.ts",

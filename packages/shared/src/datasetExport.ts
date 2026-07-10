@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extractCommands } from "./commands.js";
+import { canonicalizeLatex } from "./latex.js";
 import { createTranscriptNormalizer, type NormalizeOptions } from "./normalizer.js";
 import {
   CORRECTION_KIND_ORDER,
@@ -206,13 +207,21 @@ export async function buildSttDatasetExport(
           ? (await normalizer.normalize(correction.rawTranscript)).output
           : correction.rawTranscript;
 
-        // TARGET: the human-authored Layer 2 notation, with command-word
-        // substitution ONLY (issue #92) — never the dictionary or regex, which
-        // would rewrite validated notation and couple the target to the rules
-        // version. `extractCommands` is the same shared table the pipeline uses,
-        // so the sentinel matches on both sides.
+        // TARGET: the human-authored Layer 2 notation, CANONICALIZED (issue #106)
+        // then given command-word substitution ONLY (issue #92) — never the
+        // dictionary or regex, which would rewrite validated notation and couple
+        // the target to the rules version. `canonicalizeLatex` fixes one spelling
+        // per construct (`x^2`→`x^{2}`, `\dfrac`→`\frac`, …) so the exported
+        // target is byte-identical to what scoring compares against; it is a pure
+        // function of the derived pair and never mutates the store. It runs before
+        // `extractCommands`: canonicalization only touches `$…$` maths, while the
+        // command phrases it substitutes are bare prose, so the two are disjoint.
+        // The INPUT is deliberately NOT canonicalized here: it is produced by the
+        // shared normalizer and must stay byte-equal to what `apps/dictex` serves
+        // (the #100 train/serve invariant). LaTeX generation by the rules is #107;
+        // canonicalization of the input belongs with that pipeline change.
         const correctedTranscript = isMathTransform
-          ? extractCommands(correction.correctedTranscript)
+          ? extractCommands(canonicalizeLatex(correction.correctedTranscript))
           : correction.correctedTranscript;
 
         const record: SttDatasetRecord = {

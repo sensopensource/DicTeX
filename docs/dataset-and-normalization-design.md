@@ -530,3 +530,88 @@ condition under which the corpus is worth collecting (#106). Same pattern as
 
 **Do not collect a single `math_transform` pair before #106 lands.** Targets are
 hand-written and do not repair.
+
+### The canonical style subset (#106, landed)
+
+> **Status: implemented** (issue #106). `canonicalizeLatex(text)` lives in
+> `packages/shared/src/latex.ts`, exported browser-safe as `@dictex/shared/latex`.
+> It is applied — a pure function replayed on demand, never stored — in
+> `sttScoring` (before CER/WER) and in `datasetExport` (to the Layer 2 target,
+> before the pair is written). The append-only store is never mutated.
+
+**Delimiter decision — settled: inline maths is wrapped in `$…$`; prose stays
+bare.** Without a delimiter, KaTeX cannot know what to render and the seq2seq has
+no signal for where maths begins. `canonicalizeLatex` therefore splits the input
+into prose / math segments on unescaped `$`, canonicalizes only the maths, and
+returns prose verbatim. Consequently a string with no maths (including raw STT
+output in scoring) is returned unchanged — the identity that makes it safe to
+apply everywhere. `\(…\)` is accepted as an alias and normalized to `$…$`; `\$`
+is a literal dollar; delimiter spacing is normalized (`$ x $` → `$x$`); an
+unbalanced `$` leaves the remainder as prose (never corrupts). Display math
+(`$$…$$`, `\[…\]`) is out of scope — the corpus is inline. **This affects #107**
+(the rules rewrite): the regex/seq2seq layers must emit the `$…$` delimiters.
+
+**One spelling per construct:**
+
+| Construct        | Canonical form                | Rewrites that collapse into it            |
+| ---------------- | ----------------------------- | ----------------------------------------- |
+| exponent         | `x^{2}`, `x^{n+1}`            | `x^2`, `x^n` (single-token arg braced)    |
+| subscript        | `u_{n}`                       | `u_n`                                     |
+| root             | `\sqrt{x}`, `\sqrt[3]{x}`     | `\sqrt x`                                 |
+| fraction         | `\frac{a}{b}`                 | `\dfrac`, `\tfrac`, `\frac a b`           |
+| multiplication   | `\times`                      | `\cdot`, `*`                              |
+| relations        | `=`, `<`, `>`, `\leq`, `\geq`, `\neq` | `\le`, `\ge`, `\ne`, `\leqslant`, `\geqslant` |
+| limit arrow      | `\to`                         | `\rightarrow`, `\longrightarrow`          |
+| set              | `\mathbb{R}`                  | `\mathbb R`                              |
+| integral         | `\int_{0}^{1}x^{2} \, dx`     | bounds braced; `\,` (only) before a differential |
+| sum              | `\sum_{i=1}^{n}`              | bounds braced                             |
+| binary spacing   | one space each side, top level | `a+b`→`a + b`, runs collapsed            |
+| manual spacing   | removed (except the differential `\,`) | `\;` `\:` `\!` `~` `\quad`        |
+
+**Choices with a plausible alternative, and why:**
+
+- **`\times`, not `\cdot`, for multiplication.** The issue named `\times`; `\cdot`
+  is the common alternative. Bare `*` also folds to `\times`.
+- **Long relation macros (`\leq`) over short (`\le`).** Either could be canonical;
+  the long form was named in the issue and is unambiguous on sight.
+- **Binary-operator spacing is applied at brace depth 0 only.** This keeps bounds
+  and exponents tight (`x^{n+1}`, `\sum_{i=1}^{n}`, `\int_{0}^{1}`), matching three
+  of the issue's four examples, while spacing the main line (`a + b`, `a \leq b`).
+  The single deviation is `\lim_{n \to \infty}`, which the issue shows spaced but
+  we set **tight** as `\lim_{n\to\infty}`: a uniform depth rule is easier to verify
+  and guarantees convergence, whereas honouring the spaced `\lim` would require a
+  construct-specific spacing exception. Both `\lim` spellings converge, which is
+  what matters for CER.
+- **The differential thin space is `\,` and is inserted only inside an integral
+  span**, before a `d` that is a standalone token followed by a variable (`dx`,
+  `dt`, `d\theta`). It is *re-derived* structurally, never carried over from the
+  input, which is what makes the pass idempotent (`\int … \; dx`, `\int … dx` and
+  `\int … \, dx` all converge). Known limitation: a genuine variable named `d`
+  multiplied inside an integral would be misread as a differential — vanishingly
+  rare in a French maths corpus, and documented here rather than parsed for.
+- **No space is inserted between juxtaposed operands** (`2x`, `\int_{0}^{1}x^{2}`).
+  The issue's `\int_{0}^{1} x^{2}` layout space is dropped; consistency (both
+  spellings converge) is what CER needs, not the cosmetic space.
+- **`x^-1` braces the single following token** (`x^{-}1`), matching TeX's parse,
+  not the human intent `x^{-1}`. Authors who mean `x^{-1}` brace it; the
+  canonicalizer normalizes spelling of a given parse, it does not repair input.
+- **Prose text inside `$…$` is not expected** (`\text{…}` is not special-cased):
+  by the delimiter decision prose lives *outside* the maths, so whitespace inside
+  a math span is structural and safely re-derived.
+
+**Two properties, tested directly** (`packages/shared/src/latex.test.ts`):
+
+- **Idempotent** — a canonical string is a fixed point:
+  `canonicalizeLatex(canonicalizeLatex(s)) === canonicalizeLatex(s)`. Guaranteed by
+  construction: input whitespace and manual spacing are discarded and all spacing
+  is re-derived from token structure, so a second pass reproduces the first.
+- **Total** — any input returns a string without throwing. The tokenizer and
+  brace matcher degrade gracefully on malformed input (unbalanced braces run to
+  the end; a dangling `^`/`\sqrt`/`$` is left alone), and a defensive `try/catch`
+  in `canonicalizeLatex` returns the input intact as a last resort.
+
+**Not canonicalized: the exported `math_transform` INPUT.** Only the hand-written
+Layer 2 *target* is canonicalized at export. The input is produced by the shared
+normalizer and must stay byte-equal to what `apps/dictex` serves (the #100
+train/serve invariant); once #107 makes the rules emit LaTeX, canonicalization of
+the input belongs with that pipeline change, applied identically on both sides.
