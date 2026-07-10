@@ -438,6 +438,90 @@ reported unavailable. Vosk needs 16 kHz mono PCM and does not decode compressed
 audio, so the sidecar decodes stored segments with PyAV (already installed by
 faster-whisper) — no extra decode dependency.
 
+### STT system-prompt variants (faster-whisper `initial_prompt`)
+
+`faster-whisper`'s `initial_prompt` is the cheapest lever on STT quality (see
+`docs/dataset-and-normalization-design.md` §6): it costs no training data and
+no GPU, and it is already representable in the existing benchmark candidate
+identity — `{stage, provider, model, variant}` — as a new `variant`, with no
+schema change (issue #93). With no prompt configured, transcription is
+byte-for-byte identical to before this feature existed; a prompt is only ever
+applied when explicitly requested by name.
+
+1. Define named variants as a JSON object mapping variant name -> prompt text,
+   via `DICTEX_STT_PROMPT_VARIANTS`:
+
+   ```powershell
+   $env:DICTEX_STT_PROMPT_VARIANTS = '{"prompt-v3-fr-math":"Dictée mathématique en français : x carré, intégrale, dérivée, équation."}'
+   ```
+
+   This is JSON, not a comma-separated list like `DICTEX_STT_BENCHMARK_MODELS`,
+   because prompt text may itself contain commas. Missing or malformed JSON
+   quietly yields no variants rather than crashing the sidecar. Authoring the
+   prompt text itself is a product decision, out of scope for #93 — the
+   example above is illustrative only.
+
+2. Request one variant per sidecar invocation via `DICTEX_STT_PROMPT_VARIANT`
+   (singular — the variant *name*, not the text):
+
+   ```powershell
+   $env:DICTEX_STT_PROMPT_VARIANT = "prompt-v3-fr-math"
+   ```
+
+   On the TypeScript side, set `SttConfig.promptVariant` to the variant name
+   before calling `transcribeWithPython` (`packages/shared/src/sttEngine.ts`);
+   it sets `DICTEX_STT_PROMPT_VARIANT` on the sidecar's environment only when
+   present, leaving the env shape (and therefore the sidecar's output) for an
+   unset `promptVariant` completely unchanged. `getSttPromptVariants()` parses
+   `DICTEX_STT_PROMPT_VARIANTS` on the TS side (e.g. to list variant names in a
+   future benchmark UI — see #94), mirroring `getSttBenchmarkModels()`'s style.
+
+   The resulting benchmark candidate `variant` **appends** the prompt name to the
+   runtime identity — `cuda-float16-fr+prompt-v3-fr-math` — rather than replacing
+   it. The runtime and the prompt are independent dimensions, and
+   `benchmarkSummary` keys a candidate on `stage/provider/model/variant`: a
+   variant collapsed to the prompt name alone would give the same identity to the
+   same prompt run on `cpu-int8` and on `cuda-float16`, averaging their CER into
+   one row. With no prompt requested the string is unchanged (`cpu-int8-fr`), so
+   no historical result changes identity.
+
+Relevant env vars:
+
+```text
+DICTEX_STT_PROMPT_VARIANT   name of the prompt variant to apply this run (unset = no prompt, unchanged today)
+DICTEX_STT_PROMPT_VARIANTS  JSON object mapping variant name -> prompt text (unset = {}, no variants defined)
+```
+
+Requesting a prompt variant on a provider other than `faster-whisper` (i.e.
+Vosk, which has no prompt concept) is a hard, loud failure: the sidecar exits
+non-zero with a descriptive stderr message, never a silent no-op. Requesting an
+undefined variant name is likewise a loud failure, so a typo in the variant
+name can never be mistaken for "prompt applied".
+
+Choosing prompt variants from the Lab's benchmark UI, and wiring the resulting
+`candidate.variant` into a live benchmark run, is issue #94 (sequenced after
+#93); #93 only ships the mechanism (sidecar plumbing + config parsing).
+
+**Verifying the no-prompt path is unchanged.** Because #93's hard requirement
+is "no prompt configured ⇒ byte-identical output", verify it against a real,
+previously-recorded audio segment before relying on any prompt-variant
+benchmark result:
+
+1. Pick a stored segment's `audio_ref` under the DicTeX data folder (see
+   "Local STT Data" below) that was already transcribed with faster-whisper.
+2. Re-run it through the sidecar directly, without setting
+   `DICTEX_STT_PROMPT_VARIANT`:
+
+   ```powershell
+   .\.venv\Scripts\python.exe packages\engine\transcribe.py "C:\path\to\data\audio\session_...\seg_0001.webm"
+   ```
+
+3. Compare the printed `transcript` (and the rest of the JSON) against the
+   segment's existing `stt_result` / `stt_benchmark_result` event in
+   `events.jsonl`. They must match exactly — the same as before #93 existed,
+   since `initial_prompt` is only added to the faster-whisper call when a
+   prompt variant is actually resolved.
+
 ## Local STT Data
 
 The app stores local STT data under Electron's `userData` directory:
