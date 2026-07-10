@@ -47,11 +47,6 @@ export type DatasetBuilderSaveRequest = {
    * from its read-only source data). Empty means no acoustic layer for this
    * entry (a math_transform-only, no-audio build). */
   rawTranscript: string;
-  /** Reference STT model the user chose in the builder UI. Reserved metadata:
-   * a "segment" source already has a real stt_result event in DicTeX's data
-   * folder, and a "paste" source only builds a math_transform (text -> text)
-   * pair, so this is not written to the store today. */
-  referenceModel: string;
   /** Layer 1: literal-correct transcript. Required to save anything at all. */
   literalTranscript: string;
   /** Layer 2: normalized notation. Requires literalTranscript to be filled;

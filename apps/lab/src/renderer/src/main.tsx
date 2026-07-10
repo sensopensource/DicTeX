@@ -158,7 +158,6 @@ function App(): React.ReactElement {
   // paste a transcription or pick a DicTeX-recorded segment.
   const [builderMode, setBuilderMode] = useState<"paste" | "segment">("paste");
   const [builderSegmentKey, setBuilderSegmentKey] = useState("");
-  const [builderReferenceModel, setBuilderReferenceModel] = useState("");
   const [builderRawTranscript, setBuilderRawTranscript] = useState("");
   const [builderLiteral, setBuilderLiteral] = useState("");
   const [builderNotation, setBuilderNotation] = useState("");
@@ -184,7 +183,6 @@ function App(): React.ReactElement {
       .then((models) => {
         setBenchmarkModels(models);
         setSelectedBenchmarkModels(models.slice(0, 3));
-        setBuilderReferenceModel((current) => current || (models[0] ?? ""));
       })
       .catch(() => {
         // Non-fatal; the batch selector just shows no candidates.
@@ -564,7 +562,6 @@ function App(): React.ReactElement {
       const response = await window.dictexLab.saveDatasetBuilderEntry({
         source,
         rawTranscript,
-        referenceModel: builderReferenceModel,
         literalTranscript: literal,
         notationTranscript: notation,
         split: builderSplit,
@@ -654,13 +651,10 @@ function App(): React.ReactElement {
       <main className="app-shell">
         <DatasetView
           segments={segments}
-          benchmarkModels={benchmarkModels}
           builderMode={builderMode}
           setBuilderMode={setBuilderMode}
           builderSegmentKey={builderSegmentKey}
           setBuilderSegmentKey={setBuilderSegmentKey}
-          builderReferenceModel={builderReferenceModel}
-          setBuilderReferenceModel={setBuilderReferenceModel}
           builderRawTranscript={builderRawTranscript}
           setBuilderRawTranscript={setBuilderRawTranscript}
           builderLiteral={builderLiteral}
@@ -1419,13 +1413,10 @@ function BenchmarkView({
 
 type DatasetViewProps = {
   segments: ReconstructedSegment[];
-  benchmarkModels: string[];
   builderMode: "paste" | "segment";
   setBuilderMode: (mode: "paste" | "segment") => void;
   builderSegmentKey: string;
   setBuilderSegmentKey: (key: string) => void;
-  builderReferenceModel: string;
-  setBuilderReferenceModel: (model: string) => void;
   builderRawTranscript: string;
   setBuilderRawTranscript: (value: string) => void;
   builderLiteral: string;
@@ -1448,13 +1439,10 @@ type DatasetViewProps = {
 
 function DatasetView({
   segments,
-  benchmarkModels,
   builderMode,
   setBuilderMode,
   builderSegmentKey,
   setBuilderSegmentKey,
-  builderReferenceModel,
-  setBuilderReferenceModel,
   builderRawTranscript,
   setBuilderRawTranscript,
   builderLiteral,
@@ -1521,20 +1509,6 @@ function DatasetView({
 
         {builderMode === "paste" ? (
           <>
-            <p className="transcript-label">Reference STT model (tags the pasted transcript, if any)</p>
-            <select
-              aria-label="Reference STT model"
-              className="secondary-select"
-              value={builderReferenceModel}
-              onChange={(event) => setBuilderReferenceModel(event.target.value)}
-            >
-              {benchmarkModels.length === 0 && <option value="">no candidates</option>}
-              {benchmarkModels.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
             <p className="transcript-label">Pasted transcription (raw STT, optional)</p>
             <textarea
               aria-label="Pasted transcription"
