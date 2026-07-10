@@ -670,20 +670,48 @@ Post-pivot (done):
   fixed a guard that left Save enabled for a paste-mode entry with no Layer 2 —
   a request the main process could only reject.
 
-Post-pivot (open):
-
 - #89 Lab dataset builder: refresh the segment list + replay segment audio —
-  `level:faible`. **Blocks the dataset collection campaign**: Layer 1 must be
-  verbatim, which requires replaying the segment before validating an entry, and
-  a dictation recorded after the Lab opened never reaches the builder's picker.
-  Pure prop wiring; `loadSegments` / `playSegmentAudio` and `segments:get-audio`
-  already exist.
+  **DONE** (PR #91). Threads `loadSegments` / `playSegmentAudio` into
+  `DatasetView`; audio affordances hidden in paste mode.
+- #92 Command words: shared sentinel layer — **DONE** (PR #98). One table in
+  `packages/shared/src/commands.ts`, consumed by `apps/dictex`'s normalizer
+  (`extractCommands` between the dictionary and the regex layer), by insertion
+  and event writing (`expandCommands`, a total sentinel eliminator), and by the
+  dataset export (`extractCommands` on both layers of a `math_transform` pair,
+  never on an `acoustic` one). `npm test` guards the no-sentinel-in-store
+  invariant and now runs in CI.
+
+Post-pivot (open):
 - #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`.
   Phase 5, gated on the Lab producing enough `acoustic`-tagged data. **Reconsider
   the ordering**: benchmarking STT system-prompt variants costs no training data
   and no GPU, and is representable today as a new `variant` in the existing
   `{stage, provider, model, variant}` candidate identity. See
   `docs/dataset-and-normalization-design.md` §6.
+
+Layer-3 input, **decided 2026-07-10** (see `docs/dataset-and-normalization-design.md`
+§7): **resolution 1 — layer 3 learns the residual.** The exported training input
+is the pipeline's output over Layer 1 (dictionary -> command extraction -> regex),
+i.e. what layer 3 actually receives at inference; the target stays the
+human-authored Layer 2. Rejected: letting layer 3 replace the regex. The
+principle: never make a model learn what a rule does with certainty.
+
+Consequences, tracked as issues:
+
+- #100 move the normalizer into `packages/shared` and replay the pipeline over
+  Layer 1 at export — `level:eleve` + `needs:high-review`. Leaving it in
+  `apps/dictex` while the export lives in `packages/shared` would recreate the
+  train/serve divergence #92 just eliminated for command words.
+- #101 the Lab builder prefills Layer 2 from the dictionary+regex output (never
+  command extraction — a sentinel must not reach the store) and **highlights what
+  the pipeline changed**, because a prefilled field invites passive acceptance —
+  `level:moyen`, depends on #100.
+
+The regex layer is not a stopgap the seq2seq makes redundant: its operand is a
+single letter or number, so it structurally cannot do composition, scope, or
+disambiguation. And the `math_transform` dataset is the *measurement* of the regex
+layer before it is fuel for a model — it keeps its value even if layer 3 never
+ships.
 
 Deferred UX proposals (from `docs/ux-review.md`, human decisions recorded):
 

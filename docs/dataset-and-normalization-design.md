@@ -168,6 +168,14 @@ segment makes the leak impossible by construction.
 
 ## 4. Command words and sentinels
 
+> **Status: implemented** (issue #92, PR #98). The table and the two pure
+> functions live in `packages/shared/src/commands.ts`; `apps/dictex`'s normalizer
+> imports `extractCommands` as a pipeline layer, `apps/dictex/src/main/index.ts`
+> imports `expandCommands` for insertion and for every stored layer trace, and
+> `packages/shared/src/datasetExport.ts` imports `extractCommands` for the
+> export-time substitution. `npm test` guards the no-sentinel-in-store invariant
+> and runs in CI.
+
 Some dictated phrases are **actions**, not text: "retour à la ligne" must insert
 a line break. They must never reach the seq2seq, which would paraphrase them
 away or hallucinate them.
@@ -338,3 +346,107 @@ Suggested order:
    it to the regex baseline on `validation`.
 5. Acoustic fine-tuning last, and only if the STT benchmark shows a residue of
    genuinely acoustic errors that neither the prompt nor the normalizer fixes.
+
+---
+
+## 7. Is the seq2seq redundant if the regex works?
+
+No, and the question mistakes what the `math_transform` dataset is for.
+
+### The regex layer is structurally bounded
+
+Layer 2's operand is a single token (`apps/dictex/src/main/normalizer.ts`):
+
+```js
+const OPERAND = "(\\d+[²³]?|\\p{L}[²³]?)";
+```
+
+A run of digits, or **one** letter. Its own header calls it a "conservative
+starter set". So it handles `x au carré`, `x égale y`, `racine de x`,
+`x puissance n` — local, enumerable, unambiguous mappings — and it structurally
+cannot handle:
+
+- `racine de x plus 1` — the operand of `racine de` cannot be an expression;
+- `x plus y au carré` — is that `(x+y)²` or `x + y²`? No regex decides this; it
+  needs context;
+- `f de x` → `f(x)`, `somme de i égale 1 à n`, `intégrale de zéro à un`;
+- any nesting or scoping. There is no parenthesis handling at all.
+
+Layer 3 exists for composition, scope, and disambiguation. The two are different
+regimes, not competing attempts at the same job.
+
+### The dataset is the measurement before it is fuel
+
+Even if layer 3 never ships, the `math_transform` dataset is what lets you know:
+
+- whether the rules actually work, on what you really dictate;
+- whether a new rule broke an old one (the `de plus en plus` guard in
+  `DEFAULT_RULES` shows how easily a naive rule misfires);
+- **exactly which utterances the regex fails on** — and that residue *is* the
+  specification for layer 3.
+
+The outcome that looks like it invalidates the collection is in fact the best
+one: measure the regex on `validation`, find the residue near zero, and you have
+just saved yourself an entire ML project. You only know that because you
+collected the data. It is the acceptance test of the rules, before it is the
+training set of a model.
+
+### Decided — what layer 3 consumes
+
+> **Decision: resolution 1, layer 3 learns the residual.** Recorded 2026-07-10.
+> Implemented by #100 (move the normalizer into `packages/shared`, replay the
+> pipeline over Layer 1 at export) and #101 (the builder prefills Layer 2 from the
+> pipeline output). The reasoning is below; the alternative is kept for the record.
+
+The principle that decided it: **never make a model learn what a rule does with
+certainty.** A seq2seq allowed to rewrite `x²` is also allowed to write `x³`. The
+regex is not. Resolution 2 would throw away seven rules that are already correct
+and free, and pay for them again in data volume and hallucination risk.
+
+There was a real inconsistency to settle before layer 3 could be built, and #92
+did not settle it (it did not have to: the sentinel survives either way).
+
+At **inference** the pipeline is
+`dictionary → command extraction → regex → layer 3`, so layer 3 receives text the
+regex has already rewritten (`euh ⟦NL⟧ x²`).
+
+At **export** the training pair is built from the stored correction, i.e.
+`Layer 1 (verbatim) → Layer 2 (notation)`, with no dictionary and no regex applied
+(`packages/shared/src/datasetExport.ts`). Layer 3 would therefore be trained on
+`⟦NL⟧ x au carré plus deux` and served `euh ⟦NL⟧ x²`.
+
+Two coherent resolutions existed:
+
+1. **Layer 3 learns the residual — CHOSEN.** Run the dictionary and the regex over
+   Layer 1 at export time, so the training input matches what layer 3 will
+   actually receive. Layer 3 then only learns what the regex could not do.
+2. **Layer 3 replaces the regex — rejected.** Train it on the verbatim → notation
+   pair, and drop layer 2 from the pipeline when layer 3 is enabled.
+
+### What resolution 1 implies
+
+**The training input becomes rules-version-dependent.** Add a regex rule and every
+training *input* changes. This is cheap — substitution is already a pure function
+replayed at export, exactly like the sentinels — but the export must record the
+rules/dictionary version so a dataset can be traced to the pipeline that built it.
+
+**The human-authored target never changes.** Layer 2 is what you validated; it is
+independent of the regex version. Corrections never rot, and you never retype.
+
+**The normalizer must move into `packages/shared`** (#100). It currently lives in
+`apps/dictex/src/main/normalizer.ts` while the export lives in
+`packages/shared/src/datasetExport.ts`. Replaying the pipeline at export from a
+second copy would recreate exactly the train/serve divergence that §4 eliminated
+for command words — one pipeline for DicTeX, another for the dataset.
+
+**The builder should prefill Layer 2 with the pipeline output** (#101), so the
+correction the human types *is* the residual: instead of writing
+`retour à la ligne x² + 2` from scratch, they are shown
+`retour à la ligne x² plus deux` and fix three words. Two constraints:
+
+- the prefill runs **dictionary + regex only, never command extraction** —
+  extraction would yield a sentinel and expansion would yield a real line break,
+  violating the storage rule (§4). Command words stay spelled out;
+- **the diff must be visible.** A prefilled field invites passive acceptance, and a
+  subtly wrong regex output accepted without looking would teach layer 3 that
+  error — or enter `validation` as ground truth.
