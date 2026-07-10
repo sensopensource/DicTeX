@@ -10,6 +10,9 @@ Before changing code, read:
 - `pivot_dictex_lab_split.md` (**current strategic direction** — DicTeX/Lab split)
 - `pivot_strategique_stt_normalisation.md` (normalization strategy; still valid,
   but its dataset/benchmark tooling now lives in the Lab, not in DicTeX)
+- `docs/dataset-and-normalization-design.md` (**settled data design**: verbatim
+  Layer 1, split semantics, command sentinels, how to produce the data). Read it
+  before adding a correction kind, a normalizer layer, or a dataset export field.
 - this file
 
 ## Current Direction: DicTeX / Lab split (adopted 2026-07-09)
@@ -656,10 +659,46 @@ Post-pivot (done):
   path was removed); swept 17 dead CSS rule blocks from
   `apps/lab/src/renderer/src/styles.css` (Lab CSS bundle 17.00 -> 13.96 kB).
 
-Post-pivot (not started):
+- #84 UX/UI design review + on-direction polish — **DONE** (PR #87). Added the
+  shared token layer `packages/shared/src/styles.css` (both renderers import it
+  first), one `.panel-header`, consistent focus/hover/disabled, and
+  `docs/ux-review.md`. Fixed real drift from #77/#83: classes used in JSX with no
+  CSS rule.
+- #85 Lab dataset-builder + view-state UX — **DONE** (PR #88). Mirrors
+  `planDatasetBuilderSave`'s real errors in the renderer, live "will save X ->
+  split" preview, empty/pre-run states across Segments/Benchmark/Dataset. Also
+  fixed a guard that left Save enabled for a paste-mode entry with no Layer 2 —
+  a request the main process could only reject.
 
+Post-pivot (open):
+
+- #89 Lab dataset builder: refresh the segment list + replay segment audio —
+  `level:faible`. **Blocks the dataset collection campaign**: Layer 1 must be
+  verbatim, which requires replaying the segment before validating an entry, and
+  a dictation recorded after the Lab opened never reaches the builder's picker.
+  Pure prop wiring; `loadSegments` / `playSegmentAudio` and `segments:get-audio`
+  already exist.
 - #45 plan first fine-tuning experiment — `level:faible` + `needs:high-review`.
-  Phase 5, gated on the Lab producing enough `acoustic`-tagged data.
+  Phase 5, gated on the Lab producing enough `acoustic`-tagged data. **Reconsider
+  the ordering**: benchmarking STT system-prompt variants costs no training data
+  and no GPU, and is representable today as a new `variant` in the existing
+  `{stage, provider, model, variant}` candidate identity. See
+  `docs/dataset-and-normalization-design.md` §6.
+
+Deferred UX proposals (from `docs/ux-review.md`, human decisions recorded):
+
+- **Typographic scale (A)** — wanted, but touches nearly every CSS rule in both
+  apps, so it is a merge-conflict magnet. Land it alone, never bundled.
+- **Idle DicTeX Home (B)** — decision: **hide empty metrics** until they have a
+  value, rather than showing eight `-` cells or seeding from config.
+- **Record-button wording (F)** — decision: **align the button on the toggle**
+  (Start / Stop), matching `Win+Alt+Space`. One mental model; push-to-hold goes.
+- **Footer actions (C)** and **collapsible Lab data-folder panel (E)** — still
+  open, no decision.
+- **Unified navigation model (D)** — deliberately deferred. Structural, purely
+  aesthetic benefit, and the likeliest way to drift a utility UI toward a
+  dashboard. Revisit once both apps stop moving.
+- **Light theme (G)** — not happening. Both apps are dark-only by design.
 
 Model per level (Claude / Codex): `level:eleve` -> Opus 4.8 high / gpt-5-codex
 high; `needs:high-review` issues get a reviewer one notch up (Opus 4.8 max).
