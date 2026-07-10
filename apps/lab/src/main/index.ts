@@ -113,6 +113,24 @@ function getSourceEventsPath(): string {
   return path.join(getSourceDataRoot(), "events.jsonl");
 }
 
+// The SOURCE (DicTeX) normalizer config, resolved exactly as apps/dictex lays it
+// out under its data root (`<data>/normalizer/{dictionary,rules}.json`). Read
+// READ-ONLY when the export replays the pipeline to build the `math_transform`
+// training input (issue #100); the Lab never writes into DicTeX's folder. A
+// missing file degrades gracefully inside the normalizer (empty dictionary /
+// built-in DEFAULT_RULES), so no existence check is needed here.
+function getSourceNormalizerDir(): string {
+  return path.join(getSourceDataRoot(), "normalizer");
+}
+
+function getSourceDictionaryPath(): string {
+  return path.join(getSourceNormalizerDir(), "dictionary.json");
+}
+
+function getSourceRulesPath(): string {
+  return path.join(getSourceNormalizerDir(), "rules.json");
+}
+
 /**
  * Resolves a portable `audio_ref` against the SOURCE (DicTeX) data root, for
  * READS only (existsSync / readFile / handing the path to the STT engine).
@@ -461,6 +479,14 @@ async function writeSttDatasetExport(datasetExport: SttDatasetExport): Promise<S
     source_data_folder: getSourceDataRoot(),
     selected_candidate: datasetExport.selectedCandidate,
     selection_reason: datasetExport.selectionReason,
+    // Pipeline fingerprint that built the math_transform INPUTS (issue #100): a
+    // dataset must be traceable to the rules/dictionary version that produced it,
+    // since a rule change rewrites every input. null = that config file was
+    // absent (empty dictionary / built-in DEFAULT_RULES).
+    normalizer_version: {
+      dictionary_hash: datasetExport.normalizerVersion.dictionaryHash,
+      rules_hash: datasetExport.normalizerVersion.rulesHash,
+    },
     total_records: datasetExport.totalRecords,
     skipped_untyped_corrections: datasetExport.skippedUntypedCorrections,
     splits: splitSummaries.map((splitSummary) => ({
@@ -970,7 +996,12 @@ ipcMain.handle(
 
 ipcMain.handle("dataset:export-stt", async (): Promise<SttDatasetExportSummary> => {
   const events = await readAllEvents();
-  const datasetExport = buildSttDatasetExport(events, new Date().toISOString());
+  // Replay the SOURCE folder's normalizer over each math_transform Layer 1 to
+  // build the layer-3 training input (issue #100); read-only, never written to.
+  const datasetExport = await buildSttDatasetExport(events, new Date().toISOString(), {
+    dictionaryPath: getSourceDictionaryPath(),
+    rulesPath: getSourceRulesPath(),
+  });
   return writeSttDatasetExport(datasetExport);
 });
 

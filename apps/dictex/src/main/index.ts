@@ -5,15 +5,17 @@ import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  DEFAULT_RULES,
+  normalizeTranscript,
   readLocalEvents,
   reconstructRecentSegments,
   transcribeWithPython,
+  type NormalizationResult,
   type ReconstructedSegment,
   type SttConfig,
 } from "@dictex/shared";
 import { expandCommands } from "@dictex/shared/commands";
 import { readAppSettings, writeAppSettings } from "./settings.js";
-import { normalizeTranscript, DEFAULT_RULES, type NormalizationResult } from "./normalizer.js";
 
 type TranscriptionResult = {
   /** Raw STT output. Kept as the correction base; `stt_result.stt_output` mirrors it. */

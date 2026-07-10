@@ -1,9 +1,18 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { extractCommands } from "@dictex/shared/commands";
+import { extractCommands } from "./commands.js";
 
 /**
  * Text-to-text normalization pipeline (strategic pivot, Phase 2).
+ *
+ * Lives in `@dictex/shared` (the main-process-only `.` barrel — it imports
+ * `node:fs`), so DicTeX and the Lab's dataset export replay ONE pipeline. Before
+ * issue #100 this file lived in `apps/dictex/src/main`; moving it here is what
+ * lets `buildSttDatasetExport` build the layer-3 training input by replaying the
+ * exact same dictionary -> command extraction -> regex fold that DicTeX serves at
+ * inference, instead of a second copy that could silently diverge (the train/serve
+ * split #92 eliminated for command words — see
+ * `docs/dataset-and-normalization-design.md` §4 and §7).
  *
  * The pipeline turns the raw literal STT transcript into normalized text before
  * it is copied/pasted. It is an ordered fold of independent layers, each taking
@@ -87,18 +96,47 @@ export type NormalizeOptions = {
 };
 
 /**
+ * A pipeline whose dictionary and rules have already been loaded from disk once,
+ * so its `normalize` can be applied to many inputs without re-reading the config.
+ * `buildSttDatasetExport` uses this to normalize every `math_transform` Layer 1
+ * with a single load; DicTeX gets the same object under the hood via
+ * `normalizeTranscript`, so the export input and the served text are byte-identical
+ * for a given dictionary/rules pair (issue #100).
+ */
+export type TranscriptNormalizer = {
+  normalize: (input: string) => Promise<NormalizationResult>;
+};
+
+/**
+ * Build a reusable normalizer by loading the dictionary and rules once. This is
+ * the single place the layer fold is assembled; both `normalizeTranscript`
+ * (DicTeX's per-dictation call) and the dataset export go through it, which is
+ * what guarantees they cannot diverge.
+ */
+export async function createTranscriptNormalizer(
+  options: NormalizeOptions,
+): Promise<TranscriptNormalizer> {
+  const layers = await buildPipeline(options);
+  return { normalize: (input: string) => runPipeline(input, layers) };
+}
+
+/**
  * Normalize a transcript through the ordered layer pipeline.
  *
  * Never throws for expected failure modes (missing/invalid dictionary): those
  * degrade to passthrough with diagnostics. The returned result always carries
  * enough per-layer state to attribute a wrong output to a specific layer.
+ *
+ * Thin wrapper over `createTranscriptNormalizer` — reads the config once, then
+ * normalizes one input. The export uses the same underlying pipeline for its
+ * `math_transform` training input, so the two never drift.
  */
 export async function normalizeTranscript(
   input: string,
   options: NormalizeOptions,
 ): Promise<NormalizationResult> {
-  const layers = await buildPipeline(options);
-  return runPipeline(input, layers);
+  const normalizer = await createTranscriptNormalizer(options);
+  return normalizer.normalize(input);
 }
 
 async function buildPipeline(options: NormalizeOptions): Promise<NormalizationLayer[]> {

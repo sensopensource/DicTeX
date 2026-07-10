@@ -3,10 +3,13 @@
 // Cross-app TypeScript contracts shared by `apps/dictex` and `apps/lab` main
 // processes: the JSONL event schema + append-only derivations (localEvents),
 // CER/WER scoring (sttScoring), STT candidate summarization (benchmarkSummary),
-// the test_frozen-compatible dataset export builder (datasetExport), the local
-// STT engine invocation (sttEngine — imports node:child_process/fs), and the
-// "live benchmark run" IPC contract types (benchmarkTypes). Both apps import
-// from here so they do not diverge — see pivot_dictex_lab_split.md / AGENTS.md.
+// the text-to-text normalization pipeline (normalizer — imports node:fs; the ONE
+// dictionary -> command extraction -> regex fold DicTeX serves and the dataset
+// export replays, issue #100), the test_frozen-compatible dataset export builder
+// (datasetExport), the local STT engine invocation (sttEngine — imports
+// node:child_process/fs), and the "live benchmark run" IPC contract types
+// (benchmarkTypes). Both apps import from here so they do not diverge — see
+// pivot_dictex_lab_split.md / AGENTS.md.
 //
 // Renderer-only (browser-safe) helpers live in dedicated subpath exports so
 // they never pull node built-ins into a renderer bundle:
@@ -21,6 +24,7 @@ export * from "./commands.js";
 export * from "./localEvents.js";
 export * from "./sttScoring.js";
 export * from "./benchmarkSummary.js";
+export * from "./normalizer.js";
 export * from "./datasetExport.js";
 export * from "./sttEngine.js";
 export * from "./benchmarkTypes.js";
