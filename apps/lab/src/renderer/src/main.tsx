@@ -149,10 +149,11 @@ function App(): React.ReactElement {
   const [benchmarkError, setBenchmarkError] = useState("");
   const [isBenchmarking, setIsBenchmarking] = useState(false);
   const [candidateCatalog, setCandidateCatalog] = useState<SttBenchmarkCandidateOption[]>([]);
-  // STT prompt variants (issue #121): local (Lab-defined, immutable) + external
-  // (DICTEX_STT_PROMPT_VARIANTS, read-only) definitions, merged in the main process.
-  const [promptVariants, setPromptVariants] = useState<SttPromptVariantListEntry[]>([]);
-  const [promptVariantsError, setPromptVariantsError] = useState("");
+  // STT prompt variant creation (issue #121): a valid new variant becomes a new
+  // faster-whisper benchmark candidate. The candidate selector (issue #126)
+  // surfaces this as a secondary "New prompt" action beside the prompt choice,
+  // rather than a permanent list panel, so existing variants are discovered by
+  // opening the prompt selector (the catalog already carries them).
   const [newPromptVariantName, setNewPromptVariantName] = useState("");
   const [newPromptVariantDisplayName, setNewPromptVariantDisplayName] = useState("");
   const [newPromptVariantText, setNewPromptVariantText] = useState("");
@@ -222,7 +223,6 @@ function App(): React.ReactElement {
     void window.dictexLab.getLatestSttCandidateSelection().then(setCurrentSelection).catch(() => {
       // Non-fatal; the panel shows none selected.
     });
-    void refreshPromptVariants();
     void loadSegments();
 
     return () => {
@@ -528,19 +528,6 @@ function App(): React.ReactElement {
     }
   }
 
-  function toggleCandidate(candidate: BenchmarkCandidateIdentity): void {
-    const key = formatCandidateIdentityKey(candidate);
-    setSelectedCandidates((current) => {
-      if (current.some((selected) => formatCandidateIdentityKey(selected) === key)) {
-        return current.filter((selected) => formatCandidateIdentityKey(selected) !== key);
-      }
-      if (current.length >= 3) {
-        return current;
-      }
-      return [...current, candidate];
-    });
-  }
-
   async function runSetSttBenchmark(): Promise<void> {
     if (selectedCandidates.length < 1) {
       setBatchError("Check at least one STT candidate to run");
@@ -611,19 +598,6 @@ function App(): React.ReactElement {
     }
   }
 
-  // STT prompt variants (issue #121): creating one also refreshes the
-  // candidate catalog, since a newly-defined variant immediately becomes a
-  // new faster-whisper benchmark candidate for every configured model.
-  async function refreshPromptVariants(): Promise<void> {
-    try {
-      const list = await window.dictexLab.listSttPromptVariants();
-      setPromptVariants(list);
-      setPromptVariantsError("");
-    } catch (listError) {
-      setPromptVariantsError(listError instanceof Error ? listError.message : "Could not load STT prompt variants");
-    }
-  }
-
   async function refreshCandidateCatalog(): Promise<void> {
     try {
       const catalog = await window.dictexLab.getSttBenchmarkCandidates();
@@ -633,7 +607,13 @@ function App(): React.ReactElement {
     }
   }
 
-  async function createPromptVariant(): Promise<void> {
+  // Creating a variant (issue #121) immediately refreshes the candidate catalog,
+  // since a newly-defined variant becomes a new faster-whisper benchmark
+  // candidate for every configured model — the prompt selector (issue #126)
+  // then offers it right away. Returns whether creation succeeded so the caller
+  // can collapse its inline form only on success (a rejected id keeps its
+  // values and error visible, immutability rules unchanged).
+  async function createPromptVariant(): Promise<boolean> {
     setCreatePromptVariantError("");
     setIsCreatingPromptVariant(true);
     try {
@@ -645,11 +625,13 @@ function App(): React.ReactElement {
       setNewPromptVariantName("");
       setNewPromptVariantDisplayName("");
       setNewPromptVariantText("");
-      await Promise.all([refreshPromptVariants(), refreshCandidateCatalog()]);
+      await refreshCandidateCatalog();
+      return true;
     } catch (createError) {
       setCreatePromptVariantError(
         createError instanceof Error ? createError.message : "Could not create the STT prompt variant",
       );
+      return false;
     } finally {
       setIsCreatingPromptVariant(false);
     }
@@ -770,7 +752,7 @@ function App(): React.ReactElement {
           batchOutcomes={batchOutcomes}
           batchError={batchError}
           selectedCandidates={selectedCandidates}
-          toggleCandidate={toggleCandidate}
+          setSelectedCandidates={setSelectedCandidates}
           runAnalysis={() => void runAnalysis()}
           candidateSummary={candidateSummary}
           summaryError={summaryError}
@@ -786,8 +768,6 @@ function App(): React.ReactElement {
           isSelectingCandidateKey={isSelectingCandidateKey}
           selectCandidate={(candidate) => void selectCandidate(candidate)}
           errorAnalysis={errorAnalysis}
-          promptVariants={promptVariants}
-          promptVariantsError={promptVariantsError}
           newPromptVariantName={newPromptVariantName}
           setNewPromptVariantName={setNewPromptVariantName}
           newPromptVariantDisplayName={newPromptVariantDisplayName}
@@ -796,7 +776,7 @@ function App(): React.ReactElement {
           setNewPromptVariantText={setNewPromptVariantText}
           isCreatingPromptVariant={isCreatingPromptVariant}
           createPromptVariantError={createPromptVariantError}
-          createPromptVariant={() => void createPromptVariant()}
+          createPromptVariant={createPromptVariant}
           onBack={() => setView("segments")}
         />
       </main>
@@ -1221,7 +1201,7 @@ type BenchmarkViewProps = {
   batchOutcomes: SttBenchmarkSetSegmentOutcome[];
   batchError: string;
   selectedCandidates: BenchmarkCandidateIdentity[];
-  toggleCandidate: (candidate: BenchmarkCandidateIdentity) => void;
+  setSelectedCandidates: React.Dispatch<React.SetStateAction<BenchmarkCandidateIdentity[]>>;
   runAnalysis: () => void;
   candidateSummary: SttBenchmarkCandidateSummaryResponse | null;
   summaryError: string;
@@ -1234,8 +1214,6 @@ type BenchmarkViewProps = {
   isSelectingCandidateKey: string;
   selectCandidate: (candidate: BenchmarkCandidateIdentity) => void;
   errorAnalysis: CandidateErrorAnalysis[];
-  promptVariants: SttPromptVariantListEntry[];
-  promptVariantsError: string;
   newPromptVariantName: string;
   setNewPromptVariantName: (value: string) => void;
   newPromptVariantDisplayName: string;
@@ -1244,33 +1222,455 @@ type BenchmarkViewProps = {
   setNewPromptVariantText: (value: string) => void;
   isCreatingPromptVariant: boolean;
   createPromptVariantError: string;
-  createPromptVariant: () => void;
+  /** Resolves to whether creation succeeded, so the inline form collapses only then. */
+  createPromptVariant: () => Promise<boolean>;
   onBack: () => void;
 };
 
 /**
- * Groups the flat candidate catalog by provider then model (issue #94), so
- * the checkbox UI stays compact and readable as new providers/models/prompt
- * variants are added — the renderer never hardcodes a candidate list, it
- * only groups whatever `getSttBenchmarkCandidates` returns.
+ * A chosen model in the progressive candidate selector (issue #126): a
+ * provider + model pair, compared by value so no fragile separator-joined
+ * string key is needed.
  */
-function groupCandidateCatalog(
-  catalog: SttBenchmarkCandidateOption[],
-): [string, [string, SttBenchmarkCandidateOption[]][]][] {
-  const byProvider = new Map<string, Map<string, SttBenchmarkCandidateOption[]>>();
+type ModelChoice = { providerLabel: string; modelLabel: string };
 
+function sameModel(a: ModelChoice, b: ModelChoice): boolean {
+  return a.providerLabel === b.providerLabel && a.modelLabel === b.modelLabel;
+}
+
+function optionMatchesModel(option: SttBenchmarkCandidateOption, model: ModelChoice): boolean {
+  return sameModel({ providerLabel: option.providerLabel, modelLabel: option.modelLabel }, model);
+}
+
+/**
+ * Distinct models across the catalog, grouped by provider, order preserved —
+ * feeds the progressive selector's model list (issue #126). The renderer never
+ * hardcodes a candidate list, it only groups whatever `getSttBenchmarkCandidates`
+ * returns.
+ */
+function groupModelsByProvider(
+  catalog: SttBenchmarkCandidateOption[],
+): { providerLabel: string; models: ModelChoice[] }[] {
+  const byProvider = new Map<string, ModelChoice[]>();
   for (const option of catalog) {
-    const byModel = byProvider.get(option.providerLabel) ?? new Map<string, SttBenchmarkCandidateOption[]>();
-    const options = byModel.get(option.modelLabel) ?? [];
-    options.push(option);
-    byModel.set(option.modelLabel, options);
-    byProvider.set(option.providerLabel, byModel);
+    const models = byProvider.get(option.providerLabel) ?? [];
+    if (!models.some((model) => model.modelLabel === option.modelLabel)) {
+      models.push({ providerLabel: option.providerLabel, modelLabel: option.modelLabel });
+    }
+    byProvider.set(option.providerLabel, models);
+  }
+  return Array.from(byProvider.entries()).map(([providerLabel, models]) => ({ providerLabel, models }));
+}
+
+/** Distinct runtime labels among a chosen model's options, order preserved. */
+function runtimeLabelsFor(options: SttBenchmarkCandidateOption[]): string[] {
+  const seen: string[] = [];
+  for (const option of options) {
+    if (!seen.includes(option.runtimeLabel)) {
+      seen.push(option.runtimeLabel);
+    }
+  }
+  return seen;
+}
+
+const MAX_CANDIDATES = 3;
+
+type CandidateSelectorProps = {
+  catalog: SttBenchmarkCandidateOption[];
+  selectedCandidates: BenchmarkCandidateIdentity[];
+  setSelectedCandidates: React.Dispatch<React.SetStateAction<BenchmarkCandidateIdentity[]>>;
+  disabled: boolean;
+  newPromptVariantName: string;
+  setNewPromptVariantName: (value: string) => void;
+  newPromptVariantDisplayName: string;
+  setNewPromptVariantDisplayName: (value: string) => void;
+  newPromptVariantText: string;
+  setNewPromptVariantText: (value: string) => void;
+  isCreatingPromptVariant: boolean;
+  createPromptVariantError: string;
+  createPromptVariant: () => Promise<boolean>;
+};
+
+/**
+ * Progressive STT candidate selector (issue #126). Replaces the flat checkbox
+ * grid: a compact list of the 1-3 selected candidates (each shown by model,
+ * runtime and prompt, with Replace/Remove), plus an "add or replace" flow that
+ * picks a model first (bounded, scrollable list), then runtime and prompt as
+ * separate controls that each collapse once chosen, and shows the selected
+ * prompt text read-only. It only ever offers fully-executable identities from
+ * the real catalog — it never synthesizes an absent model/runtime/prompt
+ * combination. A provider with no `initial_prompt` (Vosk) hides the prompt
+ * choice instead of inventing a baseline. Creating a variant is a secondary
+ * "New prompt" action beside the prompt choice, not a permanent panel.
+ */
+function CandidateSelector({
+  catalog,
+  selectedCandidates,
+  setSelectedCandidates,
+  disabled,
+  newPromptVariantName,
+  setNewPromptVariantName,
+  newPromptVariantDisplayName,
+  setNewPromptVariantDisplayName,
+  newPromptVariantText,
+  setNewPromptVariantText,
+  isCreatingPromptVariant,
+  createPromptVariantError,
+  createPromptVariant,
+}: CandidateSelectorProps): React.ReactElement {
+  const [replaceIndex, setReplaceIndex] = useState<number | null>(null);
+  const [isPicking, setIsPicking] = useState(false);
+  const [draftModel, setDraftModel] = useState<ModelChoice | null>(null);
+  const [draftRuntime, setDraftRuntime] = useState<string | null>(null);
+  const [draftCandidateKey, setDraftCandidateKey] = useState<string | null>(null);
+  const [openControl, setOpenControl] = useState<"model" | "runtime" | "prompt" | null>(null);
+  const [showNewPrompt, setShowNewPrompt] = useState(false);
+
+  const optionByKey = useMemo(() => {
+    const map = new Map<string, SttBenchmarkCandidateOption>();
+    for (const option of catalog) {
+      map.set(formatCandidateIdentityKey(option.candidate), option);
+    }
+    return map;
+  }, [catalog]);
+  const providers = useMemo(() => groupModelsByProvider(catalog), [catalog]);
+  const modelOptions = useMemo(
+    () => (draftModel ? catalog.filter((option) => optionMatchesModel(option, draftModel)) : []),
+    [catalog, draftModel],
+  );
+  const runtimeOptions = useMemo(() => runtimeLabelsFor(modelOptions), [modelOptions]);
+  const supportsPrompt = modelOptions.length > 0 && modelOptions[0].supportsPrompt;
+  const promptOptions = useMemo(
+    () => modelOptions.filter((option) => option.runtimeLabel === draftRuntime),
+    [modelOptions, draftRuntime],
+  );
+
+  const selectedKeys = selectedCandidates.map((candidate) => formatCandidateIdentityKey(candidate));
+  const draftOption = draftCandidateKey ? optionByKey.get(draftCandidateKey) ?? null : null;
+  // A resolved draft already in the selection (other than the slot being
+  // replaced) would be a duplicate identity — block confirming it.
+  const draftIsDuplicate =
+    draftCandidateKey !== null &&
+    selectedKeys.some(
+      (key, index) => key === draftCandidateKey && !(replaceIndex !== null && index === replaceIndex),
+    );
+  const atAddLimit = replaceIndex === null && selectedCandidates.length >= MAX_CANDIDATES;
+
+  function resetDraft(): void {
+    setDraftModel(null);
+    setDraftRuntime(null);
+    setDraftCandidateKey(null);
+    setOpenControl(null);
+    setShowNewPrompt(false);
   }
 
-  return Array.from(byProvider.entries()).map(([providerLabel, byModel]) => [
-    providerLabel,
-    Array.from(byModel.entries()),
-  ]);
+  function startPick(index: number | null): void {
+    setReplaceIndex(index);
+    resetDraft();
+    setIsPicking(true);
+    setOpenControl("model");
+  }
+
+  function cancelPick(): void {
+    setIsPicking(false);
+    setReplaceIndex(null);
+    resetDraft();
+  }
+
+  function chooseModel(model: ModelChoice): void {
+    const options = catalog.filter((option) => optionMatchesModel(option, model));
+    const runtimes = runtimeLabelsFor(options);
+    const soleRuntime = runtimes.length === 1 ? runtimes[0] : null;
+    const providerSupportsPrompt = options.length > 0 && options[0].supportsPrompt;
+    setDraftModel(model);
+    setDraftRuntime(soleRuntime);
+    setShowNewPrompt(false);
+    // A provider with no prompt concept (Vosk) has a single baseline candidate
+    // per runtime; resolve it directly so the pick is immediately confirmable.
+    if (!providerSupportsPrompt && soleRuntime) {
+      const baseline = options.find((option) => option.runtimeLabel === soleRuntime) ?? null;
+      setDraftCandidateKey(baseline ? formatCandidateIdentityKey(baseline.candidate) : null);
+    } else {
+      setDraftCandidateKey(null);
+    }
+    setOpenControl(null);
+  }
+
+  function chooseRuntime(runtime: string): void {
+    setDraftRuntime(runtime);
+    setDraftCandidateKey(null);
+    setOpenControl(null);
+  }
+
+  function choosePrompt(candidateKey: string): void {
+    setDraftCandidateKey(candidateKey);
+    setOpenControl(null);
+  }
+
+  function confirmDraft(): void {
+    if (!draftOption || draftIsDuplicate || atAddLimit) {
+      return;
+    }
+    const chosen = draftOption.candidate;
+    setSelectedCandidates((current) => {
+      if (replaceIndex !== null) {
+        return current.map((candidate, index) => (index === replaceIndex ? chosen : candidate));
+      }
+      return [...current, chosen];
+    });
+    cancelPick();
+  }
+
+  function removeCandidate(index: number): void {
+    setSelectedCandidates((current) => current.filter((_, i) => i !== index));
+  }
+
+  async function submitNewPrompt(): Promise<void> {
+    const created = await createPromptVariant();
+    if (created) {
+      // The catalog now carries the new variant under the current model; reopen
+      // the prompt list so it can be picked right away.
+      setShowNewPrompt(false);
+      setOpenControl("prompt");
+    }
+  }
+
+  if (catalog.length === 0) {
+    return <p className="empty-state">No STT benchmark candidates configured.</p>;
+  }
+
+  const canCreatePrompt =
+    !isCreatingPromptVariant &&
+    newPromptVariantName.trim().length > 0 &&
+    newPromptVariantDisplayName.trim().length > 0 &&
+    newPromptVariantText.trim().length > 0;
+
+  return (
+    <div className="candidate-selector">
+      <ul className="candidate-chips" aria-label="Selected STT candidates (1-3)">
+        {selectedCandidates.map((candidate, index) => {
+          const option = optionByKey.get(formatCandidateIdentityKey(candidate));
+          return (
+            <li className="candidate-chip" key={`${formatCandidateIdentityKey(candidate)}-${index}`}>
+              <div className="candidate-chip-labels">
+                <strong>{option ? option.modelLabel : candidate.model}</strong>
+                <span className="candidate-chip-meta">
+                  {option ? option.runtimeLabel : candidate.variant ?? ""} · {option ? option.variantLabel : "?"}
+                </span>
+              </div>
+              <div className="candidate-chip-actions">
+                <button className="secondary-button" disabled={disabled} onClick={() => startPick(index)}>
+                  Replace
+                </button>
+                <button
+                  className="secondary-button"
+                  disabled={disabled || selectedCandidates.length <= 1}
+                  title={selectedCandidates.length <= 1 ? "Keep at least one candidate" : undefined}
+                  onClick={() => removeCandidate(index)}
+                >
+                  Remove
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+
+      {!isPicking && (
+        <div className="candidate-add">
+          <button
+            className="secondary-button"
+            disabled={disabled || selectedCandidates.length >= MAX_CANDIDATES}
+            onClick={() => startPick(null)}
+          >
+            Add a candidate
+          </button>
+          {selectedCandidates.length >= MAX_CANDIDATES && (
+            <span className="candidate-hint">Maximum 3 — replace or remove one to add another.</span>
+          )}
+        </div>
+      )}
+
+      {isPicking && (
+        <div className="candidate-picker">
+          <div className="candidate-picker-header">
+            <strong>{replaceIndex !== null ? `Replace candidate ${replaceIndex + 1}` : "Add a candidate"}</strong>
+            <button className="secondary-button" disabled={disabled} onClick={cancelPick}>
+              Cancel
+            </button>
+          </div>
+
+          <div className="candidate-control">
+            <button
+              className="candidate-control-toggle"
+              aria-expanded={openControl === "model"}
+              disabled={disabled}
+              onClick={() => setOpenControl(openControl === "model" ? null : "model")}
+            >
+              Model: {draftModel ? draftModel.modelLabel : "choose…"}
+            </button>
+            {openControl === "model" && (
+              <div className="candidate-option-list" role="listbox" aria-label="Model">
+                {providers.map((group) => (
+                  <div className="candidate-option-group" key={group.providerLabel}>
+                    <span className="candidate-option-group-label">{group.providerLabel}</span>
+                    {group.models.map((model) => (
+                      <button
+                        key={`${model.providerLabel}/${model.modelLabel}`}
+                        type="button"
+                        role="option"
+                        aria-selected={draftModel !== null && sameModel(draftModel, model)}
+                        className="candidate-option"
+                        onClick={() => chooseModel(model)}
+                      >
+                        {model.modelLabel}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {draftModel && (
+            <div className="candidate-control-row">
+              <div className="candidate-control">
+                <button
+                  className="candidate-control-toggle"
+                  aria-expanded={openControl === "runtime"}
+                  disabled={disabled || runtimeOptions.length <= 1}
+                  onClick={() => setOpenControl(openControl === "runtime" ? null : "runtime")}
+                >
+                  Runtime: {draftRuntime ?? "choose…"}
+                </button>
+                {openControl === "runtime" && runtimeOptions.length > 1 && (
+                  <div className="candidate-option-list" role="listbox" aria-label="Runtime variant">
+                    {runtimeOptions.map((runtime) => (
+                      <button
+                        key={runtime}
+                        type="button"
+                        role="option"
+                        aria-selected={draftRuntime === runtime}
+                        className="candidate-option"
+                        onClick={() => chooseRuntime(runtime)}
+                      >
+                        {runtime}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {supportsPrompt ? (
+                <div className="candidate-control">
+                  <div className="candidate-control-head">
+                    <button
+                      className="candidate-control-toggle"
+                      aria-expanded={openControl === "prompt"}
+                      disabled={disabled || !draftRuntime}
+                      onClick={() => setOpenControl(openControl === "prompt" ? null : "prompt")}
+                    >
+                      Prompt: {draftOption ? draftOption.variantLabel : "choose…"}
+                    </button>
+                    <button
+                      className="secondary-button candidate-new-prompt"
+                      disabled={disabled}
+                      aria-expanded={showNewPrompt}
+                      onClick={() => setShowNewPrompt((value) => !value)}
+                    >
+                      New prompt
+                    </button>
+                  </div>
+                  {openControl === "prompt" && draftRuntime && (
+                    <div className="candidate-option-list" role="listbox" aria-label="Prompt">
+                      {promptOptions.map((option) => {
+                        const key = formatCandidateIdentityKey(option.candidate);
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            role="option"
+                            aria-selected={draftCandidateKey === key}
+                            className="candidate-option"
+                            onClick={() => choosePrompt(key)}
+                          >
+                            {option.variantLabel}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="candidate-no-prompt">No prompt — this provider has no initial_prompt.</p>
+              )}
+            </div>
+          )}
+
+          {showNewPrompt && supportsPrompt && (
+            <div className="prompt-variant-form">
+              <input
+                aria-label="New prompt variant id"
+                placeholder="id (e.g. prompt-v3-fr-math)"
+                value={newPromptVariantName}
+                disabled={isCreatingPromptVariant}
+                onChange={(event) => setNewPromptVariantName(event.target.value)}
+              />
+              <input
+                aria-label="New prompt variant display name"
+                placeholder="Display name"
+                value={newPromptVariantDisplayName}
+                disabled={isCreatingPromptVariant}
+                onChange={(event) => setNewPromptVariantDisplayName(event.target.value)}
+              />
+              <textarea
+                aria-label="New prompt variant text"
+                placeholder="Prompt text (short, vocabulary/context-oriented)"
+                value={newPromptVariantText}
+                disabled={isCreatingPromptVariant}
+                onChange={(event) => setNewPromptVariantText(event.target.value)}
+              />
+              <div className="candidate-new-prompt-actions">
+                <button className="secondary-button" disabled={!canCreatePrompt} onClick={() => void submitNewPrompt()}>
+                  {isCreatingPromptVariant ? "Creating" : "Create prompt variant"}
+                </button>
+                <button
+                  className="secondary-button"
+                  disabled={isCreatingPromptVariant}
+                  onClick={() => setShowNewPrompt(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+              {createPromptVariantError && <pre className="error">{createPromptVariantError}</pre>}
+            </div>
+          )}
+
+          {draftModel && supportsPrompt && draftCandidateKey !== null && (
+            draftOption && draftOption.promptText ? (
+              <div className="candidate-prompt-preview">
+                <span className="candidate-prompt-preview-label">Prompt text</span>
+                <p className="candidate-prompt-preview-text">{draftOption.promptText}</p>
+              </div>
+            ) : (
+              <p className="candidate-prompt-preview-empty">Baseline — no initial_prompt.</p>
+            )
+          )}
+
+          <div className="candidate-picker-footer">
+            <button
+              className="secondary-button"
+              disabled={disabled || !draftOption || draftIsDuplicate || atAddLimit}
+              onClick={confirmDraft}
+            >
+              {replaceIndex !== null ? "Replace candidate" : "Add candidate"}
+            </button>
+            {draftIsDuplicate && <span className="candidate-hint">Already selected.</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function BenchmarkView({
@@ -1288,7 +1688,7 @@ function BenchmarkView({
   batchOutcomes,
   batchError,
   selectedCandidates,
-  toggleCandidate,
+  setSelectedCandidates,
   runAnalysis,
   candidateSummary,
   summaryError,
@@ -1301,8 +1701,6 @@ function BenchmarkView({
   isSelectingCandidateKey,
   selectCandidate,
   errorAnalysis,
-  promptVariants,
-  promptVariantsError,
   newPromptVariantName,
   setNewPromptVariantName,
   newPromptVariantDisplayName,
@@ -1375,75 +1773,6 @@ function BenchmarkView({
         )}
       </section>
 
-      <section className="panel benchmark-panel">
-        <div className="panel-header">
-          <div>
-            <h2>STT prompt variants</h2>
-            <p>
-              Named faster-whisper `initial_prompt` variants — immutable once created, they appear as new candidates
-              under every faster-whisper model below.
-            </p>
-          </div>
-        </div>
-
-        {promptVariantsError && <pre className="error">{promptVariantsError}</pre>}
-
-        {promptVariants.length > 0 ? (
-          <ul className="prompt-variant-list">
-            {promptVariants.map((variant) => (
-              <li key={variant.name} className="prompt-variant-item" title={variant.promptText}>
-                <strong>{variant.displayName}</strong>
-                <span className="prompt-variant-source">
-                  {variant.source === "local" ? "local" : "external (read-only)"}
-                  {variant.shadowedByExternal ? ", shadowed by an external variant of the same id" : ""}
-                </span>
-                <p className="prompt-variant-text">{variant.promptText}</p>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="empty-state">No prompt variant defined yet.</p>
-        )}
-
-        <div className="prompt-variant-form">
-          <input
-            aria-label="New prompt variant id"
-            placeholder="id (e.g. prompt-v3-fr-math)"
-            value={newPromptVariantName}
-            disabled={isCreatingPromptVariant}
-            onChange={(event) => setNewPromptVariantName(event.target.value)}
-          />
-          <input
-            aria-label="New prompt variant display name"
-            placeholder="Display name"
-            value={newPromptVariantDisplayName}
-            disabled={isCreatingPromptVariant}
-            onChange={(event) => setNewPromptVariantDisplayName(event.target.value)}
-          />
-          <textarea
-            aria-label="New prompt variant text"
-            placeholder="Prompt text (short, vocabulary/context-oriented)"
-            value={newPromptVariantText}
-            disabled={isCreatingPromptVariant}
-            onChange={(event) => setNewPromptVariantText(event.target.value)}
-          />
-          <button
-            className="secondary-button"
-            disabled={
-              isCreatingPromptVariant ||
-              newPromptVariantName.trim().length === 0 ||
-              newPromptVariantDisplayName.trim().length === 0 ||
-              newPromptVariantText.trim().length === 0
-            }
-            onClick={createPromptVariant}
-          >
-            {isCreatingPromptVariant ? "Creating" : "Create prompt variant"}
-          </button>
-        </div>
-
-        {createPromptVariantError && <pre className="error">{createPromptVariantError}</pre>}
-      </section>
-
       <section className="panel benchmark-panel" aria-busy={isRunningBatch}>
         <div className="panel-header">
           <div>
@@ -1476,39 +1805,21 @@ function BenchmarkView({
           </div>
         </div>
 
-        {candidateCatalog.length > 0 && (
-          <div className="candidate-catalog" role="group" aria-label="STT candidates to compare (1-3)">
-            {groupCandidateCatalog(candidateCatalog).map(([providerLabel, models]) => (
-              <div className="candidate-provider-group" key={providerLabel}>
-                <strong className="candidate-provider-label">{providerLabel}</strong>
-                {models.map(([modelLabel, options]) => (
-                  <div className="candidate-model-group" key={`${providerLabel}/${modelLabel}`}>
-                    <span className="candidate-model-label">{modelLabel}</span>
-                    <div className="candidate-checkbox-row">
-                      {options.map((option) => {
-                        const candidateKey = formatCandidateIdentityKey(option.candidate);
-                        const isChecked = selectedCandidates.some(
-                          (selected) => formatCandidateIdentityKey(selected) === candidateKey,
-                        );
-                        return (
-                          <label key={candidateKey} className="candidate-checkbox" title={candidateKey}>
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              disabled={isRunningBatch || isBenchmarking || (!isChecked && selectedCandidates.length >= 3)}
-                              onChange={() => toggleCandidate(option.candidate)}
-                            />
-                            {option.variantLabel}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
+        <CandidateSelector
+          catalog={candidateCatalog}
+          selectedCandidates={selectedCandidates}
+          setSelectedCandidates={setSelectedCandidates}
+          disabled={isRunningBatch || isBenchmarking}
+          newPromptVariantName={newPromptVariantName}
+          setNewPromptVariantName={setNewPromptVariantName}
+          newPromptVariantDisplayName={newPromptVariantDisplayName}
+          setNewPromptVariantDisplayName={setNewPromptVariantDisplayName}
+          newPromptVariantText={newPromptVariantText}
+          setNewPromptVariantText={setNewPromptVariantText}
+          isCreatingPromptVariant={isCreatingPromptVariant}
+          createPromptVariantError={createPromptVariantError}
+          createPromptVariant={createPromptVariant}
+        />
 
         {batchError && <pre className="error">{batchError}</pre>}
 
@@ -1641,6 +1952,7 @@ function BenchmarkView({
 
             {selectionError && <pre className="error">{selectionError}</pre>}
 
+            <div className="summary-table-scroll">
             <table className="summary-table">
               <thead>
                 <tr>
@@ -1688,6 +2000,7 @@ function BenchmarkView({
                 })}
               </tbody>
             </table>
+            </div>
           </>
         )}
       </section>

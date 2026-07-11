@@ -332,28 +332,61 @@ whatever is left in the field, same as before this issue.
    appear. Confirm the split selector opens on `Validation` (the default).
    Switch it to `Test frozen`, run `Run analysis`, `Summarize by candidate`,
    and `Select` a candidate.
-4bis. Set `DICTEX_STT_PROMPT_VARIANTS` (see "Comparer les variantes de
+4bis. Progressive candidate selector (issue #126). In `Benchmark set`, confirm
+   there is a compact list of the 1-3 currently-selected candidates (each with
+   its model, runtime variant and prompt), with `Replace` and `Remove`
+   actions, and an `Add a candidate` button — no flat grid of checkboxes.
+   Click `Add a candidate` (or `Replace`): the `Model` control opens a
+   vertically-bounded, scrollable list grouped by provider, built only from the
+   real catalog; choosing a model closes that list. Two controls then appear —
+   `Runtime` and `Prompt` — side by side on a wide window and stacked on a
+   narrow one; each collapses once a value is chosen. Choosing a prompt closes
+   its list and shows the full prompt text read-only below; the `baseline`
+   choice shows "Baseline — no initial_prompt." instead of fake text. Confirm
+   the controls only ever offer identities that exist in the catalog (a single
+   runtime stays the only runtime value), and that `Add candidate`/`Replace
+   candidate` enforces the 1-3 limit (the last remaining candidate cannot be
+   removed; an already-selected identity cannot be added twice).
+4ter. Set `DICTEX_STT_PROMPT_VARIANTS` (see "Comparer les variantes de
    contexte dans le Lab" above), restart the Lab, and confirm the same
-   faster-whisper model now shows a baseline row and one row per variant in
-   the checkbox catalog, and that the split selector is back on `Validation`
-   by default. Check the baseline plus two variants of the same model (3
-   candidates), run `Run analysis`, then `Summarize by candidate`; confirm
-   the summary table shows three distinct rows for that one model (not
-   merged into one) and that unchecking a variant removes only that row on
-   the next summarize.
-4ter. In the `STT prompt variants` panel (issue #121), create a variant
-   (e.g. id `prompt-lab-fr-math`, display name `Lab math (FR)`, a short
-   prompt text); confirm it appears in the list with its full name and text
-   (no hash), and as a new checkbox under every faster-whisper model in
-   `Benchmark set` below, labelled by its display name. Restart the Lab and
-   confirm the variant is still listed and still usable — persistence across
-   restart. Try creating a variant again with the same id; confirm it is
-   rejected and the original definition's text is unchanged. Try an empty id,
-   an id with a space, an empty display name, and an empty prompt text;
-   confirm each is rejected. Confirm there is no way to edit or delete an
-   existing variant anywhere in the panel. Check the new variant alongside
-   the baseline, run `Run analysis`, and confirm its row appears in
-   `Summarize by candidate` like any other candidate.
+   faster-whisper model now offers a `baseline` prompt plus one prompt per
+   variant in the `Prompt` control (labelled by display name, never a hash),
+   and that the split selector is back on `Validation` by default. Build three
+   candidates from one model — baseline plus two variants — run `Run analysis`,
+   then `Summarize by candidate`; confirm the summary table shows three
+   distinct rows for that one model (not merged into one) and stays inside its
+   panel (it scrolls horizontally rather than widening the page). For a Vosk
+   candidate, confirm the `Prompt` control is replaced by "No prompt — this
+   provider has no initial_prompt." with no fake baseline text.
+4quater. Secondary prompt creation (issues #121/#126). With a faster-whisper
+   model chosen, click `New prompt` beside the `Prompt` control; confirm the
+   creation form is hidden until then. Click `Cancel` and confirm it collapses
+   with no event written. Reopen it, create a variant (e.g. id
+   `prompt-lab-fr-math`, display name `Lab math (FR)`, a short prompt text);
+   confirm the form collapses and the new variant is immediately available in
+   the current candidate's `Prompt` control, labelled by its display name.
+   Restart the Lab and confirm it is still selectable — persistence across
+   restart. Try creating it again with the same id; confirm it is rejected, the
+   typed values and error stay visible, and the original definition is
+   unchanged. Try an empty id, an id with a space, an empty display name, and an
+   empty prompt text; confirm each is rejected. Confirm there is no edit/delete
+   affordance anywhere.
+4quinquies. Overflow validation (issue #126). Resize the Lab window to roughly
+   320 px, 560 px and 760 px wide, with a deliberately long model name, a long
+   candidate identity and a long prompt text present. Confirm at each width the
+   page never gains a horizontal scrollbar: panels, prompt text, ids, controls,
+   batch outcomes and the dense summary table all stay within the `app-shell`,
+   choice lists scroll vertically inside their bounded height, and the summary
+   table scrolls inside its own panel. Check the `Candidate summary` panel in
+   both states: before any run — both empty states (`No base STT candidate
+   selected yet…` and `Run analysis above…`) and the `Summarize by candidate`
+   button — and after a summary, with the dense table present. At each width the
+   button, the empty states and every child stay inside the panel border and do
+   not push the page past the `app-shell` (regression check for B1: the panel
+   grid column is `minmax(0, 1fr)`, so the nowrap table can no longer inflate the
+   column and spill the panel's other children past its border). Confirm the
+   whole selector is usable by keyboard with a visible focus ring and that
+   expanded/collapsed controls are announced (aria-expanded / listbox roles).
 5. In `Dataset`, use **Build a dataset entry**: paste a transcription (no
    segment) and type a Layer 1 literal transcript containing a rule the
    shipped default regex recognizes plus a word it does not (e.g.
@@ -685,11 +718,12 @@ que deux variantes du même modèle puissent être cochées et exécutées
 ensemble. Le processus principal revalide toujours la sélection reçue contre
 son propre catalogue avant de lancer quoi que ce soit.
 
-Dans la vue Benchmark, le panneau « Benchmark set » présente ce catalogue
-groupé par fournisseur puis par modèle, avec des cases à cocher libellées
-« baseline » ou par le nom de la variante — jamais par la chaîne technique de
-variant (par ex. `cpu-int8-fr+prompt-v3-fr-math`). Le panneau « Candidate
-summary » filtre désormais par identité complète de candidat, donc deux
+Dans la vue Benchmark, le panneau « Benchmark set » présente ce catalogue via
+un sélecteur progressif (issue #126, voir « Sélecteur progressif de candidats »
+ci-dessous), et non plus une grille plate de cases à cocher. Chaque libellé
+reste « baseline » ou le nom d'affichage de la variante — jamais la chaîne
+technique de variant (par ex. `cpu-int8-fr+prompt-v3-fr-math`). Le panneau
+« Candidate summary » filtre par identité complète de candidat, donc deux
 variantes du même modèle apparaissent comme deux lignes distinctes au lieu
 d'être fusionnées. Le sélecteur de split de la vue Benchmark — partagé avec le
 flux général hérité de #64, une seule variable d'état pilotant `Run analysis`
@@ -698,15 +732,51 @@ sur `validation` ; `test_frozen` demeure sélectionnable explicitement mais
 n'est jamais implicite (voir « Discipline d'évaluation » dans
 `docs/roadmap.md`).
 
+### Sélecteur progressif de candidats (issue #126)
+
+La sélection des candidats dans « Benchmark set » est recomposée pour rester
+compacte et contenue dans la fenêtre (`CandidateSelector`,
+`apps/lab/src/renderer/src/main.tsx`). Le renderer ne fabrique jamais une
+combinaison absente du catalogue : il ne fait que grouper et décomposer les
+`SttBenchmarkCandidateOption` réelles reçues de
+`diagnostics:get-stt-benchmark-candidates`.
+
+- une liste compacte affiche les 1 à 3 candidats retenus (modèle, variante de
+  runtime, prompt) avec `Replace` et `Remove` ; le dernier candidat ne peut pas
+  être retiré, une identité déjà retenue ne peut pas être ajoutée deux fois ;
+- « ajouter ou remplacer » choisit d'abord un modèle dans une liste bornée et
+  défilable, groupée par fournisseur ; choisir un modèle referme cette liste ;
+- apparaissent ensuite deux contrôles séparés — variante de runtime et prompt —
+  côte à côte quand la largeur le permet, empilés sinon ; chacun se replie dès
+  qu'une valeur est choisie. S'il n'existe qu'une variante de runtime, elle est
+  préchoisie et reste la seule valeur ;
+- le texte complet du prompt choisi s'affiche en lecture seule sous les
+  contrôles ; la baseline sans prompt est présentée comme telle, sans faux
+  texte ;
+- un fournisseur sans `initial_prompt` (Vosk) masque entièrement le choix de
+  prompt au lieu d'inventer une baseline faster-whisper ;
+- l'option secondaire `New prompt`, placée près du choix de prompt, révèle à la
+  demande le formulaire de création de #121 (voir ci-dessous) ; `Cancel` le
+  replie sans écriture.
+
+Pour l'accessibilité et la robustesse de mise en page : listes de choix bornées
+en hauteur avec défilement vertical, tableau dense « Candidate summary » contenu
+dans son panneau par un défilement horizontal local, focus clavier visible et
+états développés/repliés annoncés (`aria-expanded`, rôles `listbox`/`option`).
+Le lancement du benchmark, la limite de trois candidats, le défaut `validation`,
+les scores et les résumés sont inchangés.
+
 ### Variantes immuables créées dans le Lab (issue #121)
 
 Avant #121, une variante de `initial_prompt` ne pouvait être définie que par la
 variable d'environnement `DICTEX_STT_PROMPT_VARIANTS` au lancement du Lab. La
 vue Benchmark permet désormais de créer une variante directement dans
-l'interface, dans le panneau compact « STT prompt variants » : un identifiant
-(`id`), un nom affiché et le texte complet du prompt. Seul faster-whisper est
-concerné — Vosk n'a toujours aucune notion de prompt et n'affiche jamais ce
-panneau.
+l'interface : un identifiant (`id`), un nom affiché et le texte complet du
+prompt. Depuis #126, ce n'est plus un panneau permanent mais l'action
+secondaire `New prompt`, placée près du choix de prompt du sélecteur de
+candidats et révélée à la demande (voir « Sélecteur progressif de candidats »).
+Seul faster-whisper est concerné — Vosk n'a toujours aucune notion de prompt et
+n'affiche jamais cette action.
 
 Ces définitions sont **strictement immuables** : elles sont écrites une seule
 fois dans le journal propre du Lab sous forme d'événements à ajout uniquement
@@ -721,20 +791,22 @@ invalide (champ manquant ou vide) est ignorée sans bloquer le chargement des
 définitions valides restantes (`getSttPromptVariantDefinitions`,
 `packages/shared/src/localEvents.ts`).
 
-Le panneau liste les variantes locales et externes ensemble, chacune avec son
-nom et son texte complet affichés — jamais un identifiant technique ou un
-hash — et distingue leur origine (« local » vs « external (read-only) »). Une
-variante locale dont l'identifiant entrerait en collision avec une variante
-externe apparue *après* sa création (l'environnement du Lab a changé) est
-signalée comme masquée (`shadowedByExternal`) : la définition externe garde
-toujours l'identité du candidat, la locale est simplement exclue du
-catalogue plutôt que de produire une moyenne silencieuse entre deux prompts
-différents.
+Les variantes locales et externes restent listées ensemble comme choix de
+prompt d'un candidat, chacune libellée par son nom d'affichage — jamais un
+identifiant technique ou un hash. Une variante locale dont l'identifiant
+entrerait en collision avec une variante externe apparue *après* sa création
+(l'environnement du Lab a changé) est masquée (`shadowedByExternal`) : la
+définition externe garde toujours l'identité du candidat, la locale est
+simplement exclue du catalogue plutôt que de produire une moyenne silencieuse
+entre deux prompts différents. `listPromptVariants`
+(`apps/lab/src/main/promptVariants.ts`) expose toujours cette distinction
+d'origine et le drapeau de masquage pour un futur usage, même si l'ancien
+panneau de liste permanent a été retiré par #126.
 
 Chaque variante créée alimente directement le catalogue de candidats de #94
-(`buildSttBenchmarkCandidateCatalog`) : elle apparaît comme une candidature
+(`buildSttBenchmarkCandidateCatalog`) : elle apparaît comme un choix de prompt
 supplémentaire sous chaque modèle faster-whisper configuré, au même titre
-qu'une variante externe, et peut être cochée dans « Benchmark set » comme
+qu'une variante externe, et peut être sélectionnée dans « Benchmark set » comme
 n'importe quel autre candidat. Comme le worker/sidecar ne connaît les
 variantes externes que par `DICTEX_STT_PROMPT_VARIANTS`, une variante locale
 n'y figurant pas, son texte de prompt est transmis explicitement pour cet
