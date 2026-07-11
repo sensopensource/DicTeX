@@ -341,6 +341,19 @@ whatever is left in the field, same as before this issue.
    the summary table shows three distinct rows for that one model (not
    merged into one) and that unchecking a variant removes only that row on
    the next summarize.
+4ter. In the `STT prompt variants` panel (issue #121), create a variant
+   (e.g. id `prompt-lab-fr-math`, display name `Lab math (FR)`, a short
+   prompt text); confirm it appears in the list with its full name and text
+   (no hash), and as a new checkbox under every faster-whisper model in
+   `Benchmark set` below, labelled by its display name. Restart the Lab and
+   confirm the variant is still listed and still usable — persistence across
+   restart. Try creating a variant again with the same id; confirm it is
+   rejected and the original definition's text is unchanged. Try an empty id,
+   an id with a space, an empty display name, and an empty prompt text;
+   confirm each is rejected. Confirm there is no way to edit or delete an
+   existing variant anywhere in the panel. Check the new variant alongside
+   the baseline, run `Run analysis`, and confirm its row appears in
+   `Summarize by candidate` like any other candidate.
 5. In `Dataset`, use **Build a dataset entry**: paste a transcription (no
    segment) and type a Layer 1 literal transcript containing a rule the
    shipped default regex recognizes plus a word it does not (e.g.
@@ -684,6 +697,53 @@ et `Summarize by candidate` pour les deux usages — ouvre désormais par défau
 sur `validation` ; `test_frozen` demeure sélectionnable explicitement mais
 n'est jamais implicite (voir « Discipline d'évaluation » dans
 `docs/roadmap.md`).
+
+### Variantes immuables créées dans le Lab (issue #121)
+
+Avant #121, une variante de `initial_prompt` ne pouvait être définie que par la
+variable d'environnement `DICTEX_STT_PROMPT_VARIANTS` au lancement du Lab. La
+vue Benchmark permet désormais de créer une variante directement dans
+l'interface, dans le panneau compact « STT prompt variants » : un identifiant
+(`id`), un nom affiché et le texte complet du prompt. Seul faster-whisper est
+concerné — Vosk n'a toujours aucune notion de prompt et n'affiche jamais ce
+panneau.
+
+Ces définitions sont **strictement immuables** : elles sont écrites une seule
+fois dans le journal propre du Lab sous forme d'événements à ajout uniquement
+`stt_prompt_variant_defined` (`variant_name`, `display_name`, `prompt_text`,
+`created_at`), et aucune action ni canal IPC ne permet de les modifier ou de
+les supprimer. Un identifiant vide, invalide (seuls lettres, chiffres, `.`,
+`_` et `-` sont acceptés) ou déjà utilisé — par une définition locale **ou**
+par une variante externe `DICTEX_STT_PROMPT_VARIANTS` — est refusé sans
+jamais remplacer silencieusement une définition existante
+(`apps/lab/src/main/promptVariants.ts`). Une ancienne ligne de journal
+invalide (champ manquant ou vide) est ignorée sans bloquer le chargement des
+définitions valides restantes (`getSttPromptVariantDefinitions`,
+`packages/shared/src/localEvents.ts`).
+
+Le panneau liste les variantes locales et externes ensemble, chacune avec son
+nom et son texte complet affichés — jamais un identifiant technique ou un
+hash — et distingue leur origine (« local » vs « external (read-only) »). Une
+variante locale dont l'identifiant entrerait en collision avec une variante
+externe apparue *après* sa création (l'environnement du Lab a changé) est
+signalée comme masquée (`shadowedByExternal`) : la définition externe garde
+toujours l'identité du candidat, la locale est simplement exclue du
+catalogue plutôt que de produire une moyenne silencieuse entre deux prompts
+différents.
+
+Chaque variante créée alimente directement le catalogue de candidats de #94
+(`buildSttBenchmarkCandidateCatalog`) : elle apparaît comme une candidature
+supplémentaire sous chaque modèle faster-whisper configuré, au même titre
+qu'une variante externe, et peut être cochée dans « Benchmark set » comme
+n'importe quel autre candidat. Comme le worker/sidecar ne connaît les
+variantes externes que par `DICTEX_STT_PROMPT_VARIANTS`, une variante locale
+n'y figurant pas, son texte de prompt est transmis explicitement pour cet
+appel via `SttConfig.promptText` puis fusionné dans la table
+`DICTEX_STT_PROMPT_VARIANTS` de l'environnement du seul processus enfant
+lancé (`mergeLocalPromptVariantIntoEnvTable`,
+`packages/shared/src/sttEngine.ts`) ; une variante externe (sans
+`promptText`) laisse cette table héritée totalement inchangée, donc le chemin
+existant reste identique.
 
 **Verifying the no-prompt path is unchanged.** Because #93's hard requirement
 is "no prompt configured ⇒ byte-identical output", verify it against a real,

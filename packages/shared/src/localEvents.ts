@@ -136,6 +136,22 @@ export type SttCandidateSelectionEvent = {
   selection_reason?: string | null;
 };
 
+/**
+ * A named, immutable faster-whisper `initial_prompt` variant defined in
+ * DicTeX Lab (issue #121), as opposed to one supplied externally via
+ * `DICTEX_STT_PROMPT_VARIANTS` (see sttEngine.ts). Append-only and never
+ * followed by an edit/delete event: once a variant name is defined, its
+ * `display_name`/`prompt_text` never change, so a comparison run against it
+ * stays reproducible.
+ */
+export type SttPromptVariantDefinedEvent = {
+  event_type: "stt_prompt_variant_defined";
+  created_at?: string;
+  variant_name: string;
+  display_name: string;
+  prompt_text: string;
+};
+
 export type UnknownLocalEvent = {
   event_type: string;
   [key: string]: unknown;
@@ -149,6 +165,7 @@ export type LocalEvent =
   | SttCorrectionEvent
   | SttBenchmarkSetMembershipEvent
   | SttCandidateSelectionEvent
+  | SttPromptVariantDefinedEvent
   | NormalizationResultEvent
   | UnknownLocalEvent;
 
@@ -587,6 +604,42 @@ export function getLatestSttCandidateSelection(events: LocalEvent[]): SttCandida
   return latestSelection;
 }
 
+export type SttPromptVariantDefinition = {
+  name: string;
+  displayName: string;
+  promptText: string;
+  createdAt: string | null;
+};
+
+/**
+ * Returns every locally-defined `initial_prompt` variant (issue #121), one
+ * entry per distinct `variant_name`. Definitions are immutable and
+ * append-only by construction (no edit/delete IPC exists), so a name is
+ * defined by its FIRST valid event; a later event with the same name (which
+ * should never be written, but a corrupted/hand-edited log could contain
+ * one) is ignored rather than silently overriding the reproducible original.
+ * A malformed individual event (missing/blank required string field) is
+ * skipped, matching every other event reader in this file's degrade-quietly
+ * rule — it never blocks the remaining valid definitions from loading.
+ */
+export function getSttPromptVariantDefinitions(events: LocalEvent[]): SttPromptVariantDefinition[] {
+  const byName = new Map<string, SttPromptVariantDefinition>();
+
+  for (const event of events) {
+    if (!isSttPromptVariantDefinedEvent(event) || byName.has(event.variant_name)) {
+      continue;
+    }
+    byName.set(event.variant_name, {
+      name: event.variant_name,
+      displayName: event.display_name,
+      promptText: event.prompt_text,
+      createdAt: getString(event.created_at),
+    });
+  }
+
+  return Array.from(byName.values());
+}
+
 export function reconstructRecentSegments(events: LocalEvent[], limit = 20): ReconstructedSegment[] {
   const segments = new Map<string, SegmentDraft>();
 
@@ -790,6 +843,18 @@ function isSttCandidateSelectionEvent(event: LocalEvent): event is SttCandidateS
     typeof event.stage === "string" &&
     typeof event.provider === "string" &&
     typeof event.model === "string"
+  );
+}
+
+function isSttPromptVariantDefinedEvent(event: LocalEvent): event is SttPromptVariantDefinedEvent {
+  return (
+    event.event_type === "stt_prompt_variant_defined" &&
+    typeof event.variant_name === "string" &&
+    event.variant_name.trim().length > 0 &&
+    typeof event.display_name === "string" &&
+    event.display_name.trim().length > 0 &&
+    typeof event.prompt_text === "string" &&
+    event.prompt_text.trim().length > 0
   );
 }
 

@@ -19,6 +19,7 @@ import type {
 } from "@dictex/shared";
 import type { DatasetBuilderSaveRequest, DatasetBuilderSaveResponse } from "../main/datasetBuilder.js";
 import type { SttBenchmarkCandidateOption } from "../main/candidateCatalog.js";
+import type { SttPromptVariantCreateRequest, SttPromptVariantListEntry } from "../main/promptVariants.js";
 
 type AudioSegmentPlayback = {
   audioBytes: Uint8Array;
@@ -86,6 +87,11 @@ contextBridge.exposeInMainWorld("dictexLab", {
   // Diagnostics / STT benchmark candidate catalog (issue #94).
   getSttBenchmarkCandidates: () =>
     ipcRenderer.invoke("diagnostics:get-stt-benchmark-candidates") as Promise<SttBenchmarkCandidateOption[]>,
+
+  // STT prompt variants (own store; issue #121).
+  listSttPromptVariants: () => ipcRenderer.invoke("prompt-variants:list") as Promise<SttPromptVariantListEntry[]>,
+  createSttPromptVariant: (request: SttPromptVariantCreateRequest) =>
+    ipcRenderer.invoke("prompt-variants:create", request) as Promise<SttPromptVariantListEntry>,
   openLabDataFolder: () => ipcRenderer.invoke("diagnostics:open-lab-data-folder") as Promise<boolean>,
   openSourceDataFolder: () => ipcRenderer.invoke("diagnostics:open-source-data-folder") as Promise<boolean>,
   openLabEventsLog: () => ipcRenderer.invoke("diagnostics:open-lab-events-log") as Promise<boolean>,

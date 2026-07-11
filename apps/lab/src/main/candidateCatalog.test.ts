@@ -76,6 +76,41 @@ test("buildSttBenchmarkCandidateCatalog: baseline and multiple prompt variants o
   );
 });
 
+test("buildSttBenchmarkCandidateCatalog: a locally-defined prompt variant (issue #121) becomes a new candidate under every faster-whisper model, carrying its prompt text", () => {
+  withEnv(
+    { DICTEX_STT_BENCHMARK_MODELS: "base,small", DICTEX_STT_PROMPT_VARIANTS: undefined, DICTEX_VOSK_BENCHMARK_MODELS: "" },
+    () => {
+      const catalog = buildSttBenchmarkCandidateCatalog(RUNTIME, [
+        { name: "local-v1", displayName: "Local variant", promptText: "local prompt text", createdAt: null },
+      ]);
+      const localCandidates = catalog.filter((candidate) => candidate.promptVariant === "local-v1");
+      assert.equal(localCandidates.length, 2); // one per faster-whisper model
+      for (const candidate of localCandidates) {
+        assert.equal(candidate.promptText, "local prompt text");
+        assert.equal(candidate.promptDisplayName, "Local variant");
+      }
+    },
+  );
+});
+
+test("buildSttBenchmarkCandidateCatalog: a local variant whose id collides with an external one is excluded — the external definition keeps the identity", () => {
+  withEnv(
+    {
+      DICTEX_STT_BENCHMARK_MODELS: "base",
+      DICTEX_STT_PROMPT_VARIANTS: JSON.stringify({ collide: "external text" }),
+      DICTEX_VOSK_BENCHMARK_MODELS: "",
+    },
+    () => {
+      const catalog = buildSttBenchmarkCandidateCatalog(RUNTIME, [
+        { name: "collide", displayName: "Local", promptText: "local text", createdAt: null },
+      ]);
+      const matching = catalog.filter((candidate) => candidate.promptVariant === "collide");
+      assert.equal(matching.length, 1); // one candidate, not two
+      assert.equal(matching[0].promptText, undefined); // the external definition, resolved by the sidecar's own env read
+    },
+  );
+});
+
 test("buildSttBenchmarkCandidateCatalog: two additional faster-whisper models appear without renderer changes", () => {
   withEnv(
     { DICTEX_STT_BENCHMARK_MODELS: "base,small,large-v3-turbo", DICTEX_STT_PROMPT_VARIANTS: undefined, DICTEX_VOSK_BENCHMARK_MODELS: "" },

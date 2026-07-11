@@ -25,6 +25,15 @@ export type SttConfig = {
    * undefined for the unchanged, no-prompt dictation/benchmark path.
    */
   promptVariant?: string;
+  /**
+   * Prompt text for `promptVariant`, needed only when the variant is defined
+   * LOCALLY in DicTeX Lab (issue #121) rather than via `DICTEX_STT_PROMPT_VARIANTS`:
+   * the sidecar has no other way to resolve a Lab-only variant name, since it
+   * only reads that one env var. Leave undefined for an externally-configured
+   * variant (or no variant at all); `transcribeWithPython` then leaves
+   * `DICTEX_STT_PROMPT_VARIANTS` exactly as inherited from the parent process.
+   */
+  promptText?: string;
 };
 
 export type EngineTranscriptionResult = {
@@ -96,6 +105,38 @@ export function getPythonInvocation(repoRoot: string): PythonInvocation {
 }
 
 /**
+ * Merges a locally-defined variant's prompt text (issue #121) into an
+ * inherited `DICTEX_STT_PROMPT_VARIANTS` JSON table, for one sidecar call.
+ * Returns `undefined` (leave the inherited value untouched) when `promptText`
+ * is not given — the externally-configured-variant path, resolved by the
+ * sidecar from the inherited table itself. Malformed inherited JSON is
+ * treated as an empty table rather than thrown, matching this env var's
+ * tolerant-parsing convention everywhere else (`getSttPromptVariants`,
+ * `stt_config.get_prompt_variants`).
+ */
+export function mergeLocalPromptVariantIntoEnvTable(
+  inheritedJson: string | undefined,
+  promptVariant: string,
+  promptText: string | undefined,
+): string | undefined {
+  if (!promptText) {
+    return undefined;
+  }
+
+  let inherited: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(inheritedJson ?? "{}") as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      inherited = parsed as Record<string, unknown>;
+    }
+  } catch {
+    inherited = {};
+  }
+
+  return JSON.stringify({ ...inherited, [promptVariant]: promptText });
+}
+
+/**
  * Spawns `packages/engine/transcribe.py` against one audio file and parses its
  * stdout JSON contract. `enginePath` and `repoRoot` are resolved by the caller
  * (they differ per app because each Electron main process's built output sits
@@ -126,6 +167,18 @@ export function transcribeWithPython(
     // it is inherited from `...process.env` like any other configured env var.
     if (config.promptVariant) {
       env.DICTEX_STT_PROMPT_VARIANT = config.promptVariant;
+      // A locally-defined variant (issue #121) is not in the inherited
+      // DICTEX_STT_PROMPT_VARIANTS table, so it is merged in here, for this
+      // call only. An externally-configured variant (promptText left
+      // undefined) leaves the inherited table completely untouched.
+      const merged = mergeLocalPromptVariantIntoEnvTable(
+        env.DICTEX_STT_PROMPT_VARIANTS,
+        config.promptVariant,
+        config.promptText,
+      );
+      if (merged !== undefined) {
+        env.DICTEX_STT_PROMPT_VARIANTS = merged;
+      }
     }
     const child = spawn(python.command, [...python.argsPrefix, enginePath, audioPath], {
       cwd: repoRoot,

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildSttVariantId, getSttPromptVariants } from "./sttEngine.js";
+import { buildSttVariantId, getSttPromptVariants, mergeLocalPromptVariantIntoEnvTable } from "./sttEngine.js";
 
 /**
  * Pure-logic coverage for #93 (STT sidecar: expose faster-whisper
@@ -93,6 +93,32 @@ test("buildSttVariantId: a requested prompt variant is appended to the runtime, 
     buildSttVariantId({ device: "cuda", computeType: "float16", language: "fr" }, "prompt-v3-fr-math"),
     "cuda-float16-fr+prompt-v3-fr-math",
   );
+});
+
+test("mergeLocalPromptVariantIntoEnvTable: leaves the inherited table untouched when no local prompt text is given (external-variant path)", () => {
+  assert.equal(mergeLocalPromptVariantIntoEnvTable(undefined, "v1", undefined), undefined);
+  assert.equal(mergeLocalPromptVariantIntoEnvTable(JSON.stringify({ v1: "text" }), "v1", undefined), undefined);
+});
+
+test("mergeLocalPromptVariantIntoEnvTable: adds the local variant to an empty/absent inherited table", () => {
+  assert.equal(
+    mergeLocalPromptVariantIntoEnvTable(undefined, "local-1", "local prompt text"),
+    JSON.stringify({ "local-1": "local prompt text" }),
+  );
+});
+
+test("mergeLocalPromptVariantIntoEnvTable: merges on top of an inherited table without dropping existing entries", () => {
+  const result = mergeLocalPromptVariantIntoEnvTable(
+    JSON.stringify({ "ext-1": "external text" }),
+    "local-1",
+    "local prompt text",
+  );
+  assert.deepEqual(JSON.parse(result as string), { "ext-1": "external text", "local-1": "local prompt text" });
+});
+
+test("mergeLocalPromptVariantIntoEnvTable: malformed inherited JSON is treated as empty rather than thrown", () => {
+  const result = mergeLocalPromptVariantIntoEnvTable("not json {{{", "local-1", "local prompt text");
+  assert.deepEqual(JSON.parse(result as string), { "local-1": "local prompt text" });
 });
 
 test("buildSttVariantId: the same prompt on two runtimes keeps two distinct candidate identities", () => {

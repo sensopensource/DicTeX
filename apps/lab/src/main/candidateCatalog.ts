@@ -4,7 +4,9 @@ import {
   buildSttVariantId,
   type BenchmarkCandidate,
   type BenchmarkCandidateIdentity,
+  type SttPromptVariantDefinition,
 } from "@dictex/shared";
+import { usableLocalPromptVariants } from "./promptVariants.js";
 
 /**
  * Pure STT benchmark candidate catalog construction (issue #94), extracted
@@ -32,6 +34,16 @@ export type SttRuntimeConfig = {
  */
 export type SttBenchmarkCandidateConfig = BenchmarkCandidate & {
   promptVariant?: string;
+  /**
+   * Prompt text, present only for a LOCALLY-defined variant (issue #121):
+   * threaded through to `SttConfig.promptText` so the sidecar can resolve it
+   * without the name being present in `DICTEX_STT_PROMPT_VARIANTS`. Absent
+   * for an externally-configured variant, which the sidecar resolves from
+   * that env var itself.
+   */
+  promptText?: string;
+  /** Human display name for a locally-defined variant (issue #121); absent for an external one (labelled by its raw name, see toCandidateOption). */
+  promptDisplayName?: string;
 };
 
 /**
@@ -70,13 +82,31 @@ export function candidateIdentityKey(candidate: { stage: string; provider: strin
 
 /**
  * Builds every STT benchmark candidate: faster-whisper's no-prompt baseline
- * plus one candidate per `DICTEX_STT_PROMPT_VARIANTS` entry for each
- * configured model, and Vosk's no-prompt candidates. Vosk never gets a
- * prompt-variant candidate (`SUPPORTS_INITIAL_PROMPT` is faster-whisper-only
- * in the sidecar, see docs/development.md).
+ * plus one candidate per prompt variant (both `DICTEX_STT_PROMPT_VARIANTS`
+ * entries and Lab-defined local variants, issue #121) for each configured
+ * model, and Vosk's no-prompt candidates. Vosk never gets a prompt-variant
+ * candidate (`SUPPORTS_INITIAL_PROMPT` is faster-whisper-only in the
+ * sidecar, see docs/development.md). `localPromptVariants` is read by the
+ * caller (it needs the Lab's own event log) and passed in so this function
+ * itself stays synchronous and easily unit-testable.
  */
-export function buildSttBenchmarkCandidateCatalog(runtime: SttRuntimeConfig): SttBenchmarkCandidateConfig[] {
-  const promptVariantNames = Object.keys(getSttPromptVariants());
+export function buildSttBenchmarkCandidateCatalog(
+  runtime: SttRuntimeConfig,
+  localPromptVariants: SttPromptVariantDefinition[] = [],
+): SttBenchmarkCandidateConfig[] {
+  const externalVariants = getSttPromptVariants();
+  // A local definition never overrides an external one of the same name —
+  // this only matters if the env table changed after the local variant was
+  // created, since creation itself already rejects a name already in use.
+  const localVariants = usableLocalPromptVariants(localPromptVariants, externalVariants);
+  const promptVariantEntries: { name: string; promptText?: string; displayName?: string }[] = [
+    ...Object.keys(externalVariants).map((name) => ({ name })),
+    ...localVariants.map((variant) => ({
+      name: variant.name,
+      promptText: variant.promptText,
+      displayName: variant.displayName,
+    })),
+  ];
   const fasterWhisperModels = getSttBenchmarkModels();
 
   const fasterWhisper: SttBenchmarkCandidateConfig[] = [];
@@ -87,13 +117,15 @@ export function buildSttBenchmarkCandidateCatalog(runtime: SttRuntimeConfig): St
       model,
       variant: buildSttVariantId(runtime),
     });
-    for (const promptVariant of promptVariantNames) {
+    for (const entry of promptVariantEntries) {
       fasterWhisper.push({
         stage: "stt",
         provider: FASTER_WHISPER_PROVIDER,
         model,
-        variant: buildSttVariantId(runtime, promptVariant),
-        promptVariant,
+        variant: buildSttVariantId(runtime, entry.name),
+        promptVariant: entry.name,
+        promptText: entry.promptText,
+        promptDisplayName: entry.displayName,
       });
     }
   }
@@ -120,7 +152,7 @@ export function toCandidateOption(candidate: SttBenchmarkCandidateConfig): SttBe
     },
     providerLabel: candidate.provider,
     modelLabel: candidate.model,
-    variantLabel: candidate.promptVariant ?? "baseline",
+    variantLabel: candidate.promptDisplayName ?? candidate.promptVariant ?? "baseline",
   };
 }
 
