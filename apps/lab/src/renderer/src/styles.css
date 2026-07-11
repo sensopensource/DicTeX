@@ -114,6 +114,37 @@
 
 /* ---- Candidate selection + batch run ------------------------------------- */
 
+.candidate-catalog {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+}
+
+.candidate-provider-group {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.candidate-provider-label {
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.candidate-model-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.candidate-model-label {
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  min-width: 5rem;
+}
+
 .candidate-checkbox-row {
   display: flex;
   flex-wrap: wrap;

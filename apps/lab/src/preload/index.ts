@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { IpcRendererEvent } from "electron";
 import type {
   AudioSegmentRecord,
+  BenchmarkCandidateIdentity,
   ReconstructedSegment,
   SttBenchmarkSetSplit,
   SttBenchmarkResponse,
@@ -17,6 +18,7 @@ import type {
   SttDatasetExportSummary,
 } from "@dictex/shared";
 import type { DatasetBuilderSaveRequest, DatasetBuilderSaveResponse } from "../main/datasetBuilder.js";
+import type { SttBenchmarkCandidateOption } from "../main/candidateCatalog.js";
 
 type AudioSegmentPlayback = {
   audioBytes: Uint8Array;
@@ -58,8 +60,8 @@ contextBridge.exposeInMainWorld("dictexLab", {
   runLatestSttBenchmark: () => ipcRenderer.invoke("benchmark:run-latest-stt") as Promise<SttBenchmarkResponse>,
   runSegmentSttBenchmark: (audioSegment: AudioSegmentRecord) =>
     ipcRenderer.invoke("benchmark:run-segment-stt", audioSegment) as Promise<SttBenchmarkResponse>,
-  runSetSttBenchmark: (split: SttBenchmarkSetSplit, models?: string[]) =>
-    ipcRenderer.invoke("benchmark:run-set-stt", { split, models }) as Promise<SttBenchmarkSetRunResponse>,
+  runSetSttBenchmark: (split: SttBenchmarkSetSplit, candidates?: BenchmarkCandidateIdentity[]) =>
+    ipcRenderer.invoke("benchmark:run-set-stt", { split, candidates }) as Promise<SttBenchmarkSetRunResponse>,
   summarizeSttBenchmarkSet: (split: SttBenchmarkSetSplit) =>
     ipcRenderer.invoke("benchmark-set:summarize-stt", { split }) as Promise<SttBenchmarkCandidateSummaryResponse>,
 
@@ -81,8 +83,9 @@ contextBridge.exposeInMainWorld("dictexLab", {
   openExportFolder: (exportDir?: string) =>
     ipcRenderer.invoke("dataset:open-export-folder", exportDir) as Promise<boolean>,
 
-  // Diagnostics / STT benchmark model universe.
-  getSttBenchmarkModels: () => ipcRenderer.invoke("diagnostics:get-stt-benchmark-models") as Promise<string[]>,
+  // Diagnostics / STT benchmark candidate catalog (issue #94).
+  getSttBenchmarkCandidates: () =>
+    ipcRenderer.invoke("diagnostics:get-stt-benchmark-candidates") as Promise<SttBenchmarkCandidateOption[]>,
   openLabDataFolder: () => ipcRenderer.invoke("diagnostics:open-lab-data-folder") as Promise<boolean>,
   openSourceDataFolder: () => ipcRenderer.invoke("diagnostics:open-source-data-folder") as Promise<boolean>,
   openLabEventsLog: () => ipcRenderer.invoke("diagnostics:open-lab-events-log") as Promise<boolean>,
