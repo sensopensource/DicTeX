@@ -15,10 +15,10 @@ This document captures the product and implementation context that future agents
 - **Format :** prose Markdown et LaTeX canonique. `$…$` est implémenté pour les
   mathématiques en ligne ; un mécanisme explicite `$$…$$` est la prochaine
   extension du contrat. Le rendu appartient au cahier, pas au normaliseur.
-- **Contrôle :** le normaliseur doit être activable manuellement (#105). Aucun
-  changement automatique selon l'application cible pour l'instant.
-- **Interaction :** les libellés français Démarrer/Arrêter doivent partager le
-  même état entre le bouton et `Win+Alt+Space` (#96).
+- **Contrôle :** le normaliseur est activable manuellement et son état persiste
+  (#105). Aucun changement automatique selon l'application cible pour l'instant.
+- **Interaction :** les libellés anglais Start/Stop doivent partager le même
+  état entre le bouton et `Win+Alt+Space` (#96).
 - **Latence :** DicTeX doit garder un seul modèle STT actif dans un processus
   Python persistant. Le chargement initial et la transcription chaude sont deux
   mesures distinctes.
@@ -29,9 +29,9 @@ This document captures the product and implementation context that future agents
   qualifie ensuite les exemples en couches acoustique et mathématique.
 - **Apprentissage :** règles d'abord, petit modèle sur le résidu ensuite,
   adaptation acoustique en dernier et seulement si le résidu le justifie.
-- **Langue du projet :** nouveaux commits, tickets, demandes de fusion,
-  documents, textes d'interface et transmissions en français ; anglais
-  technique seulement lorsqu'il est nécessaire.
+- **Langue du projet :** commits, tickets, demandes de fusion, revues et
+  documents en français ; code, commentaires techniques, tests, journaux et
+  interface en anglais pour l'instant.
 
 ## DicTeX / Lab split (monorepo)
 
@@ -273,10 +273,9 @@ DICTEX_STT_DEVICE=cpu
 DICTEX_STT_COMPUTE_TYPE=int8
 ```
 
-Le français est la première langue parlée cible. Depuis le 10 juillet 2026, la
-documentation et les autres artefacts humains du projet sont également rédigés
-en français ; l'anglais ne reste que pour les éléments techniques nécessaires
-(`CONTRIBUTING.md`).
+Le français est la première langue parlée cible. Depuis le 10 juillet 2026, le
+versionnage et la documentation du projet sont rédigés en français. Le code et
+l'interface restent en anglais (`CONTRIBUTING.md`).
 
 Future model comparison should be based on actual stored segments, not assumptions. Useful candidates:
 
@@ -388,9 +387,9 @@ Depuis le 10 juillet 2026, le format canonique du normaliseur est LaTeX, pas
 Unicode. Unicode ne peut pas représenter honnêtement intégrales, fractions
 structurées, sommes bornées ou matrices. La cible humaine de couche 2 ne se
 régénère pas ; le format devait donc être fixé avant la collecte. KaTeX rend du
-LaTeX mais n'est ni un format ni une couche du pipeline. Le futur interrupteur
-Home (#105) permettra de désactiver le normaliseur dans une application qui ne
-rend pas LaTeX. #106 et #107 sont terminés ; voir
+LaTeX mais n'est ni un format ni une couche du pipeline. L'interrupteur Home
+(#105) permet de désactiver le normaliseur dans une application qui ne rend pas
+LaTeX. #106 et #107 sont terminés ; voir
 `docs/dataset-and-normalization-design.md` §8.
 
 Cette décision concerne la génération de notation. La construction d'un arbre
@@ -425,9 +424,8 @@ When handing a task to another agent, tell it to read at least:
 - `docs/development.md`
 - the GitHub issue it is implementing
 
-La transmission, le ticket, les commits et la demande de fusion sont rédigés
-en français. Conserver l'anglais uniquement dans les identifiants, syntaxes et
-termes techniques qui l'imposent.
+Le ticket, les commits et la demande de fusion sont rédigés en français. Le
+code, ses commentaires, ses tests et les textes d'interface restent en anglais.
 
 Good tasks for another agent:
 

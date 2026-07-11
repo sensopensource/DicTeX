@@ -49,7 +49,8 @@ l'outil quotidien.
 
 - local et personnel par défaut ;
 - français parlé en premier ;
-- documentation et coordination du projet en français ;
+- documentation et versionnage du projet en français ;
+- code, tests, journaux et interface en anglais pour l'instant ;
 - texte brut, audio et intermédiaires jamais sacrifiés ;
 - correction aussi importante que l'exactitude initiale ;
 - Markdown pour la prose, LaTeX canonique pour les mathématiques ;

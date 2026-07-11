@@ -17,15 +17,16 @@ Avant toute modification, lire :
 
 ## Langue du projet — obligatoire depuis le 10 juillet 2026
 
-Tous les nouveaux artefacts humains sont rédigés en français : commits,
-tickets, demandes de fusion, commentaires de revue, documentation, textes
-d'interface et transmissions entre agents. L'historique antérieur n'a pas à
-être traduit.
+Le français est réservé aux artefacts de versionnage et de pilotage : commits,
+tickets, demandes de fusion, commentaires de revue et documentation.
+L'historique antérieur n'a pas à être traduit.
 
-L'anglais est réservé à ce qui l'exige : identifiants, API, bibliothèques,
-champs de schéma, commandes, chemins, sorties d'outils, étiquettes existantes
-et syntaxe imposée. La ligne machine `Depends on: #…` conserve exactement cette
-forme. Consulter `CONTRIBUTING.md` pour les exemples et les exceptions.
+Le code produit reste en anglais pour l'instant : code source, identifiants,
+commentaires techniques, tests, journaux, diagnostics et textes d'interface.
+Les API, bibliothèques, champs de schéma, commandes, chemins, sorties d'outils,
+étiquettes existantes et syntaxes imposées gardent également leur forme
+anglaise. La ligne machine `Depends on: #…` conserve exactement cette forme.
+Consulter `CONTRIBUTING.md` pour les exemples et les exceptions.
 
 ## Direction actuelle — cahier quotidien et données fiables
 
@@ -37,8 +38,8 @@ route.
 Le point de concentration est :
 
 1. utiliser **Typora** comme premier cahier Markdown + LaTeX réel ;
-2. terminer l'interrupteur du normaliseur (#105), puis fiabiliser
-   **Démarrer/Arrêter** (#96) et ajouter un mécanisme explicite de mathématiques
+2. utiliser l'interrupteur persistant du normaliseur (#105), puis fiabiliser
+   **Start/Stop** (#96) et ajouter un mécanisme explicite de mathématiques
    en bloc ;
 3. remplacer le processus STT ponctuel par un processus persistant qui garde un
    seul modèle actif en mémoire ;
@@ -751,9 +752,8 @@ Deferred UX proposals (from `docs/ux-review.md`, human decisions recorded):
 - **Idle DicTeX Home (B)** — decision: **hide empty metrics** until they have a
   value, rather than showing eight `-` cells or seeding from config.
 - **Libellé du bouton d'enregistrement (F)** — décision : aligner le bouton sur
-  le fonctionnement à bascule. La règle de langue adoptée ensuite fixe les
-  libellés futurs à **Démarrer / Arrêter**, avec le même état que
-  `Win+Alt+Space`.
+  le fonctionnement à bascule avec les libellés anglais **Start / Stop** et le
+  même état que `Win+Alt+Space`.
 - **Footer actions (C)** and **collapsible Lab data-folder panel (E)** — still
   open, no decision.
 - **Unified navigation model (D)** — deliberately deferred. Structural, purely
@@ -776,8 +776,8 @@ Do preserve:
 - Corrections typed by `correctionKind` (acoustic / math_transform /
   normalization / rephrasing), keeping acoustic and semantic problems separable.
 - French-first spoken input.
-- Français pour tout nouvel artefact humain ; anglais technique seulement
-  lorsqu'il est nécessaire (`CONTRIBUTING.md`).
+- Français pour le versionnage et la documentation ; anglais pour le code et
+  l'interface (`CONTRIBUTING.md`).
 - Windows-first auto-paste, Linux later.
 - Compact utility UI direction.
 - Benchmarking as an evaluation loop, not just a developer tool.
@@ -876,13 +876,18 @@ l'historique :
 ```
 
 Each dictation also appends a normalization record (pivot Phase 2, layer 1).
-The raw `stt_result` is left untouched; the normalized output is what gets
-inserted, and each layer's output is preserved so a wrong insertion is
+The raw `stt_result` is left untouched. When the pipeline runs, its output is
+inserted and each layer's output is preserved so a wrong insertion is
 attributable to a specific layer:
 
 ```json
 {"event_type":"normalization_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","input_transcript":"dic tex","output_transcript":"DicTeX","passthrough":false,"layers":[{"layer":"personal_dictionary","input":"dic tex","output":"DicTeX","applied":true,"diagnostics":[]}],"diagnostics":[]}
 ```
+
+Lorsque l'interrupteur #105 est sur Off, le pipeline ne s'exécute pas et
+l'événement prend une forme distincte : `disabled: true`, aucun champ
+`passthrough`, sortie identique au STT brut, `layers: []` et `diagnostics: []`.
+Ne jamais confondre « désactivé » avec un pipeline activé qui n'a rien modifié.
 
 Les corrections restent à ajout uniquement (`append-only`). Le typage est
 implémenté :
@@ -1003,8 +1008,8 @@ La liste détaillée et les portes de sortie vivent uniquement dans
 `docs/roadmap.md`. Ordre résumé :
 
 1. valider Typora sur une vraie session de brouillon ;
-2. livrer #105, puis #96, puis la sortie explicite en bloc et la migration sûre
-   des anciennes règles locales ;
+2. #105 étant terminé, livrer #96, puis la sortie explicite en bloc et la
+   migration sûre des anciennes règles locales ;
 3. maintenir un modèle STT actif dans un processus Python persistant et mesurer
    séparément son chargement et ses requêtes chaudes ;
 4. définir deux ou trois variantes courtes de `initial_prompt`, terminer #94 sur

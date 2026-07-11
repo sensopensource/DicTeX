@@ -125,6 +125,6 @@ L'infrastructure existante est exactement ce dont ce découplage a besoin. Rien 
 - [ ] **Phase 4 : Le Fine-Tuning STT (Le retour du modèle vocal)**
   - Différée après la comparaison des variantes de `initial_prompt`, un volume acoustique minimal et la preuve que les erreurs restantes sont réellement acoustiques.
 
-Le cahier Typora, l'interrupteur du normaliseur, Démarrer/Arrêter, le moteur STT
+Le cahier Typora, l'interrupteur du normaliseur, Start/Stop, le moteur STT
 persistant, les blocs mathématiques et la validation du chemin Lab précèdent ces
 deux phases. Leur ordre exact se trouve dans `docs/roadmap.md`.

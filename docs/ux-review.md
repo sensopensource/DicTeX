@@ -3,8 +3,8 @@
 > **Revue historique terminée.** La direction courante vit dans
 > `docs/roadmap.md`. Les propositions B et F ont reçu leur décision produit et
 > sont regroupées dans #96, qui appartient au chemin de l'outil quotidien. La
-> règle de langue postérieure précise que les futurs libellés sont
-> **Démarrer / Arrêter**. La proposition A est #95 et reste une maintenance hors
+> règle de langue postérieure confirme que les futurs libellés restent en
+> anglais : **Start / Stop**. La proposition A est #95 et reste une maintenance hors
 > chemin critique. Les autres propositions restent différées.
 
 A design pass over both renderers: DicTeX Home (`apps/dictex`) and the Lab views

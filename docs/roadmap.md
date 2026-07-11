@@ -38,7 +38,7 @@ fonctions de base de connaissances deviennent utiles.
 | --- | --- | --- |
 | 0. Contrat de sortie — terminé | LaTeX canonique, mathématiques en ligne `$…$`, règles regex produisant ce format (#106, #107) | Une cible existante ne change plus de convention sans migration explicite |
 | 1. Cahier réel | Configurer Typora et y faire une session mêlant prose, fractions, intégrales et équations | Une session de dix minutes reste lisible, corrigeable et enregistrée dans un fichier Markdown local |
-| 2. Boucle quotidienne | Interrupteur du normaliseur (#105), Démarrer/Arrêter cohérent entre bouton et raccourci (#96), mécanisme explicite pour un bloc `$$…$$`, migration non destructive des anciennes règles locales | Vingt dictées consécutives sans désynchronisation, fuite de LaTeX ni perte d'audio, de texte brut ou d'événement |
+| 2. Boucle quotidienne | Interrupteur du normaliseur — terminé (#105), Start/Stop cohérent entre bouton et raccourci (#96), mécanisme explicite pour un bloc `$$…$$`, migration non destructive des anciennes règles locales | Vingt dictées consécutives sans désynchronisation, fuite de LaTeX ni perte d'audio, de texte brut ou d'événement |
 | 3. STT maintenu en mémoire | Processus Python persistant, un seul modèle actif en mémoire vidéo, préchauffage asynchrone, état préparation/prêt, reprise après incident et mesures séparées du chargement et de la transcription | Le modèle n'est chargé qu'une fois par session d'application et les transcriptions suivantes ne paient plus son temps de chargement |
 | 4. Contexte initial STT | Définir deux ou trois variantes courtes de `initial_prompt`, terminer leur comparaison dans le Lab (#94), choisir sur `validation`, puis appliquer le gagnant à la dictée quotidienne | Un gain reproductible est mesuré face à l'absence de contexte, ou le levier est abandonné explicitement |
 | 5. Chemin complet de correction | Dicter dans Typora, corriger, retrouver le segment dans le Lab, écouter l'audio, saisir les couches 1 et 2, enregistrer dans `validation`, exporter et contrôler les fichiers | Un exemple complet est audité de bout en bout sans perte ni mélange entre erreur acoustique et transformation mathématique |
@@ -56,7 +56,7 @@ correspond au flux d'usage quotidien souhaité.
 ```mermaid
 flowchart LR
     A["Cahier<br/>Typora"]
-    B["DicTeX quotidien<br/>Démarrer/Arrêter + normaliseur<br/>math en ligne ou en bloc"]
+    B["DicTeX quotidien<br/>Start/Stop + normaliseur<br/>math en ligne ou en bloc"]
     C["STT réactif<br/>modèle maintenu en mémoire"]
     D["Contexte STT<br/>comparaison sur validation"]
     E["Test réel<br/>dictée → cahier → correction"]

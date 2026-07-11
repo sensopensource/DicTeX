@@ -10,17 +10,16 @@ import {
   readLocalEvents,
   reconstructRecentSegments,
   transcribeWithPython,
-  type NormalizationResult,
   type ReconstructedSegment,
   type SttConfig,
 } from "@dictex/shared";
-import { expandCommands } from "@dictex/shared/commands";
+import { prepareNormalization } from "./normalizationPolicy.js";
 import { readAppSettings, writeAppSettings } from "./settings.js";
 
 type TranscriptionResult = {
   /** Raw STT output. Kept as the correction base; `stt_result.stt_output` mirrors it. */
   transcript: string;
-  /** Normalized text — this is what was copied to the clipboard / pasted. */
+  /** Inserted text — normalized when enabled, raw otherwise. */
   normalizedTranscript: string;
   /** True when normalization changed the text (normalized differs from raw). */
   normalizationApplied: boolean;
@@ -81,6 +80,9 @@ let segmentCounter = 0;
 // STT model chosen from the UI and persisted in settings.json. Null means "no UI
 // choice", so the env var / default applies. Loaded at startup before the window.
 let activeSttModelOverride: string | null = null;
+// The normalizer is enabled by default for settings written before #105. The UI
+// persists an explicit boolean and changes apply to subsequent dictations.
+let activeNormalizerEnabled = true;
 
 function getSttModel(): string {
   // Precedence: saved UI choice > DICTEX_STT_MODEL env var > built-in default.
@@ -196,13 +198,14 @@ function getSettingsPath(): string {
 }
 
 /**
- * Load persisted settings at startup and apply the saved STT model, if any.
- * Malformed settings degrade to defaults with a quiet console diagnostic; they
- * never block startup or dictation.
+ * Load persisted settings at startup and apply the saved STT model and
+ * normalizer state. Malformed settings degrade to defaults with a quiet console
+ * diagnostic; they never block startup or dictation.
  */
 async function loadPersistedSettings(): Promise<void> {
   const { settings, diagnostics } = await readAppSettings(getSettingsPath());
   activeSttModelOverride = settings.sttModel;
+  activeNormalizerEnabled = settings.normalizerEnabled;
   for (const diagnostic of diagnostics) {
     console.warn(`[settings] ${diagnostic}`);
   }
@@ -242,29 +245,6 @@ const defaultRulesTemplate = `${JSON.stringify(
   null,
   2,
 )}\n`;
-
-// Records each layer's output on the event so a wrong insertion can be attributed
-// to a specific layer (see AGENTS.md). Every stored string is routed through
-// `expandCommands` first: the command-extraction layer and everything after it
-// may carry Private Use Area sentinels, and a sentinel must NEVER reach the event
-// store (issue #92) — it is invisible, so a corrupted store would look healthy.
-// Expansion turns each sentinel into its real effect (a line break, …), so the
-// stored layer trace shows what was actually inserted and is guaranteed
-// sentinel-free. `applied` is recomputed on the expanded strings so it stays
-// truthful after substitution.
-function toNormalizationLayerRecords(normalization: NormalizationResult): JsonValue {
-  return normalization.layers.map((layer) => {
-    const input = expandCommands(layer.input);
-    const output = expandCommands(layer.output);
-    return {
-      layer: layer.layer,
-      input,
-      output,
-      applied: output !== input,
-      diagnostics: layer.diagnostics,
-    };
-  });
-}
 
 function getAudioExtension(mimeType: string): string {
   if (mimeType.includes("webm")) {
@@ -438,6 +418,9 @@ ipcMain.handle(
   ): Promise<TranscriptionResult> => {
     const createdAt = new Date().toISOString();
     const segmentId = getNextSegmentId();
+    // Freeze the setting for this run. UI changes are disabled while recording
+    // or transcribing, and this also makes direct IPC calls deterministic.
+    const normalizerEnabledForRun = activeNormalizerEnabled;
     const extension = getAudioExtension(mimeType);
     const dataRoot = getDataRoot();
     const audioDir = path.join(dataRoot, "audio", sessionId);
@@ -476,20 +459,18 @@ ipcMain.handle(
       transcription_duration_ms: transcriptionDurationMs,
     });
 
-    // Normalize the raw transcript before insertion. The raw stt_result above is
-    // left untouched; the normalized output and every layer's output are recorded
-    // in a separate append-only normalization_result event.
-    const normalization = await normalizeTranscript(sttResult.transcript, {
-      dictionaryPath: getDictionaryPath(),
-      rulesPath: getRulesPath(),
-    });
-
-    // Expand command sentinels into their real effect (line breaks, …) at insert
-    // time (issue #92). `normalization.output` may carry PUA sentinels from the
-    // command-extraction layer; `expandCommands` is a total sentinel eliminator,
-    // so `insertedTranscript` — what is pasted AND what is stored below — is
-    // guaranteed sentinel-free. A sentinel must never reach the event store.
-    const insertedTranscript = expandCommands(normalization.output);
+    // The raw stt_result above stays untouched. The policy either runs the full
+    // pipeline or keeps the STT output byte-identical, then returns the explicit
+    // normalization_result payload for this segment.
+    const preparedNormalization = await prepareNormalization(
+      sttResult.transcript,
+      normalizerEnabledForRun,
+      () =>
+        normalizeTranscript(sttResult.transcript, {
+          dictionaryPath: getDictionaryPath(),
+          rulesPath: getRulesPath(),
+        }),
+    );
 
     await appendEvent({
       event_type: "normalization_result",
@@ -497,12 +478,14 @@ ipcMain.handle(
       segment_id: segmentId,
       created_at: new Date().toISOString(),
       audio_ref: audioRef,
-      input_transcript: normalization.input,
-      output_transcript: insertedTranscript,
-      passthrough: insertedTranscript === normalization.input,
-      layers: toNormalizationLayerRecords(normalization),
-      diagnostics: normalization.diagnostics,
+      input_transcript: preparedNormalization.inputTranscript,
+      output_transcript: preparedNormalization.outputTranscript,
+      ...preparedNormalization.eventState,
+      layers: preparedNormalization.layers,
+      diagnostics: preparedNormalization.normalizationDiagnostics,
     });
+
+    const { insertedTranscript, normalizationApplied, normalizationDiagnostics } = preparedNormalization;
 
     clipboard.writeText(insertedTranscript);
     const pastedToActiveApp =
@@ -513,8 +496,8 @@ ipcMain.handle(
     return {
       transcript: sttResult.transcript,
       normalizedTranscript: insertedTranscript,
-      normalizationApplied: !normalization.passthrough,
-      normalizationDiagnostics: normalization.diagnostics,
+      normalizationApplied,
+      normalizationDiagnostics,
       copiedToClipboard: true,
       pastedToActiveApp,
       sessionId,
@@ -605,6 +588,8 @@ ipcMain.handle("diagnostics:get-stt-config", (): SttConfig => getSttConfig());
 
 ipcMain.handle("diagnostics:get-stt-models", (): string[] => getAvailableSttModels());
 
+ipcMain.handle("settings:get-normalizer-enabled", (): boolean => activeNormalizerEnabled);
+
 ipcMain.handle("settings:set-stt-model", async (_event, model: unknown): Promise<SttConfig> => {
   if (typeof model !== "string" || model.trim().length === 0) {
     throw new Error("STT model must be a non-empty string");
@@ -614,13 +599,36 @@ ipcMain.handle("settings:set-stt-model", async (_event, model: unknown): Promise
   activeSttModelOverride = nextModel;
   // Persist so the choice survives a restart. Applies only to subsequent
   // dictations; any in-flight transcription already captured its own config.
-  await writeAppSettings(getSettingsPath(), { sttModel: nextModel });
+  await writeAppSettings(getSettingsPath(), {
+    sttModel: nextModel,
+    normalizerEnabled: activeNormalizerEnabled,
+  });
 
   return getSttConfig();
 });
 
+ipcMain.handle("settings:set-normalizer-enabled", async (_event, enabled: unknown): Promise<boolean> => {
+  if (typeof enabled !== "boolean") {
+    throw new Error("Normalizer enabled state must be a boolean");
+  }
+
+  const previousValue = activeNormalizerEnabled;
+  activeNormalizerEnabled = enabled;
+  try {
+    await writeAppSettings(getSettingsPath(), {
+      sttModel: activeSttModelOverride,
+      normalizerEnabled: activeNormalizerEnabled,
+    });
+  } catch (error) {
+    activeNormalizerEnabled = previousValue;
+    throw error;
+  }
+
+  return activeNormalizerEnabled;
+});
+
 app.whenReady().then(async () => {
-  // Apply the persisted STT model before the window loads its config.
+  // Apply persisted settings before the window loads its controls.
   await loadPersistedSettings();
   createWindow();
   registerGlobalHotkey();

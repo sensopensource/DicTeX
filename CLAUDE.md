@@ -12,5 +12,6 @@ Avant d'agir, lire en priorité :
 - le ticket concerné et ses dépendances.
 
 Les anciens pivots expliquent l'histoire du projet, mais ne remplacent pas la
-feuille de route actuelle. Toute nouvelle rédaction humaine est en français,
-sauf syntaxe ou terme technique qui exige l'anglais.
+feuille de route actuelle. Le versionnage et la documentation sont en français ;
+le code, les commentaires techniques, les tests, les journaux et l'interface
+restent en anglais.

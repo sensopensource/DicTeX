@@ -25,8 +25,7 @@ stabilisation de ce flux personnel.
 ## À terminer avant l'usage quotidien
 
 - choisir et valider Typora comme cahier externe ;
-- pouvoir activer ou désactiver clairement le normaliseur ;
-- unifier Démarrer/Arrêter entre le bouton et le raccourci ;
+- unifier Start/Stop entre le bouton et le raccourci ;
 - produire explicitement des mathématiques en ligne ou en bloc ;
 - garder le modèle STT en mémoire entre les dictées ;
 - comparer puis choisir un contexte initial STT ;

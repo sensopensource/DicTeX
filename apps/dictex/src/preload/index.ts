@@ -96,6 +96,9 @@ contextBridge.exposeInMainWorld("dictex", {
   getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
   getSttModels: () => ipcRenderer.invoke("diagnostics:get-stt-models") as Promise<string[]>,
   setSttModel: (model: string) => ipcRenderer.invoke("settings:set-stt-model", model) as Promise<SttConfig>,
+  getNormalizerEnabled: () => ipcRenderer.invoke("settings:get-normalizer-enabled") as Promise<boolean>,
+  setNormalizerEnabled: (enabled: boolean) =>
+    ipcRenderer.invoke("settings:set-normalizer-enabled", enabled) as Promise<boolean>,
   getRecentSegments: (limit = 20) => ipcRenderer.invoke("history:get-recent-segments", limit) as Promise<RecentSegment[]>,
   getSegmentAudio: (audioSegment: AudioSegmentRecord) =>
     ipcRenderer.invoke("audio:get-segment", audioSegment) as Promise<AudioSegmentPlayback>,

@@ -9,15 +9,17 @@ import path from "node:path";
  *
  * Current shape:
  *
- *   { "sttModel": "base" }
+ *   { "sttModel": "base", "normalizerEnabled": true }
  *
  * `sttModel` is the STT model chosen from the UI. When absent, the app falls
  * back to the `DICTEX_STT_MODEL` env var, then the built-in default. A missing
- * or malformed file never crashes or blocks dictation: it degrades to defaults
- * with a quiet diagnostic.
+ * `normalizerEnabled` defaults to true for backward compatibility with settings
+ * written before the toggle existed. A missing or malformed file never crashes
+ * or blocks dictation: it degrades to defaults with a quiet diagnostic.
  */
 export type AppSettings = {
   sttModel: string | null;
+  normalizerEnabled: boolean;
 };
 
 export type LoadedSettings = {
@@ -25,11 +27,11 @@ export type LoadedSettings = {
   diagnostics: string[];
 };
 
-const emptySettings: AppSettings = { sttModel: null };
+const defaultSettings: AppSettings = { sttModel: null, normalizerEnabled: true };
 
 export async function readAppSettings(settingsPath: string): Promise<LoadedSettings> {
   if (!existsSync(settingsPath)) {
-    return { settings: { ...emptySettings }, diagnostics: [] };
+    return { settings: { ...defaultSettings }, diagnostics: [] };
   }
 
   let contents: string;
@@ -37,7 +39,7 @@ export async function readAppSettings(settingsPath: string): Promise<LoadedSetti
     contents = await readFile(settingsPath, { encoding: "utf8" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unreadable";
-    return { settings: { ...emptySettings }, diagnostics: [`settings.json could not be read (${message}); using defaults`] };
+    return { settings: { ...defaultSettings }, diagnostics: [`settings.json could not be read (${message}); using defaults`] };
   }
 
   let parsed: unknown;
@@ -45,15 +47,16 @@ export async function readAppSettings(settingsPath: string): Promise<LoadedSetti
     parsed = JSON.parse(contents);
   } catch (error) {
     const message = error instanceof Error ? error.message : "parse error";
-    return { settings: { ...emptySettings }, diagnostics: [`settings.json is not valid JSON (${message}); using defaults`] };
+    return { settings: { ...defaultSettings }, diagnostics: [`settings.json is not valid JSON (${message}); using defaults`] };
   }
 
   if (!isRecord(parsed)) {
-    return { settings: { ...emptySettings }, diagnostics: ["settings.json must be a JSON object; using defaults"] };
+    return { settings: { ...defaultSettings }, diagnostics: ["settings.json must be a JSON object; using defaults"] };
   }
 
   const diagnostics: string[] = [];
   let sttModel: string | null = null;
+  let normalizerEnabled = true;
 
   if (parsed.sttModel !== undefined) {
     if (typeof parsed.sttModel === "string" && parsed.sttModel.trim().length > 0) {
@@ -63,7 +66,15 @@ export async function readAppSettings(settingsPath: string): Promise<LoadedSetti
     }
   }
 
-  return { settings: { sttModel }, diagnostics };
+  if (parsed.normalizerEnabled !== undefined) {
+    if (typeof parsed.normalizerEnabled === "boolean") {
+      normalizerEnabled = parsed.normalizerEnabled;
+    } else {
+      diagnostics.push('settings.json "normalizerEnabled" must be a boolean; using true');
+    }
+  }
+
+  return { settings: { sttModel, normalizerEnabled }, diagnostics };
 }
 
 export async function writeAppSettings(settingsPath: string, settings: AppSettings): Promise<void> {
@@ -72,6 +83,7 @@ export async function writeAppSettings(settingsPath: string, settings: AppSettin
   if (settings.sttModel !== null) {
     payload.sttModel = settings.sttModel;
   }
+  payload.normalizerEnabled = settings.normalizerEnabled;
   await writeFile(settingsPath, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8" });
 }
 

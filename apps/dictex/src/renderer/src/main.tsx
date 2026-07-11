@@ -89,6 +89,8 @@ declare global {
       getSttConfig: () => Promise<SttConfig>;
       getSttModels?: () => Promise<string[]>;
       setSttModel?: (model: string) => Promise<SttConfig>;
+      getNormalizerEnabled?: () => Promise<boolean>;
+      setNormalizerEnabled?: (enabled: boolean) => Promise<boolean>;
       getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
       getSegmentAudio?: (audioSegment: AudioSegmentRecord) => Promise<AudioSegmentPlayback>;
     };
@@ -104,6 +106,8 @@ function App(): React.ReactElement {
   const [sttConfig, setSttConfig] = useState<SttConfig | null>(null);
   const [availableSttModels, setAvailableSttModels] = useState<string[]>([]);
   const [isSettingSttModel, setIsSettingSttModel] = useState(false);
+  const [normalizerEnabled, setNormalizerEnabled] = useState<boolean | null>(null);
+  const [isSettingNormalizer, setIsSettingNormalizer] = useState(false);
   const [lastPasteState, setLastPasteState] = useState<"none" | "pasted" | "clipboard-only">("none");
   const [lastResult, setLastResult] = useState<TranscriptionResult | null>(null);
   const [recentSegments, setRecentSegments] = useState<RecentSegment[]>([]);
@@ -147,6 +151,12 @@ function App(): React.ReactElement {
       void window.dictex.getSttModels().then(setAvailableSttModels).catch(() => {
         // Selector is optional; without the list the visible config line still shows the active model.
       });
+    }
+    if (typeof window.dictex.getNormalizerEnabled === "function") {
+      void window.dictex
+        .getNormalizerEnabled()
+        .then(setNormalizerEnabled)
+        .catch(() => setNotice("Could not read normalizer setting"));
     }
     void loadRecentSegments();
 
@@ -368,6 +378,29 @@ function App(): React.ReactElement {
     }
   }
 
+  async function changeNormalizerEnabled(enabled: boolean): Promise<void> {
+    if (typeof window.dictex.setNormalizerEnabled !== "function") {
+      setNotice("Restart DicTeX to load the normalizer settings API");
+      return;
+    }
+
+    setIsSettingNormalizer(true);
+    setNotice("");
+    try {
+      const nextEnabled = await window.dictex.setNormalizerEnabled(enabled);
+      setNormalizerEnabled(nextEnabled);
+      setNotice(
+        nextEnabled
+          ? "Normalizer enabled (math rules and command words apply to the next dictation)"
+          : "Normalizer disabled (raw STT and literal command words apply to the next dictation)",
+      );
+    } catch (normalizerError) {
+      setNotice(normalizerError instanceof Error ? normalizerError.message : "Could not change normalizer setting");
+    } finally {
+      setIsSettingNormalizer(false);
+    }
+  }
+
   async function openLab(): Promise<void> {
     if (typeof window.dictex.openLab !== "function") {
       setNotice("Restart DicTeX to load the Open Lab API");
@@ -464,6 +497,7 @@ function App(): React.ReactElement {
             disabled={
               typeof window.dictex.setSttModel !== "function" ||
               isSettingSttModel ||
+              isSettingNormalizer ||
               status === "recording" ||
               status === "transcribing"
             }
@@ -480,6 +514,39 @@ function App(): React.ReactElement {
             ))}
           </select>
           <span className="signal-muted">{isSettingSttModel ? "saving" : "next dictation"}</span>
+        </div>
+
+        <div className="shortcut-row">
+          <span>Normalizer</span>
+          <label className="normalizer-switch">
+            <input
+              aria-label="Enable normalizer"
+              type="checkbox"
+              checked={normalizerEnabled ?? true}
+              disabled={
+                normalizerEnabled === null ||
+                typeof window.dictex.setNormalizerEnabled !== "function" ||
+                isSettingNormalizer ||
+                isSettingSttModel ||
+                status === "recording" ||
+                status === "transcribing"
+              }
+              onChange={(event) => void changeNormalizerEnabled(event.currentTarget.checked)}
+            />
+            <span className="normalizer-switch-track" aria-hidden="true">
+              <span className="normalizer-switch-thumb" />
+            </span>
+            <strong>{normalizerEnabled === null ? "…" : normalizerEnabled ? "On" : "Off"}</strong>
+          </label>
+          <span className="signal-muted normalizer-hint">
+            {isSettingNormalizer
+              ? "saving"
+              : normalizerEnabled === null
+                ? "loading"
+                : normalizerEnabled
+                  ? "math + commands"
+                  : "raw STT; commands stay literal"}
+          </span>
         </div>
       </section>
 

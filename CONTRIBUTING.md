@@ -2,31 +2,31 @@
 
 ## Langue du projet
 
-À compter du 10 juillet 2026, les nouveaux artefacts humains du projet sont
-rédigés en français :
+À compter du 10 juillet 2026, les artefacts liés au versionnage et au pilotage
+du projet sont rédigés en français :
 
 - messages et descriptions de commits Git ;
 - titres, descriptions et commentaires des tickets GitHub ;
 - titres, descriptions et revues des demandes de fusion ;
-- documentation et notes de décision ;
-- textes visibles dans l'interface ;
-- comptes rendus et transmissions entre agents.
+- documentation, notes de décision et notes de version.
 
 L'historique antérieur n'a pas à être traduit rétroactivement. Lorsqu'une
 ancienne section anglaise est réécrite en profondeur, sa nouvelle version doit
 être en français.
 
-L'anglais reste permis lorsqu'il est nécessaire à la précision ou au
-fonctionnement : identifiants de code, noms d'API et de bibliothèques, champs de
-schéma, chemins, commandes, sorties d'outils, étiquettes existantes et syntaxe
-imposée. La ligne de dépendance des tickets conserve notamment sa forme exacte :
+Le produit et le code restent en anglais pour l'instant : code source,
+identifiants, commentaires techniques, tests, journaux, diagnostics et textes
+visibles dans l'interface. Restent également en anglais les noms d'API et de
+bibliothèques, champs de schéma, chemins, commandes, sorties d'outils,
+étiquettes existantes et syntaxes imposées. La ligne de dépendance des tickets
+conserve notamment sa forme exacte :
 
 ```text
 Depends on: #105, #96
 ```
 
-Un terme technique anglais sans équivalent français clair peut être conservé,
-mais le français est préféré dès qu'il reste naturel et précis.
+Dans la documentation française, un terme technique anglais peut être conservé
+lorsqu'il est plus précis ou correspond exactement au code.
 
 ## Avant une modification
 
