@@ -1,0 +1,6 @@
+interface:
+  display_name: "Orchestrer DicTeX"
+  short_description: "Planifier les tickets et leurs dépendances"
+  default_prompt: "Utilise $dictex-orchestrate pour planifier la prochaine vague de travail DicTeX."
+policy:
+  allow_implicit_invocation: false

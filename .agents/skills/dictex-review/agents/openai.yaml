@@ -1,0 +1,6 @@
+interface:
+  display_name: "Revoir une PR DicTeX"
+  short_description: "Rendre un verdict indépendant sur une PR"
+  default_prompt: "Utilise $dictex-review pour rendre un verdict indépendant sur une PR DicTeX."
+policy:
+  allow_implicit_invocation: false

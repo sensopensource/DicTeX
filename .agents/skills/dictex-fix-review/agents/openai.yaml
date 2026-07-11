@@ -1,0 +1,6 @@
+interface:
+  display_name: "Corriger une revue DicTeX"
+  short_description: "Corriger les bloquants dans la PR existante"
+  default_prompt: "Utilise $dictex-fix-review pour corriger les bloquants signalés sur une PR DicTeX."
+policy:
+  allow_implicit_invocation: false

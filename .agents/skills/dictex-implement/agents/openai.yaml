@@ -1,0 +1,6 @@
+interface:
+  display_name: "Implémenter DicTeX"
+  short_description: "Implémenter une issue dans une PR isolée"
+  default_prompt: "Utilise $dictex-implement pour implémenter une issue DicTeX dans une PR isolée."
+policy:
+  allow_implicit_invocation: false

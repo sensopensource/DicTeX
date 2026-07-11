@@ -34,6 +34,7 @@ Lire au minimum :
 
 - `AGENTS.md` ;
 - `docs/roadmap.md` ;
+- `docs/agent-workflow.md` ;
 - `docs/product-decisions.md` ;
 - `docs/development.md` ;
 - le ticket concerné, le cas échéant.
@@ -68,6 +69,12 @@ Documenter la comparaison des contextes initiaux
 
 Une demande de fusion explique le résultat, le périmètre, les validations
 effectuées et les risques qui restent. Le code, les tests et la documentation
-concernée évoluent ensemble.
+directement concernée évoluent ensemble. Si aucune documentation ne change, la
+PR indique `Documentation non requise : <raison>`.
 
-Le flux d'agents et d'isolation des branches est défini dans `AGENTS.md`.
+Lorsqu'une revue demande des corrections, le Fixer pousse dans la branche et
+la PR existantes. Il n'ouvre pas de PR de remplacement et une nouvelle session
+indépendante revoit ensuite le nouveau SHA.
+
+Le flux d'agents, les points d'arrêt et le routage des modèles sont définis dans
+`docs/agent-workflow.md`, sous les invariants d'`AGENTS.md`.

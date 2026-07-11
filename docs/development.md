@@ -5,6 +5,15 @@
 > anciennes sections anglaises sont conservées ; toute nouvelle instruction est
 > rédigée en français.
 
+## Sessions agentiques
+
+Le protocole complet vit dans `docs/agent-workflow.md`. Lancer Codex ou Claude
+Code depuis la racine du dépôt afin de découvrir respectivement
+`.agents/skills/` et `.claude/skills/`. Une invocation telle que
+`$dictex-implement 114` ou `/dictex-implement 114` découvre elle-même l'état
+GitHub vivant, crée le clone isolé et s'arrête après la PR. L'utilisateur n'a
+pas à répéter le point d'arrêt.
+
 ## Requirements
 
 - Node.js LTS
