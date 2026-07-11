@@ -159,6 +159,15 @@ scripts\npm.cmd run dev
 14. Placer l'interrupteur `Normalizer` sur **Off**, dicter « retour à la ligne x au carré », puis vérifier que le texte copié ou inséré est identique octet par octet à `Last transcript` : les mots de commande restent littéraux et aucun LaTeX n'est produit. Vérifier que le nouvel événement `normalization_result` contient `disabled: true`, aucun champ `passthrough` et des `layers` vides. Redémarrer DicTeX, confirmer que l'état Off persiste, puis repasser sur On et vérifier que règles et commandes s'appliquent à nouveau.
 15. Dans le sélecteur `STT model`, choisir un autre modèle. Vérifier le diagnostic `Model`, dicter une phrase et confirmer que l'événement `stt_result` contient le modèle choisi. Redémarrer l'application et vérifier la persistance dans `data/settings.json`. Corrompre ce fichier et confirmer que DicTeX redémarre avec la variable d'environnement ou `base`, et avec le normaliseur activé.
 16. Cliquer sur **Open Lab**. Avec un Lab construit (`scripts\npm.cmd run build`), vérifier son ouverture ; sans construction, vérifier que DicTeX affiche une erreur explicite sans planter.
+17. Worker STT persistant (#115). Dicter deux fois de suite avec le même modèle
+    et vérifier que la seconde dictée ne recharge pas le modèle : sur CUDA avec
+    `large-v3-turbo`, seule la première paie le chargement (latence bien plus
+    faible ensuite ; `model_load_ms` n'apparaît qu'une fois dans le journal
+    stderr du worker). Changer de modèle dans le sélecteur `STT model` puis
+    dicter : le worker redémarre une seule fois pour le nouveau modèle et deux
+    modèles ne coexistent jamais. Basculer `Normalizer` On puis Off entre deux
+    dictées et confirmer que le worker STT ne redémarre pas — seule la sortie
+    insérée change, l'audio et les événements restent intacts.
 
 Benchmark, typed corrections, benchmark-set splits, candidate selection, Vosk, and the test_frozen dataset export are **no longer in DicTeX** (Pivot Phase 3) — they now live in DicTeX Lab and are verified there (see "DicTeX Lab" below).
 
@@ -377,25 +386,44 @@ The UI also exposes diagnostics shortcuts:
 
 The local engine uses `faster-whisper`.
 
-### Durée de vie actuelle et cible
+### Durée de vie : worker persistant (dictée) et chemin ponctuel (Lab)
 
-Aujourd'hui, `transcribeWithPython` lance `packages/engine/transcribe.py` pour
-une requête, `faster_whisper_provider.py` construit le modèle, puis le processus
-s'arrête. Le cache d'un objet Python dans ce processus ne résoudrait donc pas le
-rechargement entre deux dictées.
+La dictée quotidienne de DicTeX utilise le worker faster-whisper persistant
+(`packages/engine/worker.py`, protocole NDJSON de #114) au lieu de relancer un
+processus par dictée. Le processus principal Electron gère sa durée de vie via
+`apps/dictex/src/main/sttWorkerClient.ts` (client NDJSON d'une génération) et
+`sttWorkerManager.ts` (cycle de vie) :
 
-La prochaine évolution de DicTeX est un processus Python persistant :
+- préchauffage asynchrone après l'ouverture de la fenêtre ; une dictée terminée
+  avant l'état prêt attend le worker au lieu de perdre son audio ;
+- un seul worker et un seul modèle actifs à la fois : changer de modèle (ou de
+  périphérique / type de calcul) arrête proprement l'ancien worker avant d'en
+  démarrer un nouveau, pour ne jamais garder deux modèles en mémoire vidéo ;
+- requêtes séquentielles corrélées par identifiant, chacune portant l'audio, la
+  langue et un `initial_prompt` éventuel ; le worker rejette une requête visant
+  un autre modèle plutôt que de le recharger en silence ;
+- reprise bornée : si le worker meurt pendant une requête, le processus
+  principal redémarre une seule fois et rejoue une seule fois la requête depuis
+  l'audio déjà stocké ; après un second échec l'erreur remonte et l'audio ainsi
+  que `audio_segment` restent disponibles pour une reprise manuelle ;
+- à la fermeture, arrêt demandé au worker puis terminaison forcée après un délai
+  borné ;
+- jamais de bascule silencieuse vers une boucle de processus ponctuels.
 
-- démarrage et préchauffage asynchrones avec états `preparation` et `pret` ;
-- un seul modèle actif afin de respecter les 8 Go de mémoire vidéo ;
-- requêtes contenant l'audio, la configuration et un `initial_prompt` éventuel ;
-- redémarrage sur changement de modèle, de périphérique ou de type de calcul ;
-- reprise explicite après incident ;
-- mesure séparée de `model_load_ms` et de la durée de transcription chaude.
+Le worker ne renvoie que la transcription STT brute ; `prepareNormalization`
+s'exécute ensuite dans le processus principal (On applique le pipeline, Off garde
+la sortie brute octet par octet). **Le réglage du normaliseur ne redémarre jamais
+le worker** : seuls le modèle, le périphérique ou le type de calcul le font. Le
+modèle n'est donc chargé qu'une fois par configuration et par session
+d'application ; les dictées suivantes ne paient plus ce chargement.
 
-Le Lab peut conserver provisoirement le chemin ponctuel lorsqu'il compare des
-modèles différents. Ne pas généraliser ce processus persistant à tous les cas
-avant que le flux quotidien en ait besoin.
+**DicTeX Lab conserve le chemin ponctuel** `transcribeWithPython` /
+`transcribe.py` : il compare des modèles différents et n'a pas besoin d'un modèle
+maintenu en mémoire. Ne pas généraliser le worker persistant au Lab.
+
+L'affichage des états du worker (`starting` / `ready` / `busy` / `restarting` /
+`error` / `stopped`) et des nouvelles mesures (`model_load_ms`, durée de
+transcription chaude) dans la vue Home relève d'un ticket suivant.
 
 Defaults:
 
