@@ -272,12 +272,17 @@ export class SttWorkerManager {
           `(model_load_ms=${ready.modelLoadMs}).`,
       );
     } catch (error) {
-      this.setState("error");
-      // The generation never came up; drop it so a later attempt starts clean.
+      // Readiness is only accepted after its event is published. If startup or
+      // publication fails, stop the local client before releasing its reference
+      // so a retry can never overlap a loaded but untracked generation.
       if (this.client === client) {
+        await this.stopClient(client);
         this.client = null;
         this.clientConfig = null;
         this.clearGeneration();
+      }
+      if (!this.disposed) {
+        this.setState("error");
       }
       throw error;
     }

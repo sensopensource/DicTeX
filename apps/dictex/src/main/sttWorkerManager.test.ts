@@ -300,6 +300,31 @@ test("a failed start surfaces and a later dictation can still start a fresh work
   assert.equal(result.sttModel, "base");
 });
 
+test("a failed ready-event publication stops the loaded worker before retrying", async () => {
+  const fleet = makeFleet();
+  let publicationAttempts = 0;
+  const manager = new SttWorkerManager({
+    createClient: fleet.factory,
+    onGenerationReady: () => {
+      publicationAttempts += 1;
+      if (publicationAttempts === 1) {
+        return Promise.reject(new Error("event append failed"));
+      }
+    },
+  });
+
+  await assert.rejects(() => manager.transcribe(baseConfig, request), /event append failed/);
+  assert.equal(fleet.created[0].shutdownCalls, 1, "the loaded worker is stopped after publication fails");
+  assert.equal(fleet.created.filter((client) => client.isAlive()).length, 0, "no untracked generation remains alive");
+
+  const result = await manager.transcribe(baseConfig, request);
+
+  assert.equal(result.sttModel, "base");
+  assert.equal(fleet.created.length, 2, "retry starts exactly one fresh generation");
+  assert.equal(fleet.created.filter((client) => client.isAlive()).length, 1, "at most one generation remains alive");
+  assert.deepEqual(fleet.log, ["create gen1 base", "shutdown gen1", "create gen2 base"]);
+});
+
 test("dispose shuts down the current worker and blocks further starts", async () => {
   const fleet = makeFleet();
   const manager = new SttWorkerManager({ createClient: fleet.factory });
