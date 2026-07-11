@@ -118,6 +118,11 @@ scripts\npm.cmd run dev
 Consulter le [guide de développement](docs/development.md) pour le Lab, Python,
 CUDA, les variables d'environnement et les vérifications manuelles.
 
+Le [workflow agentique](docs/agent-workflow.md) définit les rôles séparés
+orchestration → implémentation → revue → correction → nouvelle revue → contrôle
+avant fusion. Les skills versionnés sont compatibles avec Codex
+(`$dictex-…`) et Claude Code (`/dictex-…`).
+
 ## Documentation
 
 - [Feuille de route](docs/roadmap.md)
@@ -128,6 +133,7 @@ CUDA, les variables d'environnement et les vérifications manuelles.
 - [Boucle de correction](docs/correction-loop.md)
 - [Périmètre MVP](docs/mvp.md)
 - [Développement](docs/development.md)
+- [Workflow agentique Codex et Claude Code](docs/agent-workflow.md)
 - [Contribuer et convention de langue](CONTRIBUTING.md)
 
 Les documents de pivot restent disponibles comme historique :

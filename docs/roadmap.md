@@ -100,6 +100,14 @@ Objectif d'usage à terme pour dix minutes de mathématiques ou de physique :
 - Aucun entraînement n'entre dans DicTeX avant d'avoir battu la référence dans
   le Lab.
 
+## Mode opératoire du développement
+
+Cette feuille de route fixe **quoi** construire. Le
+[workflow agentique](agent-workflow.md) fixe **comment** les sessions Codex ou
+Claude Code orchestrent, implémentent, revoient et corrigent chaque ticket. Une
+PR conserve son code, ses tests et sa documentation affectée ; un Fixer reste
+dans cette même PR, puis un reviewer neuf juge le nouveau SHA.
+
 ## Hors du chemin critique
 
 Restent au parking : éditeur interne complet, analyseur mathématique, SQLite,

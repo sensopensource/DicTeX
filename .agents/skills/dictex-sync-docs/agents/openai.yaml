@@ -1,0 +1,6 @@
+interface:
+  display_name: "Synchroniser la documentation"
+  short_description: "Réaligner les documents globaux après une vague"
+  default_prompt: "Utilise $dictex-sync-docs pour réaligner la documentation globale de DicTeX après une vague."
+policy:
+  allow_implicit_invocation: false

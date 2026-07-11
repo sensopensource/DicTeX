@@ -1,0 +1,6 @@
+interface:
+  display_name: "Revoir après correction"
+  short_description: "Contrôler une PR corrigée en session neuve"
+  default_prompt: "Utilise $dictex-rereview pour contrôler une PR DicTeX après ses corrections."
+policy:
+  allow_implicit_invocation: false

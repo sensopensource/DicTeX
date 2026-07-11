@@ -6,6 +6,7 @@ Avant toute modification, lire :
 
 - `README.md`
 - `docs/roadmap.md` (**source canonique de la priorité courante**)
+- `docs/agent-workflow.md` (**rôles, modèles, points d'arrêt et transitions de revue**)
 - `CONTRIBUTING.md` (**langue et conventions de contribution**)
 - `docs/product-decisions.md`
 - `docs/development.md`
@@ -243,104 +244,118 @@ git checkout -b issue-<N>-<slug>
 ```
 
 Lire ensuite `README.md`, `docs/roadmap.md`, `CONTRIBUTING.md`,
-`docs/product-decisions.md`, `docs/development.md`, `AGENTS.md` et le ticket
+`docs/agent-workflow.md`, `docs/product-decisions.md`, `docs/development.md`,
+`AGENTS.md` et le ticket
 attribué. Faire tout le travail dans ce dossier, pousser la branche et ouvrir
 une demande de fusion en français ; ne pas fusionner.
 
-## Agent Reasoning Levels
+La documentation directement affectée évolue dans cette même PR. Un Fixer
+pousse ses corrections sur la branche et dans la PR existantes ; il n'ouvre pas
+de PR de remplacement. Le protocole complet et les skills invocables vivent
+dans `docs/agent-workflow.md`.
 
-Issues are labeled with the reasoning capability an agent needs to do the work
-well. The scale is provider-neutral: the shared lever is **reasoning effort**,
-mapped to a representative model per provider so either a Claude agent or an
-OpenAI/Codex agent can pick up the work.
+## Skills de rôle
 
-### Scale
+Les contrats canoniques versionnés se trouvent dans `.agents/skills/` et sont
+invoqués dans Codex avec `$dictex-…`. Les façades Claude Code vivent dans
+`.claude/skills/`, s'invoquent avec `/dictex-…` et renvoient vers les mêmes
+contrats afin d'éviter toute divergence. Lancer l'outil depuis la racine du
+dépôt pour qu'il découvre ces skills.
 
-Four levels, French names kept as the label surface:
+Les sept rôles sont : orchestration, implémentation, revue, correction de
+revue, nouvelle revue, contrôle avant fusion et synchronisation documentaire.
+Leur état vivant et leur point d'arrêt sont intégrés ; l'utilisateur ne fournit
+que le numéro d'issue/PR et les contraintes exceptionnelles.
 
-- `level:faible` — low effort, mechanical or well-patterned change.
-- `level:moyen` — medium effort, some design/UI judgment.
-- `level:eleve` — high effort, correctness- or data-integrity-critical.
-- `level:tres-eleve` — maximum effort, defines core semantics or has a high
-  cost of error.
+## Niveaux de raisonnement des agents
 
-Modifier label (orthogonal, not a fifth level):
+Les tickets portent la capacité nécessaire. L'échelle reste indépendante du
+fournisseur ; les identifiants actuels, les commandes de lancement et le
+routage de revue sont canoniques dans `docs/agent-workflow.md`.
 
-- `needs:high-review` — after implementing, the agent must flag that a
-  higher-tier review is needed and suggest a reviewer model/level; a separate
-  human-chosen session does the review before merge.
+### Échelle
 
-### How a level is assigned
+Quatre niveaux utilisent des labels sans accents :
 
-Score the issue 1–4 on five axes, then aggregate:
+- `level:faible` — effort faible, changement mécanique ou déjà balisé ;
+- `level:moyen` — effort moyen, avec un peu de jugement de conception ou d'UI ;
+- `level:eleve` — effort élevé, correction ou intégrité des données critique ;
+- `level:tres-eleve` — effort maximal, sémantique centrale ou coût d'erreur
+  important.
 
-- **A. Cognitive complexity** (Bloom): 1 = apply a known pattern; 4 = design or
-  evaluate open-ended choices.
-- **B. Spec uncertainty**: 1 = closed, unambiguous spec; 4 = under-specified,
-  product decisions required.
-- **C. Blast radius / reversibility**: 1 = one isolated file, reversible; 4 =
-  core semantics, append-only history, or data integrity.
-- **D. Horizon / steps**: 1 = single step; 4 = multi-step across modules.
-- **E. Cost of an error**: 1 = cosmetic; 4 = corrupts data or invalidates an
-  evaluation.
+Le label orthogonal `needs:high-review` n'est pas un cinquième niveau. Il exige
+que l'implémenteur signale une revue renforcée et recommande le modèle adapté ;
+une session distincte réalise cette revue avant la fusion.
 
-Aggregation rule: if axis **C** or **E** is 4, the level is at least
-`level:eleve`; otherwise use the rounded mean of the five axes. The max on a
-critical axis dominates the average on purpose.
+### Attribution d'un niveau
 
-### Level to model + reasoning effort
+Noter le ticket de 1 à 4 sur cinq axes :
 
-Reasoning effort is the primary lever; the model is the representative tier per
-provider. Model IDs evolve — treat them as "current best fit for this tier" and
-prefer the latest capable model in the family.
+- **A. Complexité cognitive** : 1 = appliquer un motif connu ; 4 = concevoir
+  ou évaluer des choix ouverts ;
+- **B. Incertitude de la spécification** : 1 = fermée ; 4 = décision produit
+  manquante ;
+- **C. Rayon d'impact et réversibilité** : 1 = fichier isolé ; 4 = sémantique
+  centrale, historique à ajout uniquement ou intégrité des données ;
+- **D. Horizon** : 1 = une étape ; 4 = plusieurs modules et étapes ;
+- **E. Coût d'une erreur** : 1 = cosmétique ; 4 = corruption de données ou
+  invalidation d'une évaluation.
 
-| Level              | Reasoning effort        | Claude (this agent) | OpenAI / Codex             | Review           |
-| ------------------ | ----------------------- | ------------------- | -------------------------- | ---------------- |
-| `level:faible`     | low / minimal           | Haiku 4.5           | gpt-5-mini / gpt-5-codex (low)   | auto             |
-| `level:moyen`      | medium                  | Sonnet 5            | gpt-5-codex (medium)       | auto             |
-| `level:eleve`      | high                    | Opus 4.8            | gpt-5-codex (high)         | recommended      |
-| `level:tres-eleve` | max / extended thinking | Opus 4.8 (max)      | gpt-5-codex (high, max)    | human, mandatory |
+Si **C** ou **E** vaut 4, le niveau est au moins `level:eleve`. Sinon, utiliser
+la moyenne arrondie. Un axe critique domine volontairement la moyenne.
 
-Notes:
+### Correspondance modèle et effort
 
-- A Codex agent should stay within its own model family (OpenAI) and read the
-  effort column, not the Claude model names.
-- Label slugs are unaccented for clean CLI/URL handling; the display intent is
-  faible / moyen / élevé / très élevé.
+L'effort est le premier levier ; le modèle représente le niveau actuel chez
+chaque fournisseur.
 
-### Operating protocol (single agent, one session)
+| Niveau | Codex | Claude Code | Revue |
+| --- | --- | --- | --- |
+| `level:faible` | `gpt-5.6-luna`, low/medium | `claude-haiku-4-5-20251001` | Terra high / Sonnet 5 high |
+| `level:moyen` | `gpt-5.6-terra`, medium | `claude-sonnet-5`, medium | Terra high / Sonnet 5 high |
+| `level:eleve` | `gpt-5.6-terra` high si fermé, sinon `gpt-5.6-sol` high | `claude-opus-4-8`, high | Sol xhigh / Opus 4.8 xhigh |
+| `level:tres-eleve` | `gpt-5.6-sol`, xhigh/max | `claude-fable-5`, max ; repli Opus 4.8 max | session séparée, obligatoire |
 
-The intended workflow is one agent, in one terminal session, from workspace
-setup to PR. The human sets the model and reasoning effort at launch (per the
-level table) and owns review and merge. When told to work an issue, the agent
-runs this protocol itself:
+Notes :
 
-1. **Set up an isolated workspace.** Clone the repo into a fresh sibling folder
-   and create the issue branch there (see Git Workflow). Do all work in that
-   clone, never in the main checkout.
-2. **Dependency guard.** Read the issue's `Depends on:` line (see Issue
-   Orchestration). For each referenced issue, verify it is CLOSED (merged). If
-   any is still open, STOP, report "blocked by #X", and write no code.
-3. Read the issue and find its `level:*` label.
-4. Confirm the current model/effort fits that level (the human set it at
-   launch). If clearly under-powered for the level, say so instead of pushing
-   ahead.
-5. Do the work and open the PR.
-6. Check the issue for `needs:high-review`.
-7. If present, do NOT self-review and do NOT change your own effort. Finish the
-   work, then in the PR and final report **flag that a review is required and
-   propose a reviewer model + reasoning level** — one notch above your own
-   current model/effort (e.g. a `level:moyen` agent on Sonnet/medium suggests
-   review on Opus/high). The human chooses the reviewer and launches it.
-8. Finalize the PR with that recommendation surfaced. Do not merge.
+- un agent Codex reste dans la famille OpenAI ; un agent Claude reste dans la
+  famille Anthropic ;
+- les slugs sans accents garantissent des commandes et URL propres ; leur sens
+  affiché reste faible, moyen, élevé et très élevé.
 
-Notes on review:
+### Protocole d'implémentation
 
-- The implementer never changes its own reasoning effort mid-session and never
-  reviews its own work. Effort is fixed by the human at launch.
-- `needs:high-review` only obligates the implementer to surface the need and a
-  suggested reviewer tier; a separate human-chosen session does the review.
-- A human always owns final merge approval.
+Une session d'implémentation va du contrôle de l'issue à la PR. Le modèle et
+l'effort sont fixés au lancement ; la revue et la fusion appartiennent à des
+sessions séparées. `$dictex-implement <issue>` dans Codex et
+`/dictex-implement <issue>` dans Claude Code exécutent ce protocole :
+
+1. **Isoler l'espace de travail.** Cloner le dépôt dans un dossier frère neuf
+   et y créer la branche de l'issue. Ne jamais travailler dans le checkout
+   principal.
+2. **Contrôler les dépendances.** Lire la ligne `Depends on:`. Pour chaque
+   ticket référencé, vérifier qu'il est fermé. Si l'un reste ouvert, s'arrêter,
+   signaler `bloqué par #X` et n'écrire aucun code.
+3. Lire le ticket et son label `level:*`.
+4. Confirmer que le modèle et l'effort actifs conviennent. S'ils sont
+   sous-dimensionnés, s'arrêter avant toute écriture avec la commande de relance.
+5. Faire le travail, les tests et la documentation affectée, puis ouvrir la PR.
+6. Vérifier la présence de `needs:high-review`.
+7. S'il est présent, ne pas s'auto-revoir ni changer d'effort en cours de
+   session. Signaler dans la PR la revue requise et proposer les modèles Codex
+   et Claude définis dans `docs/agent-workflow.md`.
+8. Finaliser la PR avec cette recommandation. Ne pas se revoir et ne pas
+   fusionner.
+
+Notes de revue :
+
+- l'implémenteur ne change pas son effort en cours de session et ne revoit
+  jamais son propre travail ;
+- `needs:high-review` oblige à signaler le besoin et le niveau recommandé ; une
+  session indépendante effectue la revue ;
+- Les états `review:ready`, `review:needs-improvement` et `review:recheck`
+  suivent le SHA courant selon `docs/agent-workflow.md`.
+- Un humain garde l'approbation et l'action de fusion finales.
 
 ## Issue Orchestration
 
@@ -761,8 +776,10 @@ Deferred UX proposals (from `docs/ux-review.md`, human decisions recorded):
   dashboard. Revisit once both apps stop moving.
 - **Light theme (G)** — not happening. Both apps are dark-only by design.
 
-Model per level (Claude / Codex): `level:eleve` -> Opus 4.8 high / gpt-5-codex
-high; `needs:high-review` issues get a reviewer one notch up (Opus 4.8 max).
+Modèles actuels : `level:eleve` → Claude Opus 4.8 high / Codex GPT-5.6-Sol
+high lorsque la spécification n'est pas fermée ; `needs:high-review` → Claude
+Opus 4.8 xhigh / Codex GPT-5.6-Sol xhigh. Voir `docs/agent-workflow.md` pour la
+table complète et le niveau très élevé.
 
 ## Product Decisions To Preserve
 

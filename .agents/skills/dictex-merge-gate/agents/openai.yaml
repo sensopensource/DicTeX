@@ -1,0 +1,6 @@
+interface:
+  display_name: "Contrôler avant fusion"
+  short_description: "Vérifier mécaniquement une PR avant fusion"
+  default_prompt: "Utilise $dictex-merge-gate pour vérifier mécaniquement une PR DicTeX avant sa fusion."
+policy:
+  allow_implicit_invocation: false

@@ -415,10 +415,15 @@ de corriger facilement la portée de l'analyse.
 
 ## Agent Handoff Guidance
 
+Le protocole exécutable et le routage actuel des modèles vivent dans
+`docs/agent-workflow.md`. Utiliser les skills `$dictex-…` dans Codex ou
+`/dictex-…` dans Claude Code plutôt que de recopier un long prompt de rôle.
+
 When handing a task to another agent, tell it to read at least:
 
 - `README.md`
 - `docs/roadmap.md`
+- `docs/agent-workflow.md`
 - `CONTRIBUTING.md`
 - `docs/product-decisions.md`
 - `docs/development.md`
