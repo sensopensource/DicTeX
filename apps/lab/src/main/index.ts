@@ -8,6 +8,7 @@ import {
   getLatestSttCandidateSelection,
   getLatestSttCorrection,
   getSttBenchmarkSetSegments,
+  getSttPromptVariantDefinitions,
   isCorrectionKind,
   readLocalEvents,
   reconstructRecentSegments,
@@ -58,6 +59,13 @@ import {
   type SttBenchmarkCandidateConfig,
   type SttBenchmarkCandidateOption,
 } from "./candidateCatalog.js";
+import {
+  collectExistingPromptVariantNames,
+  listPromptVariants,
+  validateNewPromptVariant,
+  type SttPromptVariantCreateRequest,
+  type SttPromptVariantListEntry,
+} from "./promptVariants.js";
 
 /**
  * DicTeX Lab main process (pivot Phase 2, issue #76). No microphone, no
@@ -257,7 +265,8 @@ async function runSttBenchmarkForAudioSegment(
   const diagnostics: string[] = [];
   const loadedEvents = events ?? (await readAllEvents());
   const correction = getLatestSttCorrection(loadedEvents, audioSegment.sessionId, audioSegment.segmentId);
-  const candidates = candidateFilter ?? buildSttBenchmarkCandidateCatalog(baseConfig);
+  const candidates =
+    candidateFilter ?? buildSttBenchmarkCandidateCatalog(baseConfig, getSttPromptVariantDefinitions(loadedEvents));
 
   for (const candidate of candidates) {
     const config: SttConfig = {
@@ -265,6 +274,7 @@ async function runSttBenchmarkForAudioSegment(
       engine: candidate.provider,
       model: candidate.model,
       promptVariant: candidate.promptVariant,
+      promptText: candidate.promptText,
     };
     const identity: BenchmarkCandidate = {
       stage: candidate.stage,
@@ -713,17 +723,18 @@ ipcMain.handle(
       throw new Error("Invalid STT benchmark set split");
     }
 
-    let candidateFilter: SttBenchmarkCandidateConfig[] | undefined;
-    if (request.candidates !== undefined) {
-      const catalog = buildSttBenchmarkCandidateCatalog(getBaseSttConfig());
-      candidateFilter = validateRequestedCandidates(request.candidates, catalog);
-    }
-
     const split = request.split;
     // Read the combined event set once so every segment scores against the
     // same correction snapshot and appended benchmark results cannot shift
     // later lookups within this run.
     const events = await readAllEvents();
+
+    let candidateFilter: SttBenchmarkCandidateConfig[] | undefined;
+    if (request.candidates !== undefined) {
+      const catalog = buildSttBenchmarkCandidateCatalog(getBaseSttConfig(), getSttPromptVariantDefinitions(events));
+      candidateFilter = validateRequestedCandidates(request.candidates, catalog);
+    }
+
     const segments = getSttBenchmarkSetSegments(events, split);
     const total = segments.length;
 
@@ -1057,8 +1068,38 @@ ipcMain.handle("diagnostics:open-lab-events-log", async (): Promise<boolean> => 
   return error.length === 0;
 });
 
-ipcMain.handle("diagnostics:get-stt-benchmark-candidates", (): SttBenchmarkCandidateOption[] =>
-  buildSttBenchmarkCandidateCatalog(getBaseSttConfig()).map(toCandidateOption),
+ipcMain.handle("diagnostics:get-stt-benchmark-candidates", async (): Promise<SttBenchmarkCandidateOption[]> => {
+  const events = await readAllEvents();
+  return buildSttBenchmarkCandidateCatalog(getBaseSttConfig(), getSttPromptVariantDefinitions(events)).map(
+    toCandidateOption,
+  );
+});
+
+// ---- STT prompt variants (own store; issue #121) ----
+
+ipcMain.handle("prompt-variants:list", async (): Promise<SttPromptVariantListEntry[]> => {
+  const events = await readAllEvents();
+  return listPromptVariants(events);
+});
+
+ipcMain.handle(
+  "prompt-variants:create",
+  async (_event, request: SttPromptVariantCreateRequest): Promise<SttPromptVariantListEntry> => {
+    const events = await readAllEvents();
+    const existingNames = collectExistingPromptVariantNames(events);
+    const { name, displayName, promptText } = validateNewPromptVariant(request, existingNames);
+
+    const createdAt = new Date().toISOString();
+    await appendOwnEvent({
+      event_type: "stt_prompt_variant_defined",
+      created_at: createdAt,
+      variant_name: name,
+      display_name: displayName,
+      prompt_text: promptText,
+    });
+
+    return { name, displayName, promptText, source: "local", createdAt, shadowedByExternal: false };
+  },
 );
 
 app.whenReady().then(async () => {

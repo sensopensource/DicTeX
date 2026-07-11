@@ -53,6 +53,7 @@ import type {
   DatasetBuilderSource,
 } from "../../main/datasetBuilder.js";
 import type { SttBenchmarkCandidateOption } from "../../main/candidateCatalog.js";
+import type { SttPromptVariantCreateRequest, SttPromptVariantListEntry } from "../../main/promptVariants.js";
 
 type AudioSegmentPlayback = {
   audioBytes: Uint8Array;
@@ -95,6 +96,8 @@ type LabApi = {
   exportSttDataset: () => Promise<SttDatasetExportSummary>;
   openExportFolder: (exportDir?: string) => Promise<boolean>;
   getSttBenchmarkCandidates: () => Promise<SttBenchmarkCandidateOption[]>;
+  listSttPromptVariants: () => Promise<SttPromptVariantListEntry[]>;
+  createSttPromptVariant: (request: SttPromptVariantCreateRequest) => Promise<SttPromptVariantListEntry>;
   openLabDataFolder: () => Promise<boolean>;
   openSourceDataFolder: () => Promise<boolean>;
   openLabEventsLog: () => Promise<boolean>;
@@ -146,6 +149,15 @@ function App(): React.ReactElement {
   const [benchmarkError, setBenchmarkError] = useState("");
   const [isBenchmarking, setIsBenchmarking] = useState(false);
   const [candidateCatalog, setCandidateCatalog] = useState<SttBenchmarkCandidateOption[]>([]);
+  // STT prompt variants (issue #121): local (Lab-defined, immutable) + external
+  // (DICTEX_STT_PROMPT_VARIANTS, read-only) definitions, merged in the main process.
+  const [promptVariants, setPromptVariants] = useState<SttPromptVariantListEntry[]>([]);
+  const [promptVariantsError, setPromptVariantsError] = useState("");
+  const [newPromptVariantName, setNewPromptVariantName] = useState("");
+  const [newPromptVariantDisplayName, setNewPromptVariantDisplayName] = useState("");
+  const [newPromptVariantText, setNewPromptVariantText] = useState("");
+  const [isCreatingPromptVariant, setIsCreatingPromptVariant] = useState(false);
+  const [createPromptVariantError, setCreatePromptVariantError] = useState("");
   const [selectedCandidates, setSelectedCandidates] = useState<BenchmarkCandidateIdentity[]>([]);
   const [benchmarkTargetKey, setBenchmarkTargetKey] = useState<string | null>(null);
   const [batchSplit, setBatchSplit] = useState<SttBenchmarkSetSplit>("validation");
@@ -210,6 +222,7 @@ function App(): React.ReactElement {
     void window.dictexLab.getLatestSttCandidateSelection().then(setCurrentSelection).catch(() => {
       // Non-fatal; the panel shows none selected.
     });
+    void refreshPromptVariants();
     void loadSegments();
 
     return () => {
@@ -598,6 +611,50 @@ function App(): React.ReactElement {
     }
   }
 
+  // STT prompt variants (issue #121): creating one also refreshes the
+  // candidate catalog, since a newly-defined variant immediately becomes a
+  // new faster-whisper benchmark candidate for every configured model.
+  async function refreshPromptVariants(): Promise<void> {
+    try {
+      const list = await window.dictexLab.listSttPromptVariants();
+      setPromptVariants(list);
+      setPromptVariantsError("");
+    } catch (listError) {
+      setPromptVariantsError(listError instanceof Error ? listError.message : "Could not load STT prompt variants");
+    }
+  }
+
+  async function refreshCandidateCatalog(): Promise<void> {
+    try {
+      const catalog = await window.dictexLab.getSttBenchmarkCandidates();
+      setCandidateCatalog(catalog);
+    } catch {
+      // Non-fatal; the batch selector keeps its previous catalog.
+    }
+  }
+
+  async function createPromptVariant(): Promise<void> {
+    setCreatePromptVariantError("");
+    setIsCreatingPromptVariant(true);
+    try {
+      await window.dictexLab.createSttPromptVariant({
+        name: newPromptVariantName.trim(),
+        displayName: newPromptVariantDisplayName.trim(),
+        promptText: newPromptVariantText.trim(),
+      });
+      setNewPromptVariantName("");
+      setNewPromptVariantDisplayName("");
+      setNewPromptVariantText("");
+      await Promise.all([refreshPromptVariants(), refreshCandidateCatalog()]);
+    } catch (createError) {
+      setCreatePromptVariantError(
+        createError instanceof Error ? createError.message : "Could not create the STT prompt variant",
+      );
+    } finally {
+      setIsCreatingPromptVariant(false);
+    }
+  }
+
   async function saveDatasetBuilderEntry(): Promise<void> {
     setBuilderError("");
     setBuilderNotice("");
@@ -729,6 +786,17 @@ function App(): React.ReactElement {
           isSelectingCandidateKey={isSelectingCandidateKey}
           selectCandidate={(candidate) => void selectCandidate(candidate)}
           errorAnalysis={errorAnalysis}
+          promptVariants={promptVariants}
+          promptVariantsError={promptVariantsError}
+          newPromptVariantName={newPromptVariantName}
+          setNewPromptVariantName={setNewPromptVariantName}
+          newPromptVariantDisplayName={newPromptVariantDisplayName}
+          setNewPromptVariantDisplayName={setNewPromptVariantDisplayName}
+          newPromptVariantText={newPromptVariantText}
+          setNewPromptVariantText={setNewPromptVariantText}
+          isCreatingPromptVariant={isCreatingPromptVariant}
+          createPromptVariantError={createPromptVariantError}
+          createPromptVariant={() => void createPromptVariant()}
           onBack={() => setView("segments")}
         />
       </main>
@@ -1166,6 +1234,17 @@ type BenchmarkViewProps = {
   isSelectingCandidateKey: string;
   selectCandidate: (candidate: BenchmarkCandidateIdentity) => void;
   errorAnalysis: CandidateErrorAnalysis[];
+  promptVariants: SttPromptVariantListEntry[];
+  promptVariantsError: string;
+  newPromptVariantName: string;
+  setNewPromptVariantName: (value: string) => void;
+  newPromptVariantDisplayName: string;
+  setNewPromptVariantDisplayName: (value: string) => void;
+  newPromptVariantText: string;
+  setNewPromptVariantText: (value: string) => void;
+  isCreatingPromptVariant: boolean;
+  createPromptVariantError: string;
+  createPromptVariant: () => void;
   onBack: () => void;
 };
 
@@ -1222,6 +1301,17 @@ function BenchmarkView({
   isSelectingCandidateKey,
   selectCandidate,
   errorAnalysis,
+  promptVariants,
+  promptVariantsError,
+  newPromptVariantName,
+  setNewPromptVariantName,
+  newPromptVariantDisplayName,
+  setNewPromptVariantDisplayName,
+  newPromptVariantText,
+  setNewPromptVariantText,
+  isCreatingPromptVariant,
+  createPromptVariantError,
+  createPromptVariant,
   onBack,
 }: BenchmarkViewProps): React.ReactElement {
   return (
@@ -1283,6 +1373,75 @@ function BenchmarkView({
             </p>
           )
         )}
+      </section>
+
+      <section className="panel benchmark-panel">
+        <div className="panel-header">
+          <div>
+            <h2>STT prompt variants</h2>
+            <p>
+              Named faster-whisper `initial_prompt` variants — immutable once created, they appear as new candidates
+              under every faster-whisper model below.
+            </p>
+          </div>
+        </div>
+
+        {promptVariantsError && <pre className="error">{promptVariantsError}</pre>}
+
+        {promptVariants.length > 0 ? (
+          <ul className="prompt-variant-list">
+            {promptVariants.map((variant) => (
+              <li key={variant.name} className="prompt-variant-item" title={variant.promptText}>
+                <strong>{variant.displayName}</strong>
+                <span className="prompt-variant-source">
+                  {variant.source === "local" ? "local" : "external (read-only)"}
+                  {variant.shadowedByExternal ? ", shadowed by an external variant of the same id" : ""}
+                </span>
+                <p className="prompt-variant-text">{variant.promptText}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="empty-state">No prompt variant defined yet.</p>
+        )}
+
+        <div className="prompt-variant-form">
+          <input
+            aria-label="New prompt variant id"
+            placeholder="id (e.g. prompt-v3-fr-math)"
+            value={newPromptVariantName}
+            disabled={isCreatingPromptVariant}
+            onChange={(event) => setNewPromptVariantName(event.target.value)}
+          />
+          <input
+            aria-label="New prompt variant display name"
+            placeholder="Display name"
+            value={newPromptVariantDisplayName}
+            disabled={isCreatingPromptVariant}
+            onChange={(event) => setNewPromptVariantDisplayName(event.target.value)}
+          />
+          <textarea
+            aria-label="New prompt variant text"
+            placeholder="Prompt text (short, vocabulary/context-oriented)"
+            value={newPromptVariantText}
+            disabled={isCreatingPromptVariant}
+            onChange={(event) => setNewPromptVariantText(event.target.value)}
+          />
+          <button
+            className="secondary-button"
+            disabled={
+              isCreatingPromptVariant ||
+              newPromptVariantName.trim().length === 0 ||
+              newPromptVariantDisplayName.trim().length === 0 ||
+              newPromptVariantText.trim().length === 0
+            }
+            onClick={createPromptVariant}
+          >
+            {isCreatingPromptVariant ? "Creating" : "Create prompt variant"}
+          </button>
+        </div>
+
+        {createPromptVariantError && <pre className="error">{createPromptVariantError}</pre>}
       </section>
 
       <section className="panel benchmark-panel" aria-busy={isRunningBatch}>

@@ -13,7 +13,7 @@
     "dev": "npm run dev --workspace apps/dictex",
     "dev:dictex": "npm run dev --workspace apps/dictex",
     "dev:lab": "npm run dev --workspace apps/lab",
-    "test": "node --import tsx --test apps/dictex/src/main/normalizationPolicy.test.ts apps/dictex/src/main/settings.test.ts apps/dictex/src/main/sttWorkerClient.test.ts apps/dictex/src/main/sttWorkerManager.test.ts apps/dictex/src/main/dictationFlow.test.ts apps/lab/src/main/candidateCatalog.test.ts packages/shared/src/commands.test.ts packages/shared/src/latex.test.ts packages/shared/src/normalizer.test.ts packages/shared/src/datasetExport.test.ts packages/shared/src/sttEngine.test.ts packages/shared/src/textDiff.test.ts"
+    "test": "node --import tsx --test apps/dictex/src/main/normalizationPolicy.test.ts apps/dictex/src/main/settings.test.ts apps/dictex/src/main/sttWorkerClient.test.ts apps/dictex/src/main/sttWorkerManager.test.ts apps/dictex/src/main/dictationFlow.test.ts apps/lab/src/main/candidateCatalog.test.ts apps/lab/src/main/promptVariants.test.ts packages/shared/src/commands.test.ts packages/shared/src/latex.test.ts packages/shared/src/normalizer.test.ts packages/shared/src/datasetExport.test.ts packages/shared/src/sttEngine.test.ts packages/shared/src/textDiff.test.ts packages/shared/src/localEvents.test.ts"
   },
   "devDependencies": {
     "tsx": "^4.23.0"

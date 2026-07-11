@@ -164,6 +164,65 @@
   font-size: var(--text-sm);
 }
 
+/* ---- STT prompt variants (issue #121) ------------------------------------ */
+
+.prompt-variant-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prompt-variant-item {
+  display: grid;
+  gap: 0.15rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 0.4rem 0.6rem;
+  background: var(--bg);
+}
+
+.prompt-variant-source {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.prompt-variant-text {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.prompt-variant-form {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+}
+
+.prompt-variant-form input,
+.prompt-variant-form textarea {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.6rem;
+  color: var(--text);
+  background: var(--surface-raised);
+  font-size: var(--text-base);
+  font-family: inherit;
+}
+
+.prompt-variant-form textarea {
+  min-height: 3.5rem;
+  resize: vertical;
+}
+
+.prompt-variant-form button {
+  justify-self: start;
+}
+
 .batch-controls {
   display: flex;
   flex-wrap: wrap;
