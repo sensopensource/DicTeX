@@ -9,11 +9,16 @@
 
 /* Padded content panels (Segments source, benchmark, summary, error analysis).
    The shared .panel is only a visual shell, so each content panel opts into its
-   own layout here. */
+   own layout here. The single column is minmax(0, 1fr), not the implicit auto:
+   an auto track grows to its widest child's min-content, so a nowrap descendant
+   (e.g. the dense candidate summary table) would inflate the whole column past
+   the panel and push a page-wide horizontal scrollbar (issue #126, B1). The 0
+   floor forces every child to stay within the panel and scroll locally instead. */
 .benchmark-panel,
 .summary-panel,
 .error-analysis-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.7rem;
   padding: var(--space-3);
 }
@@ -554,6 +559,7 @@
    narrow window; keep it inside its panel by scrolling it horizontally here,
    so the page itself never gains a horizontal scrollbar (issue #126). */
 .summary-table-scroll {
+  min-width: 0;
   overflow-x: auto;
 }
 

@@ -377,9 +377,16 @@ whatever is left in the field, same as before this issue.
    page never gains a horizontal scrollbar: panels, prompt text, ids, controls,
    batch outcomes and the dense summary table all stay within the `app-shell`,
    choice lists scroll vertically inside their bounded height, and the summary
-   table scrolls inside its own panel. Confirm the whole selector is usable by
-   keyboard with a visible focus ring and that expanded/collapsed controls are
-   announced (aria-expanded / listbox roles).
+   table scrolls inside its own panel. Check the `Candidate summary` panel in
+   both states: before any run — both empty states (`No base STT candidate
+   selected yet…` and `Run analysis above…`) and the `Summarize by candidate`
+   button — and after a summary, with the dense table present. At each width the
+   button, the empty states and every child stay inside the panel border and do
+   not push the page past the `app-shell` (regression check for B1: the panel
+   grid column is `minmax(0, 1fr)`, so the nowrap table can no longer inflate the
+   column and spill the panel's other children past its border). Confirm the
+   whole selector is usable by keyboard with a visible focus ring and that
+   expanded/collapsed controls are announced (aria-expanded / listbox roles).
 5. In `Dataset`, use **Build a dataset entry**: paste a transcription (no
    segment) and type a Layer 1 literal transcript containing a rule the
    shipped default regex recognizes plus a word it does not (e.g.
