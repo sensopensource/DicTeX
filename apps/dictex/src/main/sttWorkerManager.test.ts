@@ -165,9 +165,46 @@ test("two dictations with the same config reuse one generation and load once", a
   assert.equal(manager.getState(), "ready");
 });
 
+test("ready generations and hot requests expose separate, stable measurements", async () => {
+  const fleet = makeFleet();
+  const readyEvents: { workerGeneration: string; workerStartupMs: number; modelLoadMs: number }[] = [];
+  const statuses: string[] = [];
+  let generation = 0;
+  const manager = new SttWorkerManager({
+    createClient: fleet.factory,
+    now: () => 100,
+    createGenerationId: () => `generation_${++generation}`,
+    onGenerationReady: ({ workerGeneration, workerStartupMs, modelLoadMs }) => {
+      readyEvents.push({ workerGeneration, workerStartupMs, modelLoadMs });
+    },
+    onStatusChange: (status) => statuses.push(status.state),
+  });
+
+  const first = await manager.transcribe(baseConfig, request);
+  const second = await manager.transcribe(baseConfig, request);
+  const afterModelChange = await manager.transcribe(smallConfig, request);
+
+  assert.equal(first.workerGeneration, "generation_1");
+  assert.equal(second.workerGeneration, "generation_1");
+  assert.equal(second.readyWaitMs, 0, "an established ready generation has no readiness wait");
+  assert.equal(afterModelChange.workerGeneration, "generation_2");
+  assert.deepEqual(
+    readyEvents,
+    [
+      { workerGeneration: "generation_1", workerStartupMs: 0, modelLoadMs: 5 },
+      { workerGeneration: "generation_2", workerStartupMs: 0, modelLoadMs: 5 },
+    ],
+  );
+  assert.ok(statuses.includes("starting"));
+  assert.ok(statuses.includes("busy"));
+  assert.ok(statuses.includes("ready"));
+  assert.ok(statuses.includes("restarting"));
+});
+
 test("a dictation finishing during prewarm waits for ready then succeeds once", async () => {
   const fleet = makeFleet({ autoReady: false });
-  const manager = new SttWorkerManager({ createClient: fleet.factory });
+  let clock = 0;
+  const manager = new SttWorkerManager({ createClient: fleet.factory, now: () => clock });
 
   manager.prewarm(baseConfig);
   const pending = manager.transcribe(baseConfig, request);
@@ -178,12 +215,14 @@ test("a dictation finishing during prewarm waits for ready then succeeds once", 
   assert.equal(manager.getState(), "starting");
   assert.equal(fleet.created[0].transcribeCalls.length, 0);
 
+  clock = 25;
   fleet.created[0].markReady();
   const result = await pending;
 
   assert.equal(result.transcript, "audio/seg_0001.webm|base");
   assert.equal(fleet.created.length, 1, "model loaded exactly once");
   assert.equal(fleet.created[0].transcribeCalls.length, 1);
+  assert.equal(result.readyWaitMs, 25, "the completed audio waited for the prewarming generation");
 });
 
 test("changing the model replaces the worker with no overlap of active generations", async () => {
@@ -259,6 +298,31 @@ test("a failed start surfaces and a later dictation can still start a fresh work
   fleet.created[1].markReady();
   const result = await retry;
   assert.equal(result.sttModel, "base");
+});
+
+test("a failed ready-event publication stops the loaded worker before retrying", async () => {
+  const fleet = makeFleet();
+  let publicationAttempts = 0;
+  const manager = new SttWorkerManager({
+    createClient: fleet.factory,
+    onGenerationReady: () => {
+      publicationAttempts += 1;
+      if (publicationAttempts === 1) {
+        return Promise.reject(new Error("event append failed"));
+      }
+    },
+  });
+
+  await assert.rejects(() => manager.transcribe(baseConfig, request), /event append failed/);
+  assert.equal(fleet.created[0].shutdownCalls, 1, "the loaded worker is stopped after publication fails");
+  assert.equal(fleet.created.filter((client) => client.isAlive()).length, 0, "no untracked generation remains alive");
+
+  const result = await manager.transcribe(baseConfig, request);
+
+  assert.equal(result.sttModel, "base");
+  assert.equal(fleet.created.length, 2, "retry starts exactly one fresh generation");
+  assert.equal(fleet.created.filter((client) => client.isAlive()).length, 1, "at most one generation remains alive");
+  assert.deepEqual(fleet.log, ["create gen1 base", "shutdown gen1", "create gen2 base"]);
 });
 
 test("dispose shuts down the current worker and blocks further starts", async () => {

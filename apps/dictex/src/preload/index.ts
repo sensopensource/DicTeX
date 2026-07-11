@@ -36,6 +36,16 @@ type SttConfig = {
   computeType: string;
 };
 
+type SttWorkerState = "starting" | "ready" | "busy" | "restarting" | "error" | "stopped";
+
+type SttWorkerStatus = {
+  state: SttWorkerState;
+  workerGeneration: string | null;
+  workerStartupMs: number | null;
+  modelLoadMs: number | null;
+  lastInferenceDurationMs: number | null;
+};
+
 type AudioSegmentRecord = {
   sessionId: string;
   segmentId: string;
@@ -95,6 +105,12 @@ contextBridge.exposeInMainWorld("dictex", {
   openLab: () => ipcRenderer.invoke("app:open-lab") as Promise<OpenLabResult>,
   getSttConfig: () => ipcRenderer.invoke("diagnostics:get-stt-config") as Promise<SttConfig>,
   getSttModels: () => ipcRenderer.invoke("diagnostics:get-stt-models") as Promise<string[]>,
+  getSttWorkerStatus: () => ipcRenderer.invoke("diagnostics:get-stt-worker-status") as Promise<SttWorkerStatus>,
+  onSttWorkerStatus: (callback: (status: SttWorkerStatus) => void) => {
+    const listener = (_event: IpcRendererEvent, status: SttWorkerStatus) => callback(status);
+    ipcRenderer.on("stt-worker:status", listener);
+    return () => ipcRenderer.removeListener("stt-worker:status", listener);
+  },
   setSttModel: (model: string) => ipcRenderer.invoke("settings:set-stt-model", model) as Promise<SttConfig>,
   getNormalizerEnabled: () => ipcRenderer.invoke("settings:get-normalizer-enabled") as Promise<boolean>,
   setNormalizerEnabled: (enabled: boolean) =>

@@ -9,11 +9,12 @@ import {
   type DictationFlowInput,
   type JsonValue,
 } from "./dictationFlow.js";
-import { WorkerDiedError, type WorkerTranscription } from "./sttWorkerClient.js";
+import { WorkerDiedError } from "./sttWorkerClient.js";
+import type { ManagedWorkerTranscription } from "./sttWorkerManager.js";
 
 const rawTranscript = "x au carré";
 
-function workerResult(overrides: Partial<WorkerTranscription> = {}): WorkerTranscription {
+function workerResult(overrides: Partial<ManagedWorkerTranscription> = {}): ManagedWorkerTranscription {
   return {
     id: "req_1",
     transcript: rawTranscript,
@@ -25,6 +26,8 @@ function workerResult(overrides: Partial<WorkerTranscription> = {}): WorkerTrans
     sttLanguageProbability: 0.9,
     audioDurationSeconds: 1.5,
     inferenceDurationMs: 12,
+    workerGeneration: "generation_1",
+    readyWaitMs: 0,
     ...overrides,
   };
 }
@@ -123,6 +126,9 @@ test("Normalizer On: one stt_result with raw output, normalized text inserted", 
   const sttResult = harness.events[1];
   assert.equal(sttResult.stt_output, rawTranscript, "raw STT output is preserved verbatim");
   assert.equal(sttResult.transcription_duration_ms, 200);
+  assert.equal(sttResult.stt_worker_generation, "generation_1");
+  assert.equal(sttResult.stt_ready_wait_ms, 0);
+  assert.equal(sttResult.stt_inference_duration_ms, 12);
 
   const normalizationEvent = harness.events[2];
   assert.equal(normalizationEvent.output_transcript, "$x^{2}$");

@@ -30,6 +30,22 @@ export type SttResultEvent = {
   corrected_transcript?: string | null;
   audio_duration_seconds?: number | null;
   transcription_duration_ms?: number;
+  stt_worker_generation?: string;
+  stt_ready_wait_ms?: number;
+  stt_inference_duration_ms?: number | null;
+};
+
+/** Lifecycle measurement for one persistent DicTeX STT worker generation. */
+export type SttEngineReadyEvent = {
+  event_type: "stt_engine_ready";
+  created_at?: string;
+  worker_generation: string;
+  stt_engine: string;
+  stt_model: string;
+  stt_device: string;
+  stt_compute_type: string;
+  worker_startup_ms: number;
+  model_load_ms: number;
 };
 
 export type SttBenchmarkResultEvent = {
@@ -128,6 +144,7 @@ export type UnknownLocalEvent = {
 export type LocalEvent =
   | AudioSegmentEvent
   | SttResultEvent
+  | SttEngineReadyEvent
   | SttBenchmarkResultEvent
   | SttCorrectionEvent
   | SttBenchmarkSetMembershipEvent
