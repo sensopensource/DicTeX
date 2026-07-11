@@ -165,6 +165,65 @@ test("toCandidateOption: a prompt variant is labelled by its name, not the raw r
   assert.equal(option.variantLabel, "v-fr-math");
 });
 
+test("toCandidateOption (issue #126): a baseline exposes its runtime, no prompt text, and prompt support", () => {
+  const option = toCandidateOption({
+    stage: "stt",
+    provider: FASTER_WHISPER_PROVIDER,
+    model: "base",
+    variant: "cpu-int8-fr",
+  });
+  assert.equal(option.runtimeLabel, "cpu-int8-fr");
+  assert.equal(option.promptText, null);
+  assert.equal(option.supportsPrompt, true);
+});
+
+test("toCandidateOption (issue #126): a prompt variant strips the prompt suffix off the runtime and carries its display text", () => {
+  const option = toCandidateOption({
+    stage: "stt",
+    provider: FASTER_WHISPER_PROVIDER,
+    model: "base",
+    variant: "cpu-int8-fr+v-fr-math",
+    promptVariant: "v-fr-math",
+    displayPromptText: "Dictée mathématique",
+  });
+  assert.equal(option.runtimeLabel, "cpu-int8-fr");
+  assert.equal(option.promptText, "Dictée mathématique");
+  assert.equal(option.supportsPrompt, true);
+});
+
+test("toCandidateOption (issue #126): a Vosk candidate never supports a prompt", () => {
+  const option = toCandidateOption({
+    stage: "stt",
+    provider: VOSK_PROVIDER,
+    model: "vosk-model-small-fr-0.22",
+    variant: "cpu-fr",
+  });
+  assert.equal(option.runtimeLabel, "cpu-fr");
+  assert.equal(option.promptText, null);
+  assert.equal(option.supportsPrompt, false);
+});
+
+test("buildSttBenchmarkCandidateCatalog + toCandidateOption (issue #126): an external prompt variant carries display text for read-only view without a local promptText", () => {
+  withEnv(
+    {
+      DICTEX_STT_BENCHMARK_MODELS: "base",
+      DICTEX_STT_PROMPT_VARIANTS: JSON.stringify({ "v-fr-math": "external math prompt" }),
+      DICTEX_VOSK_BENCHMARK_MODELS: "",
+    },
+    () => {
+      const config = buildSttBenchmarkCandidateCatalog(RUNTIME).find(
+        (candidate) => candidate.promptVariant === "v-fr-math",
+      );
+      assert.ok(config);
+      // Display text is present, but promptText (which would change the sidecar's
+      // inherited env path) stays absent for an external variant.
+      assert.equal(config.displayPromptText, "external math prompt");
+      assert.equal(config.promptText, undefined);
+      assert.equal(toCandidateOption(config).promptText, "external math prompt");
+    },
+  );
+});
+
 test("validateRequestedCandidates: accepts 1 to 3 identities that match the catalog exactly", () => {
   const catalog = buildCatalogFor("base,small", { "v-fr-math": "math" });
   const requested = [

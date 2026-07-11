@@ -44,20 +44,36 @@ export type SttBenchmarkCandidateConfig = BenchmarkCandidate & {
   promptText?: string;
   /** Human display name for a locally-defined variant (issue #121); absent for an external one (labelled by its raw name, see toCandidateOption). */
   promptDisplayName?: string;
+  /**
+   * Full prompt text for read-only DISPLAY (issue #126), present for both
+   * local AND external prompt-variant candidates. Distinct from `promptText`,
+   * which is deliberately local-only because threading an external variant's
+   * text through `SttConfig.promptText` would change the inherited
+   * `DICTEX_STT_PROMPT_VARIANTS` env path the sidecar resolves for itself.
+   * Absent for the no-prompt baseline.
+   */
+  displayPromptText?: string;
 };
 
 /**
- * Renderer-facing catalog entry: a friendly label per level instead of the
+ * Renderer-facing catalog entry: friendly labels per dimension instead of the
  * raw technical `variant` string (e.g. `cpu-int8-fr+prompt-v3-fr-math`), so
- * the UI can group by provider then model and distinguish the baseline from
- * a named prompt variant without ever displaying a technical identity as the
- * primary label.
+ * the progressive selector (issue #126) can offer model, runtime variant and
+ * prompt as separate choices, and show the selected prompt text read-only,
+ * without ever displaying a technical identity or hash as the primary label.
  */
 export type SttBenchmarkCandidateOption = {
   candidate: BenchmarkCandidateIdentity;
   providerLabel: string;
   modelLabel: string;
+  /** Runtime portion of the identity (device-computeType-language), without any prompt suffix. */
+  runtimeLabel: string;
+  /** "baseline" or the prompt variant's display name — never the raw variant id/hash. */
   variantLabel: string;
+  /** Full prompt text for read-only display; null for the no-prompt baseline. */
+  promptText: string | null;
+  /** Whether this provider supports an `initial_prompt` at all (false for Vosk). */
+  supportsPrompt: boolean;
 };
 
 export function getVoskBenchmarkModels(): string[] {
@@ -99,12 +115,22 @@ export function buildSttBenchmarkCandidateCatalog(
   // this only matters if the env table changed after the local variant was
   // created, since creation itself already rejects a name already in use.
   const localVariants = usableLocalPromptVariants(localPromptVariants, externalVariants);
-  const promptVariantEntries: { name: string; promptText?: string; displayName?: string }[] = [
-    ...Object.keys(externalVariants).map((name) => ({ name })),
+  const promptVariantEntries: {
+    name: string;
+    promptText?: string;
+    displayName?: string;
+    displayPromptText: string;
+  }[] = [
+    // External variants carry a display text (for the read-only prompt view,
+    // #126) but NOT `promptText` — the sidecar resolves them from its own
+    // inherited env table, so threading their text through would change that
+    // path.
+    ...Object.entries(externalVariants).map(([name, text]) => ({ name, displayPromptText: text })),
     ...localVariants.map((variant) => ({
       name: variant.name,
       promptText: variant.promptText,
       displayName: variant.displayName,
+      displayPromptText: variant.promptText,
     })),
   ];
   const fasterWhisperModels = getSttBenchmarkModels();
@@ -126,6 +152,7 @@ export function buildSttBenchmarkCandidateCatalog(
         promptVariant: entry.name,
         promptText: entry.promptText,
         promptDisplayName: entry.displayName,
+        displayPromptText: entry.displayPromptText,
       });
     }
   }
@@ -143,6 +170,11 @@ export function buildSttBenchmarkCandidateCatalog(
 }
 
 export function toCandidateOption(candidate: SttBenchmarkCandidateConfig): SttBenchmarkCandidateOption {
+  const variant = candidate.variant ?? "";
+  // `buildSttVariantId` appends `+<promptVariant>` to the runtime, so strip that
+  // suffix back off to recover the runtime portion for its own selector control.
+  const suffix = candidate.promptVariant ? `+${candidate.promptVariant}` : "";
+  const runtimeLabel = suffix && variant.endsWith(suffix) ? variant.slice(0, -suffix.length) : variant;
   return {
     candidate: {
       stage: candidate.stage,
@@ -152,7 +184,10 @@ export function toCandidateOption(candidate: SttBenchmarkCandidateConfig): SttBe
     },
     providerLabel: candidate.provider,
     modelLabel: candidate.model,
+    runtimeLabel,
     variantLabel: candidate.promptDisplayName ?? candidate.promptVariant ?? "baseline",
+    promptText: candidate.displayPromptText ?? null,
+    supportsPrompt: candidate.provider === FASTER_WHISPER_PROVIDER,
   };
 }
 

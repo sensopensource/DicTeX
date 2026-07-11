@@ -112,46 +112,254 @@
   overflow-wrap: anywhere;
 }
 
-/* ---- Candidate selection + batch run ------------------------------------- */
+/* ---- Progressive candidate selector (issue #126) ------------------------- */
 
-.candidate-catalog {
+/* Replaces the old flat checkbox grid: a compact selected-candidates list plus
+   a step-by-step add/replace flow. Everything stays inside its panel — option
+   lists scroll vertically within a bounded height, nothing widens the page. */
+.candidate-selector {
   display: grid;
   gap: var(--space-2);
+  min-width: 0;
   margin: var(--space-2) 0 0;
 }
 
-.candidate-provider-group {
+.candidate-chips {
   display: grid;
-  gap: 0.3rem;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.candidate-provider-label {
-  color: var(--text);
+.candidate-chip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 0.4rem 0.6rem;
+  background: var(--bg);
+}
+
+.candidate-chip-labels {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.candidate-chip-labels strong {
+  color: var(--text-strong);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.candidate-chip-meta {
+  color: var(--text-dim);
   font-size: var(--text-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
 }
 
-.candidate-model-group {
+.candidate-chip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.candidate-add {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
 }
 
-.candidate-model-label {
+.candidate-hint {
   color: var(--text-dim);
   font-size: var(--text-sm);
-  min-width: 5rem;
+  overflow-wrap: anywhere;
 }
 
-.candidate-checkbox-row {
+.candidate-picker {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  background: var(--bg);
+}
+
+.candidate-picker-header,
+.candidate-picker-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.candidate-picker-header strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+/* The runtime + prompt controls sit side by side when the panel is wide and
+   stack on a narrow window. */
+.candidate-control-row {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin: var(--space-2) 0 0;
 }
 
+.candidate-control-row > .candidate-control {
+  flex: 1 1 12rem;
+}
+
+.candidate-control {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.candidate-control-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.candidate-control-head > .candidate-control-toggle {
+  flex: 1 1 8rem;
+}
+
+.candidate-control-toggle {
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.6rem;
+  color: var(--text);
+  background: var(--surface-raised);
+  cursor: pointer;
+  font-size: var(--text-base);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.candidate-control-toggle:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.candidate-control-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* Bounded, scrollable choice list: it never grows the page, it scrolls. */
+.candidate-option-list {
+  display: grid;
+  gap: 0.15rem;
+  max-height: 12rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1);
+  background: var(--surface-raised);
+}
+
+.candidate-option-group {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.candidate-option-group-label {
+  padding: 0.2rem 0.35rem 0;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.candidate-option {
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  padding: 0.35rem 0.5rem;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.candidate-option:hover {
+  background: var(--surface-hover);
+}
+
+.candidate-option[aria-selected="true"] {
+  border-color: var(--border-strong);
+  color: var(--text-strong);
+  background: var(--surface-hover);
+}
+
+.candidate-no-prompt {
+  align-self: center;
+  flex: 1 1 12rem;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.candidate-new-prompt {
+  flex: 0 0 auto;
+}
+
+.candidate-new-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.candidate-prompt-preview {
+  display: grid;
+  gap: 0.15rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.6rem;
+  background: var(--surface-raised);
+}
+
+.candidate-prompt-preview-label {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.candidate-prompt-preview-text {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.candidate-prompt-preview-empty {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+}
+
+/* Inline radio/checkbox chip, shared with the dataset builder's source picker. */
 .candidate-checkbox {
   display: flex;
   align-items: center;
@@ -164,43 +372,13 @@
   font-size: var(--text-sm);
 }
 
-/* ---- STT prompt variants (issue #121) ------------------------------------ */
-
-.prompt-variant-list {
-  display: grid;
-  gap: var(--space-2);
-  margin: var(--space-2) 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.prompt-variant-item {
-  display: grid;
-  gap: 0.15rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  padding: 0.4rem 0.6rem;
-  background: var(--bg);
-}
-
-.prompt-variant-source {
-  color: var(--text-dim);
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.prompt-variant-text {
-  margin: 0;
-  color: var(--text-dim);
-  font-size: var(--text-sm);
-  overflow-wrap: anywhere;
-}
+/* ---- STT prompt variant creation form (issue #121, reused by #126) ------- */
 
 .prompt-variant-form {
   display: grid;
   gap: var(--space-2);
-  margin: var(--space-2) 0 0;
+  min-width: 0;
+  margin: var(--space-1) 0 0;
 }
 
 .prompt-variant-form input,
@@ -348,7 +526,9 @@
 
 .reason-input {
   flex: 1;
-  min-width: 16rem;
+  /* Small enough to never push the page past app-shell at 320px, still wide
+     enough to be usable; it grows with flex on wider panels. */
+  min-width: 12rem;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   padding: 0.5rem 0.6rem;
@@ -369,6 +549,13 @@
 }
 
 /* ---- Candidate summary table --------------------------------------------- */
+
+/* The dense per-candidate table (nine nowrap columns) can be wider than a
+   narrow window; keep it inside its panel by scrolling it horizontally here,
+   so the page itself never gains a horizontal scrollbar (issue #126). */
+.summary-table-scroll {
+  overflow-x: auto;
+}
 
 .summary-table {
   width: 100%;
