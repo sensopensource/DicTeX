@@ -15,7 +15,7 @@ import {
 import { readAppSettings, writeAppSettings } from "./settings.js";
 import { runDictationTranscription, type JsonValue, type TranscriptionResult } from "./dictationFlow.js";
 import { createSttWorkerClient, type ResolvedWorkerConfig } from "./sttWorkerClient.js";
-import { SttWorkerManager } from "./sttWorkerManager.js";
+import { SttWorkerManager, type SttWorkerStatus } from "./sttWorkerManager.js";
 
 type TranscriptionOptions = {
   autoPaste?: boolean;
@@ -94,8 +94,7 @@ function getWorkerConfig(): ResolvedWorkerConfig {
 
 // One persistent worker for dictation, kept warm across dictations. Changing the
 // STT model lazily restarts it on the next dictation (stop old, start new) so a
-// single model stays resident. Diagnostics go to the console until the follow-up
-// ticket surfaces worker state in the UI.
+// single model stays resident.
 const sttWorkerManager = new SttWorkerManager({
   createClient: (config) =>
     createSttWorkerClient(config, {
@@ -105,6 +104,20 @@ const sttWorkerManager = new SttWorkerManager({
     }),
   log: (message) => console.warn(message),
   shutdownTimeoutMs: 4000,
+  onStatusChange: (status) => sendSttWorkerStatus(status),
+  onGenerationReady: async (generation) => {
+    await appendEvent({
+      event_type: "stt_engine_ready",
+      created_at: new Date().toISOString(),
+      worker_generation: generation.workerGeneration,
+      stt_engine: generation.sttEngine,
+      stt_model: generation.sttModel,
+      stt_device: generation.sttDevice,
+      stt_compute_type: generation.sttComputeType,
+      worker_startup_ms: generation.workerStartupMs,
+      model_load_ms: generation.modelLoadMs,
+    });
+  },
 });
 
 /**
@@ -159,6 +172,7 @@ function createWindow(): BrowserWindow {
 
   mainWindow.webContents.on("did-finish-load", () => {
     sendHotkeyStatus();
+    sendSttWorkerStatus(sttWorkerManager.getStatus());
   });
 
   mainWindow.on("closed", () => {
@@ -177,6 +191,13 @@ function sendHotkeyStatus(): void {
     accelerator: "Win+Alt+Space",
     registered: globalHotkeyRegistered,
   });
+}
+
+function sendSttWorkerStatus(status: SttWorkerStatus): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send("stt-worker:status", status);
 }
 
 function registerGlobalHotkey(): void {
@@ -552,6 +573,8 @@ ipcMain.handle("diagnostics:open-rules", async (): Promise<boolean> => {
 ipcMain.handle("diagnostics:get-stt-config", (): SttConfig => getSttConfig());
 
 ipcMain.handle("diagnostics:get-stt-models", (): string[] => getAvailableSttModels());
+
+ipcMain.handle("diagnostics:get-stt-worker-status", (): SttWorkerStatus => sttWorkerManager.getStatus());
 
 ipcMain.handle("settings:get-normalizer-enabled", (): boolean => activeNormalizerEnabled);
 

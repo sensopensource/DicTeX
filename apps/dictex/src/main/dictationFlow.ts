@@ -1,7 +1,7 @@
 import type { NormalizationResult } from "@dictex/shared";
 
 import { prepareNormalization } from "./normalizationPolicy.js";
-import type { WorkerTranscription } from "./sttWorkerClient.js";
+import type { ManagedWorkerTranscription } from "./sttWorkerManager.js";
 
 /**
  * The dictation orchestration, factored out of the Electron IPC handler so it
@@ -36,7 +36,7 @@ export type DictationFlowDeps = {
   /** Transcribe a stored audio file through the persistent worker (with its own
    * restart+replay recovery). Rejecting leaves the audio and `audio_segment`
    * intact and writes no STT/normalization events. */
-  transcribe: (audioPath: string) => Promise<WorkerTranscription>;
+  transcribe: (audioPath: string) => Promise<ManagedWorkerTranscription>;
   normalize: (rawTranscript: string) => Promise<NormalizationResult>;
   writeClipboard: (text: string) => void;
   pasteActiveApp: () => Promise<boolean>;
@@ -114,6 +114,9 @@ export async function runDictationTranscription(
     corrected_transcript: null,
     audio_duration_seconds: worker.audioDurationSeconds,
     transcription_duration_ms: transcriptionDurationMs,
+    stt_worker_generation: worker.workerGeneration,
+    stt_ready_wait_ms: worker.readyWaitMs,
+    stt_inference_duration_ms: worker.inferenceDurationMs,
   });
 
   // 4. Apply the normalizer policy in-process (unchanged by the worker switch):

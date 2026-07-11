@@ -40,6 +40,16 @@ type SttConfig = {
   computeType: string;
 };
 
+type SttWorkerState = "starting" | "ready" | "busy" | "restarting" | "error" | "stopped";
+
+type SttWorkerStatus = {
+  state: SttWorkerState;
+  workerGeneration: string | null;
+  workerStartupMs: number | null;
+  modelLoadMs: number | null;
+  lastInferenceDurationMs: number | null;
+};
+
 type AudioSegmentRecord = {
   sessionId: string;
   segmentId: string;
@@ -88,6 +98,8 @@ declare global {
       openLab: () => Promise<OpenLabResult>;
       getSttConfig: () => Promise<SttConfig>;
       getSttModels?: () => Promise<string[]>;
+      getSttWorkerStatus?: () => Promise<SttWorkerStatus>;
+      onSttWorkerStatus?: (callback: (status: SttWorkerStatus) => void) => () => void;
       setSttModel?: (model: string) => Promise<SttConfig>;
       getNormalizerEnabled?: () => Promise<boolean>;
       setNormalizerEnabled?: (enabled: boolean) => Promise<boolean>;
@@ -107,6 +119,7 @@ function App(): React.ReactElement {
   const [availableSttModels, setAvailableSttModels] = useState<string[]>([]);
   const [isSettingSttModel, setIsSettingSttModel] = useState(false);
   const [normalizerEnabled, setNormalizerEnabled] = useState<boolean | null>(null);
+  const [sttWorkerStatus, setSttWorkerStatus] = useState<SttWorkerStatus | null>(null);
   const [isSettingNormalizer, setIsSettingNormalizer] = useState(false);
   const [lastPasteState, setLastPasteState] = useState<"none" | "pasted" | "clipboard-only">("none");
   const [lastResult, setLastResult] = useState<TranscriptionResult | null>(null);
@@ -142,6 +155,7 @@ function App(): React.ReactElement {
       toggleDictation("global_hotkey");
     });
     const removeHotkeyStatusListener = window.dictex.onHotkeyStatus(setHotkeyStatus);
+    const removeSttWorkerStatusListener = window.dictex.onSttWorkerStatus?.(setSttWorkerStatus);
     void window.dictex.getSttConfig().then(setSttConfig).catch(() => {
       setNotice("Could not read STT config");
     });
@@ -156,11 +170,17 @@ function App(): React.ReactElement {
         .then(setNormalizerEnabled)
         .catch(() => setNotice("Could not read normalizer setting"));
     }
+    if (typeof window.dictex.getSttWorkerStatus === "function") {
+      void window.dictex.getSttWorkerStatus().then(setSttWorkerStatus).catch(() => {
+        // The live notification still updates the status once the worker changes state.
+      });
+    }
     void loadRecentSegments();
 
     return () => {
       removeToggleListener();
       removeHotkeyStatusListener();
+      removeSttWorkerStatusListener?.();
       stopAudioPlayback();
     };
   }, []);
@@ -576,6 +596,30 @@ function App(): React.ReactElement {
                   : "raw STT; commands stay literal"}
           </span>
         </div>
+
+        <div className="shortcut-row">
+          <span>STT engine</span>
+          <strong>{formatSttWorkerState(sttWorkerStatus?.state)}</strong>
+          <span className={sttWorkerStatus?.state === "error" ? "signal-bad" : "signal-muted"}>
+            {sttWorkerStatus?.workerGeneration ?? "starting"}
+          </span>
+        </div>
+
+        {sttWorkerStatus?.workerStartupMs !== null && sttWorkerStatus?.workerStartupMs !== undefined && (
+          <div className="shortcut-row">
+            <span>Preparation</span>
+            <strong>{formatLatency(sttWorkerStatus.workerStartupMs)}</strong>
+            <span className="signal-muted">model load {formatLatency(sttWorkerStatus.modelLoadMs)}</span>
+          </div>
+        )}
+
+        {sttWorkerStatus?.lastInferenceDurationMs !== null && sttWorkerStatus?.lastInferenceDurationMs !== undefined && (
+          <div className="shortcut-row">
+            <span>Warm inference</span>
+            <strong>{formatLatency(sttWorkerStatus.lastInferenceDurationMs)}</strong>
+            <span className="signal-muted">worker request</span>
+          </div>
+        )}
       </section>
 
       {metrics.length > 0 && (
@@ -803,6 +847,23 @@ function formatLatency(ms: number | null): string {
   }
 
   return `${Math.round(ms)} ms`;
+}
+
+function formatSttWorkerState(state: SttWorkerState | undefined): string {
+  switch (state) {
+    case "ready":
+      return "Ready";
+    case "busy":
+      return "Busy";
+    case "restarting":
+      return "Restarting";
+    case "error":
+      return "Error";
+    case "starting":
+    case "stopped":
+    default:
+      return "Preparing";
+  }
 }
 
 const rootElement = document.getElementById("root");

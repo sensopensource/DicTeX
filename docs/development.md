@@ -159,15 +159,18 @@ scripts\npm.cmd run dev
 14. Placer l'interrupteur `Normalizer` sur **Off**, dicter « retour à la ligne x au carré », puis vérifier que le texte copié ou inséré est identique octet par octet à `Last transcript` : les mots de commande restent littéraux et aucun LaTeX n'est produit. Vérifier que le nouvel événement `normalization_result` contient `disabled: true`, aucun champ `passthrough` et des `layers` vides. Redémarrer DicTeX, confirmer que l'état Off persiste, puis repasser sur On et vérifier que règles et commandes s'appliquent à nouveau.
 15. Dans le sélecteur `STT model`, choisir un autre modèle. Vérifier le diagnostic `Model`, dicter une phrase et confirmer que l'événement `stt_result` contient le modèle choisi. Redémarrer l'application et vérifier la persistance dans `data/settings.json`. Corrompre ce fichier et confirmer que DicTeX redémarre avec la variable d'environnement ou `base`, et avec le normaliseur activé.
 16. Cliquer sur **Open Lab**. Avec un Lab construit (`scripts\npm.cmd run build`), vérifier son ouverture ; sans construction, vérifier que DicTeX affiche une erreur explicite sans planter.
-17. Worker STT persistant (#115). Dicter deux fois de suite avec le même modèle
-    et vérifier que la seconde dictée ne recharge pas le modèle : sur CUDA avec
-    `large-v3-turbo`, seule la première paie le chargement (latence bien plus
-    faible ensuite ; `model_load_ms` n'apparaît qu'une fois dans le journal
-    stderr du worker). Changer de modèle dans le sélecteur `STT model` puis
-    dicter : le worker redémarre une seule fois pour le nouveau modèle et deux
-    modèles ne coexistent jamais. Basculer `Normalizer` On puis Off entre deux
-    dictées et confirmer que le worker STT ne redémarre pas — seule la sortie
-    insérée change, l'audio et les événements restent intacts.
+17. Worker STT persistant et observabilité (#115/#116). Au lancement, vérifier
+    que Home passe de `Preparing` à `Ready` sans bloquer la fenêtre. Dicter deux
+    fois avec le même modèle : les deux `stt_result` doivent porter le même
+    `stt_worker_generation`, le second `stt_ready_wait_ms` doit être `0`, et
+    `stt_inference_duration_ms` doit être distinct de la latence globale
+    `transcription_duration_ms`. Confirmer un unique `stt_engine_ready` avec
+    des durées finies pour cette génération. Changer de modèle puis dicter :
+    Home passe par `Restarting`, une nouvelle génération et un nouvel
+    `stt_engine_ready` apparaissent. Arrêter le worker de force pendant une
+    dictée et confirmer `Restarting`, puis `Ready` avec une autre génération
+    (ou `Error` après l'échec terminal). Basculer `Normalizer` On puis Off
+    entre deux dictées et confirmer que le worker ne redémarre pas.
 
 Benchmark, typed corrections, benchmark-set splits, candidate selection, Vosk, and the test_frozen dataset export are **no longer in DicTeX** (Pivot Phase 3) — they now live in DicTeX Lab and are verified there (see "DicTeX Lab" below).
 
@@ -421,9 +424,20 @@ d'application ; les dictées suivantes ne paient plus ce chargement.
 `transcribe.py` : il compare des modèles différents et n'a pas besoin d'un modèle
 maintenu en mémoire. Ne pas généraliser le worker persistant au Lab.
 
-L'affichage des états du worker (`starting` / `ready` / `busy` / `restarting` /
-`error` / `stopped`) et des nouvelles mesures (`model_load_ms`, durée de
-transcription chaude) dans la vue Home relève d'un ticket suivant.
+Home expose l'état du worker sous les libellés `Preparing`, `Ready`, `Busy`,
+`Restarting` et `Error`, ainsi que le temps de préparation de la génération
+courante et la dernière inférence chaude lorsqu'ils existent. Ces notifications
+Electron ne bloquent ni l'ouverture de la fenêtre ni l'enregistrement audio.
+
+Chaque génération effectivement prête ajoute un `stt_engine_ready` append-only
+avec son identifiant, son moteur/modèle/configuration, `worker_startup_ms`
+(lancement Electron jusqu'au message `ready`) et `model_load_ms` (mesure du
+worker autour du chargement). Chaque `stt_result` ajoute
+`stt_worker_generation`, `stt_ready_wait_ms` et
+`stt_inference_duration_ms`. `transcription_duration_ms` conserve sa
+sémantique historique : durée perçue entre la soumission de la transcription et
+son résultat, attente de disponibilité comprise. Les lecteurs historiques
+ignorent `stt_engine_ready` et les champs additionnels.
 
 Defaults:
 
@@ -675,7 +689,8 @@ data/
 The `exports/` folder holds generated dataset snapshots (see "Corrected Dataset
 Export"); it is written from, never rewritten into, the event log.
 
-Each dictation writes at least two events:
+Chaque dictée écrit au moins deux événements, et chaque génération prête ajoute
+un événement d'observabilité distinct :
 
 ```json
 {"event_type":"audio_segment","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","audio_mime_type":"audio/webm;codecs=opus","audio_size_bytes":25412}
@@ -683,6 +698,10 @@ Each dictation writes at least two events:
 
 ```json
 {"event_type":"stt_result","session_id":"session_...","segment_id":"seg_0001","stt_engine":"faster-whisper","stt_model":"base","stt_language":"fr","stt_output":"...","corrected_transcript":null}
+```
+
+```json
+{"event_type":"stt_engine_ready","worker_generation":"generation_...","stt_engine":"faster-whisper","stt_model":"base","stt_device":"cpu","stt_compute_type":"int8","worker_startup_ms":4200,"model_load_ms":3900}
 ```
 
 The STT benchmark actions reuse stored audio segments and append one result per tested model:
