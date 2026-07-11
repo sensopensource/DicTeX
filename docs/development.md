@@ -329,16 +329,18 @@ whatever is left in the field, same as before this issue.
    (`Open Lab events log`) and DicTeX's `events.jsonl` is untouched.
 4. In `Benchmark`, click `Benchmark latest` (needs the venv or
    `DICTEX_PYTHON`); confirm `tiny`/`base`/`small` transcripts + latency
-   appear. Run `Run analysis` over `Test frozen`, `Summarize by candidate`,
+   appear. Confirm the split selector opens on `Validation` (the default).
+   Switch it to `Test frozen`, run `Run analysis`, `Summarize by candidate`,
    and `Select` a candidate.
 4bis. Set `DICTEX_STT_PROMPT_VARIANTS` (see "Comparer les variantes de
    contexte dans le Lab" above), restart the Lab, and confirm the same
    faster-whisper model now shows a baseline row and one row per variant in
-   the checkbox catalog. Check the baseline plus two variants of the same
-   model (3 candidates), switch the split selector to `Validation`, run
-   `Run analysis`, then `Summarize by candidate`; confirm the summary table
-   shows three distinct rows for that one model (not merged into one) and
-   that unchecking a variant removes only that row on the next summarize.
+   the checkbox catalog, and that the split selector is back on `Validation`
+   by default. Check the baseline plus two variants of the same model (3
+   candidates), run `Run analysis`, then `Summarize by candidate`; confirm
+   the summary table shows three distinct rows for that one model (not
+   merged into one) and that unchecking a variant removes only that row on
+   the next summarize.
 5. In `Dataset`, use **Build a dataset entry**: paste a transcription (no
    segment) and type a Layer 1 literal transcript containing a rule the
    shipped default regex recognizes plus a word it does not (e.g.
@@ -676,9 +678,12 @@ groupé par fournisseur puis par modèle, avec des cases à cocher libellées
 variant (par ex. `cpu-int8-fr+prompt-v3-fr-math`). Le panneau « Candidate
 summary » filtre désormais par identité complète de candidat, donc deux
 variantes du même modèle apparaissent comme deux lignes distinctes au lieu
-d'être fusionnées. Le split par défaut de ce flux reste `validation` ;
-`test_frozen` demeure sélectionnable explicitement mais n'est jamais implicite
-(voir « Discipline d'évaluation » dans `docs/roadmap.md`).
+d'être fusionnées. Le sélecteur de split de la vue Benchmark — partagé avec le
+flux général hérité de #64, une seule variable d'état pilotant `Run analysis`
+et `Summarize by candidate` pour les deux usages — ouvre désormais par défaut
+sur `validation` ; `test_frozen` demeure sélectionnable explicitement mais
+n'est jamais implicite (voir « Discipline d'évaluation » dans
+`docs/roadmap.md`).
 
 **Verifying the no-prompt path is unchanged.** Because #93's hard requirement
 is "no prompt configured ⇒ byte-identical output", verify it against a real,

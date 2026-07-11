@@ -148,7 +148,7 @@ function App(): React.ReactElement {
   const [candidateCatalog, setCandidateCatalog] = useState<SttBenchmarkCandidateOption[]>([]);
   const [selectedCandidates, setSelectedCandidates] = useState<BenchmarkCandidateIdentity[]>([]);
   const [benchmarkTargetKey, setBenchmarkTargetKey] = useState<string | null>(null);
-  const [batchSplit, setBatchSplit] = useState<SttBenchmarkSetSplit>("test_frozen");
+  const [batchSplit, setBatchSplit] = useState<SttBenchmarkSetSplit>("validation");
   const [batchProgress, setBatchProgress] = useState<SttBenchmarkSetProgress | null>(null);
   const [batchOutcomes, setBatchOutcomes] = useState<SttBenchmarkSetSegmentOutcome[]>([]);
   const [batchError, setBatchError] = useState("");
