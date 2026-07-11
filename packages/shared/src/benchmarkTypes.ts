@@ -101,7 +101,12 @@ export type SttCandidateSelectionResponse = {
 
 export type SttBenchmarkSetRunRequest = {
   split: SttBenchmarkSetSplit;
-  models?: string[];
+  /**
+   * 1 to 3 full candidate identities to run (see issue #94). Omitted means
+   * "every catalog candidate" — used by the unfiltered single-segment
+   * benchmark endpoints, never by the checkbox-driven set run.
+   */
+  candidates?: BenchmarkCandidateIdentity[];
 };
 
 export type SttBenchmarkSetSegmentOutcome = {

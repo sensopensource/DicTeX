@@ -52,6 +52,7 @@ import type {
   DatasetBuilderSaveResponse,
   DatasetBuilderSource,
 } from "../../main/datasetBuilder.js";
+import type { SttBenchmarkCandidateOption } from "../../main/candidateCatalog.js";
 
 type AudioSegmentPlayback = {
   audioBytes: Uint8Array;
@@ -82,7 +83,10 @@ type LabApi = {
   ) => Promise<SttBenchmarkSetMembershipResponse>;
   runLatestSttBenchmark: () => Promise<SttBenchmarkResponse>;
   runSegmentSttBenchmark: (audioSegment: AudioSegmentRecord) => Promise<SttBenchmarkResponse>;
-  runSetSttBenchmark: (split: SttBenchmarkSetSplit, models?: string[]) => Promise<SttBenchmarkSetRunResponse>;
+  runSetSttBenchmark: (
+    split: SttBenchmarkSetSplit,
+    candidates?: BenchmarkCandidateIdentity[],
+  ) => Promise<SttBenchmarkSetRunResponse>;
   summarizeSttBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkCandidateSummaryResponse>;
   selectSttCandidate: (request: SttCandidateSelectionRequest) => Promise<SttCandidateSelectionResponse>;
   getLatestSttCandidateSelection: () => Promise<SttCandidateSelectionResponse | null>;
@@ -90,7 +94,7 @@ type LabApi = {
   prefillDatasetBuilderLayer2: (literalTranscript: string) => Promise<string>;
   exportSttDataset: () => Promise<SttDatasetExportSummary>;
   openExportFolder: (exportDir?: string) => Promise<boolean>;
-  getSttBenchmarkModels: () => Promise<string[]>;
+  getSttBenchmarkCandidates: () => Promise<SttBenchmarkCandidateOption[]>;
   openLabDataFolder: () => Promise<boolean>;
   openSourceDataFolder: () => Promise<boolean>;
   openLabEventsLog: () => Promise<boolean>;
@@ -141,10 +145,10 @@ function App(): React.ReactElement {
   const [benchmarkResults, setBenchmarkResults] = useState<SttBenchmarkResult[]>([]);
   const [benchmarkError, setBenchmarkError] = useState("");
   const [isBenchmarking, setIsBenchmarking] = useState(false);
-  const [benchmarkModels, setBenchmarkModels] = useState<string[]>([]);
-  const [selectedBenchmarkModels, setSelectedBenchmarkModels] = useState<string[]>([]);
+  const [candidateCatalog, setCandidateCatalog] = useState<SttBenchmarkCandidateOption[]>([]);
+  const [selectedCandidates, setSelectedCandidates] = useState<BenchmarkCandidateIdentity[]>([]);
   const [benchmarkTargetKey, setBenchmarkTargetKey] = useState<string | null>(null);
-  const [batchSplit, setBatchSplit] = useState<SttBenchmarkSetSplit>("test_frozen");
+  const [batchSplit, setBatchSplit] = useState<SttBenchmarkSetSplit>("validation");
   const [batchProgress, setBatchProgress] = useState<SttBenchmarkSetProgress | null>(null);
   const [batchOutcomes, setBatchOutcomes] = useState<SttBenchmarkSetSegmentOutcome[]>([]);
   const [batchError, setBatchError] = useState("");
@@ -195,10 +199,10 @@ function App(): React.ReactElement {
     const removeBatchProgressListener = window.dictexLab.onBatchBenchmarkProgress(setBatchProgress);
     void refreshDataFolder();
     void window.dictexLab
-      .getSttBenchmarkModels()
-      .then((models) => {
-        setBenchmarkModels(models);
-        setSelectedBenchmarkModels(models.slice(0, 3));
+      .getSttBenchmarkCandidates()
+      .then((catalog) => {
+        setCandidateCatalog(catalog);
+        setSelectedCandidates(catalog.slice(0, 3).map((option) => option.candidate));
       })
       .catch(() => {
         // Non-fatal; the batch selector just shows no candidates.
@@ -511,20 +515,21 @@ function App(): React.ReactElement {
     }
   }
 
-  function toggleBenchmarkModel(model: string): void {
-    setSelectedBenchmarkModels((current) => {
-      if (current.includes(model)) {
-        return current.filter((selected) => selected !== model);
+  function toggleCandidate(candidate: BenchmarkCandidateIdentity): void {
+    const key = formatCandidateIdentityKey(candidate);
+    setSelectedCandidates((current) => {
+      if (current.some((selected) => formatCandidateIdentityKey(selected) === key)) {
+        return current.filter((selected) => formatCandidateIdentityKey(selected) !== key);
       }
       if (current.length >= 3) {
         return current;
       }
-      return [...current, model];
+      return [...current, candidate];
     });
   }
 
   async function runSetSttBenchmark(): Promise<void> {
-    if (selectedBenchmarkModels.length < 1) {
+    if (selectedCandidates.length < 1) {
       setBatchError("Check at least one STT candidate to run");
       return;
     }
@@ -534,7 +539,7 @@ function App(): React.ReactElement {
     setBatchProgress(null);
     setIsRunningBatch(true);
     try {
-      const response = await window.dictexLab.runSetSttBenchmark(batchSplit, selectedBenchmarkModels);
+      const response = await window.dictexLab.runSetSttBenchmark(batchSplit, selectedCandidates);
       setBatchOutcomes(response.outcomes);
       setNotice(
         `Benchmarked ${formatBenchmarkSetSplit(response.split)}: ${response.done} done, ${response.failed} failed of ${response.total}`,
@@ -551,9 +556,10 @@ function App(): React.ReactElement {
     setIsSummarizing(true);
     try {
       const response = await window.dictexLab.summarizeSttBenchmarkSet(batchSplit);
+      const selectedKeys = new Set(selectedCandidates.map((candidate) => formatCandidateIdentityKey(candidate)));
       setCandidateSummary({
         ...response,
-        candidates: response.candidates.filter((summary) => selectedBenchmarkModels.includes(summary.candidate.model)),
+        candidates: response.candidates.filter((summary) => selectedKeys.has(formatCandidateIdentityKey(summary.candidate))),
       });
     } catch (summaryRunError) {
       setSummaryError(summaryRunError instanceof Error ? summaryRunError.message : "Benchmark summary failed");
@@ -697,7 +703,7 @@ function App(): React.ReactElement {
           benchmarkResults={benchmarkResults}
           benchmarkError={benchmarkError}
           isBenchmarking={isBenchmarking}
-          benchmarkModels={benchmarkModels}
+          candidateCatalog={candidateCatalog}
           benchmarkTargetKey={benchmarkTargetKey}
           runLatestSttBenchmark={() => void runLatestSttBenchmark()}
           isRunningBatch={isRunningBatch}
@@ -706,8 +712,8 @@ function App(): React.ReactElement {
           batchProgress={batchProgress}
           batchOutcomes={batchOutcomes}
           batchError={batchError}
-          selectedBenchmarkModels={selectedBenchmarkModels}
-          toggleBenchmarkModel={toggleBenchmarkModel}
+          selectedCandidates={selectedCandidates}
+          toggleCandidate={toggleCandidate}
           runAnalysis={() => void runAnalysis()}
           candidateSummary={candidateSummary}
           summaryError={summaryError}
@@ -1137,7 +1143,7 @@ type BenchmarkViewProps = {
   benchmarkResults: SttBenchmarkResult[];
   benchmarkError: string;
   isBenchmarking: boolean;
-  benchmarkModels: string[];
+  candidateCatalog: SttBenchmarkCandidateOption[];
   benchmarkTargetKey: string | null;
   runLatestSttBenchmark: () => void;
   isRunningBatch: boolean;
@@ -1146,8 +1152,8 @@ type BenchmarkViewProps = {
   batchProgress: SttBenchmarkSetProgress | null;
   batchOutcomes: SttBenchmarkSetSegmentOutcome[];
   batchError: string;
-  selectedBenchmarkModels: string[];
-  toggleBenchmarkModel: (model: string) => void;
+  selectedCandidates: BenchmarkCandidateIdentity[];
+  toggleCandidate: (candidate: BenchmarkCandidateIdentity) => void;
   runAnalysis: () => void;
   candidateSummary: SttBenchmarkCandidateSummaryResponse | null;
   summaryError: string;
@@ -1163,12 +1169,37 @@ type BenchmarkViewProps = {
   onBack: () => void;
 };
 
+/**
+ * Groups the flat candidate catalog by provider then model (issue #94), so
+ * the checkbox UI stays compact and readable as new providers/models/prompt
+ * variants are added — the renderer never hardcodes a candidate list, it
+ * only groups whatever `getSttBenchmarkCandidates` returns.
+ */
+function groupCandidateCatalog(
+  catalog: SttBenchmarkCandidateOption[],
+): [string, [string, SttBenchmarkCandidateOption[]][]][] {
+  const byProvider = new Map<string, Map<string, SttBenchmarkCandidateOption[]>>();
+
+  for (const option of catalog) {
+    const byModel = byProvider.get(option.providerLabel) ?? new Map<string, SttBenchmarkCandidateOption[]>();
+    const options = byModel.get(option.modelLabel) ?? [];
+    options.push(option);
+    byModel.set(option.modelLabel, options);
+    byProvider.set(option.providerLabel, byModel);
+  }
+
+  return Array.from(byProvider.entries()).map(([providerLabel, byModel]) => [
+    providerLabel,
+    Array.from(byModel.entries()),
+  ]);
+}
+
 function BenchmarkView({
   benchmarkSource,
   benchmarkResults,
   benchmarkError,
   isBenchmarking,
-  benchmarkModels,
+  candidateCatalog,
   benchmarkTargetKey,
   runLatestSttBenchmark,
   isRunningBatch,
@@ -1177,8 +1208,8 @@ function BenchmarkView({
   batchProgress,
   batchOutcomes,
   batchError,
-  selectedBenchmarkModels,
-  toggleBenchmarkModel,
+  selectedCandidates,
+  toggleCandidate,
   runAnalysis,
   candidateSummary,
   summaryError,
@@ -1212,7 +1243,11 @@ function BenchmarkView({
             <p title={benchmarkSource ? `${benchmarkSource.sessionId} / ${benchmarkSource.segmentId}` : undefined}>
               {benchmarkSource ? `${benchmarkSource.sessionId} / ${benchmarkSource.segmentId}` : "Latest audio segment"}
             </p>
-            {benchmarkModels.length > 0 && <p className="benchmark-models">Models: {benchmarkModels.join(", ")}</p>}
+            {candidateCatalog.length > 0 && (
+              <p className="benchmark-models">
+                {candidateCatalog.length} candidate{candidateCatalog.length === 1 ? "" : "s"} available
+              </p>
+            )}
           </div>
           <button
             className="secondary-button"
@@ -1274,7 +1309,7 @@ function BenchmarkView({
             </select>
             <button
               className="secondary-button"
-              disabled={isRunningBatch || isBenchmarking || selectedBenchmarkModels.length < 1}
+              disabled={isRunningBatch || isBenchmarking || selectedCandidates.length < 1}
               onClick={runAnalysis}
             >
               {isRunningBatch ? "Running" : "Run analysis"}
@@ -1282,22 +1317,37 @@ function BenchmarkView({
           </div>
         </div>
 
-        {benchmarkModels.length > 0 && (
-          <div className="candidate-checkbox-row" role="group" aria-label="STT candidates to compare (1-3)">
-            {benchmarkModels.map((model) => {
-              const isChecked = selectedBenchmarkModels.includes(model);
-              return (
-                <label key={model} className="candidate-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    disabled={isRunningBatch || isBenchmarking || (!isChecked && selectedBenchmarkModels.length >= 3)}
-                    onChange={() => toggleBenchmarkModel(model)}
-                  />
-                  {model}
-                </label>
-              );
-            })}
+        {candidateCatalog.length > 0 && (
+          <div className="candidate-catalog" role="group" aria-label="STT candidates to compare (1-3)">
+            {groupCandidateCatalog(candidateCatalog).map(([providerLabel, models]) => (
+              <div className="candidate-provider-group" key={providerLabel}>
+                <strong className="candidate-provider-label">{providerLabel}</strong>
+                {models.map(([modelLabel, options]) => (
+                  <div className="candidate-model-group" key={`${providerLabel}/${modelLabel}`}>
+                    <span className="candidate-model-label">{modelLabel}</span>
+                    <div className="candidate-checkbox-row">
+                      {options.map((option) => {
+                        const candidateKey = formatCandidateIdentityKey(option.candidate);
+                        const isChecked = selectedCandidates.some(
+                          (selected) => formatCandidateIdentityKey(selected) === candidateKey,
+                        );
+                        return (
+                          <label key={candidateKey} className="candidate-checkbox" title={candidateKey}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              disabled={isRunningBatch || isBenchmarking || (!isChecked && selectedCandidates.length >= 3)}
+                              onChange={() => toggleCandidate(option.candidate)}
+                            />
+                            {option.variantLabel}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         )}
 
@@ -1377,7 +1427,11 @@ function BenchmarkView({
           <div>
             <h2>Candidate summary</h2>
             <p>
-              Compare {selectedBenchmarkModels.length > 0 ? selectedBenchmarkModels.join(", ") : "checked candidates"} over{" "}
+              Compare{" "}
+              {selectedCandidates.length > 0
+                ? selectedCandidates.map((candidate) => formatCandidateIdentity(candidate)).join(", ")
+                : "checked candidates"}{" "}
+              over{" "}
               {formatBenchmarkSetSplit(batchSplit)}. CER/WER: lower is better.
             </p>
           </div>

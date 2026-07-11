@@ -18,7 +18,6 @@ import {
   restoreCommandWords,
   transcribeWithPython,
   ProviderUnavailableError,
-  getSttBenchmarkModels,
   type AudioSegmentRecord,
   type LocalEvent,
   type ReconstructedSegment,
@@ -51,6 +50,14 @@ import {
   type DatasetBuilderSaveRequest,
   type DatasetBuilderSaveResponse,
 } from "./datasetBuilder.js";
+import {
+  buildSttBenchmarkCandidateCatalog,
+  toCandidateOption,
+  validateRequestedCandidates,
+  FASTER_WHISPER_PROVIDER,
+  type SttBenchmarkCandidateConfig,
+  type SttBenchmarkCandidateOption,
+} from "./candidateCatalog.js";
 
 /**
  * DicTeX Lab main process (pivot Phase 2, issue #76). No microphone, no
@@ -87,13 +94,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // depth as apps/dictex, since both apps live one level under apps/.
 const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
 const enginePath = path.join(repoRoot, "packages", "engine", "transcribe.py");
-
-// faster-whisper is the benchmark provider shared with dictation; Vosk is the
-// second, benchmark-only provider (see docs/product-decisions.md). Provider
-// names match the Python sidecar registry and the candidate identity.
-const fasterWhisperProvider = "faster-whisper";
-const voskProvider = "vosk";
-const defaultVoskBenchmarkModels = ["vosk-model-small-fr-0.22"];
 
 let mainWindow: BrowserWindow | null = null;
 // Configured DicTeX data folder (SOURCE root, read-only). Null = use default.
@@ -226,7 +226,7 @@ function isSttBenchmarkSetSplit(value: unknown): value is SttBenchmarkSetSplit {
 
 function getBaseSttConfig(): SttConfig {
   return {
-    engine: fasterWhisperProvider,
+    engine: FASTER_WHISPER_PROVIDER,
     // Overwritten per-candidate below; only device/language/computeType from
     // this base config end up in the built variant string.
     model: process.env.DICTEX_STT_MODEL || "base",
@@ -234,42 +234,6 @@ function getBaseSttConfig(): SttConfig {
     device: process.env.DICTEX_STT_DEVICE || "cpu",
     computeType: process.env.DICTEX_STT_COMPUTE_TYPE || "int8",
   };
-}
-
-function getVoskBenchmarkModels(): string[] {
-  const envValue = process.env.DICTEX_VOSK_BENCHMARK_MODELS;
-  if (envValue === undefined) {
-    return defaultVoskBenchmarkModels;
-  }
-
-  const parsed = envValue
-    .split(",")
-    .map((m) => m.trim())
-    .filter((m) => m.length > 0);
-
-  // An explicitly empty value disables Vosk candidates entirely; a set value
-  // replaces the default list.
-  return Array.from(new Set(parsed));
-}
-
-function getSttBenchmarkCandidates(config: SttConfig): BenchmarkCandidate[] {
-  const fasterWhisper: BenchmarkCandidate[] = getSttBenchmarkModels().map((model) => ({
-    stage: "stt",
-    provider: fasterWhisperProvider,
-    model,
-    variant: `${config.device}-${config.computeType}-${config.language}`,
-  }));
-
-  // Vosk is CPU-only and has no compute-type dimension, so its variant only
-  // carries the device and language to keep the candidate identity meaningful.
-  const vosk: BenchmarkCandidate[] = getVoskBenchmarkModels().map((model) => ({
-    stage: "stt",
-    provider: voskProvider,
-    model,
-    variant: `cpu-${config.language}`,
-  }));
-
-  return [...fasterWhisper, ...vosk];
 }
 
 /**
@@ -281,7 +245,7 @@ function getSttBenchmarkCandidates(config: SttConfig): BenchmarkCandidate[] {
 async function runSttBenchmarkForAudioSegment(
   audioSegment: AudioSegmentRecord,
   events?: LocalEvent[],
-  modelFilter?: string[],
+  candidateFilter?: SttBenchmarkCandidateConfig[],
 ): Promise<SttBenchmarkResponse> {
   const audioPath = resolveSourceAudioRef(audioSegment.audioRef);
   if (!existsSync(audioPath)) {
@@ -293,15 +257,20 @@ async function runSttBenchmarkForAudioSegment(
   const diagnostics: string[] = [];
   const loadedEvents = events ?? (await readAllEvents());
   const correction = getLatestSttCorrection(loadedEvents, audioSegment.sessionId, audioSegment.segmentId);
-  const candidates = modelFilter
-    ? getSttBenchmarkCandidates(baseConfig).filter((candidate) => modelFilter.includes(candidate.model))
-    : getSttBenchmarkCandidates(baseConfig);
+  const candidates = candidateFilter ?? buildSttBenchmarkCandidateCatalog(baseConfig);
 
   for (const candidate of candidates) {
     const config: SttConfig = {
       ...baseConfig,
       engine: candidate.provider,
       model: candidate.model,
+      promptVariant: candidate.promptVariant,
+    };
+    const identity: BenchmarkCandidate = {
+      stage: candidate.stage,
+      provider: candidate.provider,
+      model: candidate.model,
+      variant: candidate.variant,
     };
     const transcriptionStartedAt = Date.now();
     let sttResult: EngineTranscriptionResult;
@@ -324,11 +293,11 @@ async function runSttBenchmarkForAudioSegment(
       sessionId: audioSegment.sessionId,
       segmentId: audioSegment.segmentId,
       audioRef: audioSegment.audioRef,
-      candidate,
-      stage: candidate.stage,
-      provider: candidate.provider,
-      model: candidate.model,
-      variant: candidate.variant ?? null,
+      candidate: identity,
+      stage: identity.stage,
+      provider: identity.provider,
+      model: identity.model,
+      variant: identity.variant ?? null,
       sttEngine: sttResult.sttEngine,
       sttModel: sttResult.sttModel,
       sttLanguage: sttResult.sttLanguage,
@@ -744,18 +713,10 @@ ipcMain.handle(
       throw new Error("Invalid STT benchmark set split");
     }
 
-    let modelFilter: string[] | undefined;
-    if (request.models !== undefined) {
-      const availableModels = getSttBenchmarkModels();
-      if (
-        !Array.isArray(request.models) ||
-        request.models.length < 1 ||
-        request.models.length > 3 ||
-        request.models.some((model) => typeof model !== "string" || !availableModels.includes(model))
-      ) {
-        throw new Error("Select 1 to 3 known STT benchmark candidates");
-      }
-      modelFilter = request.models;
+    let candidateFilter: SttBenchmarkCandidateConfig[] | undefined;
+    if (request.candidates !== undefined) {
+      const catalog = buildSttBenchmarkCandidateCatalog(getBaseSttConfig());
+      candidateFilter = validateRequestedCandidates(request.candidates, catalog);
     }
 
     const split = request.split;
@@ -792,7 +753,7 @@ ipcMain.handle(
         const response = await runSttBenchmarkForAudioSegment(
           { sessionId: segment.sessionId, segmentId: segment.segmentId, audioRef: segment.audioRef },
           events,
-          modelFilter,
+          candidateFilter,
         );
         running = 0;
         done += 1;
@@ -1096,7 +1057,9 @@ ipcMain.handle("diagnostics:open-lab-events-log", async (): Promise<boolean> => 
   return error.length === 0;
 });
 
-ipcMain.handle("diagnostics:get-stt-benchmark-models", (): string[] => getSttBenchmarkModels());
+ipcMain.handle("diagnostics:get-stt-benchmark-candidates", (): SttBenchmarkCandidateOption[] =>
+  buildSttBenchmarkCandidateCatalog(getBaseSttConfig()).map(toCandidateOption),
+);
 
 app.whenReady().then(async () => {
   await loadPersistedSettings();

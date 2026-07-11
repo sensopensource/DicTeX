@@ -329,8 +329,18 @@ whatever is left in the field, same as before this issue.
    (`Open Lab events log`) and DicTeX's `events.jsonl` is untouched.
 4. In `Benchmark`, click `Benchmark latest` (needs the venv or
    `DICTEX_PYTHON`); confirm `tiny`/`base`/`small` transcripts + latency
-   appear. Run `Run analysis` over `Test frozen`, `Summarize by candidate`,
+   appear. Confirm the split selector opens on `Validation` (the default).
+   Switch it to `Test frozen`, run `Run analysis`, `Summarize by candidate`,
    and `Select` a candidate.
+4bis. Set `DICTEX_STT_PROMPT_VARIANTS` (see "Comparer les variantes de
+   contexte dans le Lab" above), restart the Lab, and confirm the same
+   faster-whisper model now shows a baseline row and one row per variant in
+   the checkbox catalog, and that the split selector is back on `Validation`
+   by default. Check the baseline plus two variants of the same model (3
+   candidates), run `Run analysis`, then `Summarize by candidate`; confirm
+   the summary table shows three distinct rows for that one model (not
+   merged into one) and that unchecking a variant removes only that row on
+   the next summarize.
 5. In `Dataset`, use **Build a dataset entry**: paste a transcription (no
    segment) and type a Layer 1 literal transcript containing a rule the
    shipped default regex recognizes plus a word it does not (e.g.
@@ -643,9 +653,37 @@ non-zero with a descriptive stderr message, never a silent no-op. Requesting an
 undefined variant name is likewise a loud failure, so a typo in the variant
 name can never be mistaken for "prompt applied".
 
-Choosing prompt variants from the Lab's benchmark UI, and wiring the resulting
-`candidate.variant` into a live benchmark run, is issue #94 (sequenced after
-#93); #93 only ships the mechanism (sidecar plumbing + config parsing).
+### Comparer les variantes de contexte dans le Lab (issue #94)
+
+Le Benchmark du Lab compare directement la baseline sans prompt et les
+variantes de `initial_prompt` configurées, sur les mêmes segments audio.
+
+Le catalogue de candidats est construit dans le processus principal du Lab
+(`apps/lab/src/main/candidateCatalog.ts`, jamais codé en dur dans le
+renderer) : pour chaque modèle faster-whisper de
+`DICTEX_STT_BENCHMARK_MODELS`, une candidature baseline (sans prompt) plus une
+candidature par entrée de `DICTEX_STT_PROMPT_VARIANTS` ; pour chaque modèle
+Vosk de `DICTEX_VOSK_BENCHMARK_MODELS`, une seule candidature baseline, Vosk
+n'ayant aucune notion de prompt. L'identité complète
+`{stage, provider, model, variant}` de chaque candidat voyage jusqu'au
+renderer ; le contrat IPC `benchmark:run-set-stt` prend 1 à 3 identités
+complètes (`candidates`), plus jamais une simple liste de noms de modèle, afin
+que deux variantes du même modèle puissent être cochées et exécutées
+ensemble. Le processus principal revalide toujours la sélection reçue contre
+son propre catalogue avant de lancer quoi que ce soit.
+
+Dans la vue Benchmark, le panneau « Benchmark set » présente ce catalogue
+groupé par fournisseur puis par modèle, avec des cases à cocher libellées
+« baseline » ou par le nom de la variante — jamais par la chaîne technique de
+variant (par ex. `cpu-int8-fr+prompt-v3-fr-math`). Le panneau « Candidate
+summary » filtre désormais par identité complète de candidat, donc deux
+variantes du même modèle apparaissent comme deux lignes distinctes au lieu
+d'être fusionnées. Le sélecteur de split de la vue Benchmark — partagé avec le
+flux général hérité de #64, une seule variable d'état pilotant `Run analysis`
+et `Summarize by candidate` pour les deux usages — ouvre désormais par défaut
+sur `validation` ; `test_frozen` demeure sélectionnable explicitement mais
+n'est jamais implicite (voir « Discipline d'évaluation » dans
+`docs/roadmap.md`).
 
 **Verifying the no-prompt path is unchanged.** Because #93's hard requirement
 is "no prompt configured ⇒ byte-identical output", verify it against a real,
