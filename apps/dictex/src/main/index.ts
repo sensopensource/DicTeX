@@ -9,33 +9,13 @@ import {
   normalizeTranscript,
   readLocalEvents,
   reconstructRecentSegments,
-  transcribeWithPython,
   type ReconstructedSegment,
   type SttConfig,
 } from "@dictex/shared";
-import { prepareNormalization } from "./normalizationPolicy.js";
 import { readAppSettings, writeAppSettings } from "./settings.js";
-
-type TranscriptionResult = {
-  /** Raw STT output. Kept as the correction base; `stt_result.stt_output` mirrors it. */
-  transcript: string;
-  /** Inserted text — normalized when enabled, raw otherwise. */
-  normalizedTranscript: string;
-  /** True when normalization changed the text (normalized differs from raw). */
-  normalizationApplied: boolean;
-  /** Quiet diagnostics from the normalizer (e.g. malformed dictionary). */
-  normalizationDiagnostics: string[];
-  copiedToClipboard: boolean;
-  pastedToActiveApp: boolean;
-  sessionId: string;
-  segmentId: string;
-  audioRef: string;
-  sttEngine: string;
-  sttModel: string;
-  sttLanguage: string;
-  audioDurationSeconds: number | null;
-  transcriptionDurationMs: number;
-};
+import { runDictationTranscription, type JsonValue, type TranscriptionResult } from "./dictationFlow.js";
+import { createSttWorkerClient, type ResolvedWorkerConfig } from "./sttWorkerClient.js";
+import { SttWorkerManager } from "./sttWorkerManager.js";
 
 type TranscriptionOptions = {
   autoPaste?: boolean;
@@ -58,8 +38,6 @@ type OpenLabResult = {
   error?: string;
 };
 
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Built main output lives at `<repoRoot>/apps/dictex/out/main`, so four levels
 // up from `__dirname` (main -> out -> dictex -> apps -> repoRoot) is the real
@@ -67,7 +45,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // dictation venv stays at the repo root (`<repoRoot>/.venv`), so this must
 // resolve to the true repo root or both the engine and the venv lookup break.
 const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
-const enginePath = path.join(repoRoot, "packages", "engine", "transcribe.py");
+// The persistent worker (#114) replaces the per-dictation one-shot for DicTeX.
+// The Lab keeps using `transcribe.py` via `transcribeWithPython` (out of scope).
+const workerPath = path.join(repoRoot, "packages", "engine", "worker.py");
 const sessionId = `session_${new Date().toISOString().replace(/\D/g, "")}`;
 const globalHotkey = "Super+Alt+Space";
 // The minimum models always offered in the UI selector. `large-v3-turbo` is the
@@ -98,6 +78,34 @@ function getSttConfig(): SttConfig {
     computeType: process.env.DICTEX_STT_COMPUTE_TYPE || "int8",
   };
 }
+
+/** The worker generation the current settings ask for (dictation uses no prompt
+ * variant — that is #94, out of scope). */
+function getWorkerConfig(): ResolvedWorkerConfig {
+  const config = getSttConfig();
+  return {
+    provider: config.engine,
+    model: config.model,
+    language: config.language,
+    device: config.device,
+    computeType: config.computeType,
+  };
+}
+
+// One persistent worker for dictation, kept warm across dictations. Changing the
+// STT model lazily restarts it on the next dictation (stop old, start new) so a
+// single model stays resident. Diagnostics go to the console until the follow-up
+// ticket surfaces worker state in the UI.
+const sttWorkerManager = new SttWorkerManager({
+  createClient: (config) =>
+    createSttWorkerClient(config, {
+      repoRoot,
+      workerPath,
+      log: (message) => console.warn(message),
+    }),
+  log: (message) => console.warn(message),
+  shutdownTimeoutMs: 4000,
+});
 
 /**
  * Models offered in the UI selector: the minimum core set, plus any extras from
@@ -418,97 +426,54 @@ ipcMain.handle(
   ): Promise<TranscriptionResult> => {
     const createdAt = new Date().toISOString();
     const segmentId = getNextSegmentId();
-    // Freeze the setting for this run. UI changes are disabled while recording
-    // or transcribing, and this also makes direct IPC calls deterministic.
+    // Freeze the settings for this run. UI changes are disabled while recording
+    // or transcribing, and this also makes direct IPC calls deterministic: the
+    // model captured here is the worker generation this dictation transcribes on.
     const normalizerEnabledForRun = activeNormalizerEnabled;
-    const extension = getAudioExtension(mimeType);
+    const workerConfig = getWorkerConfig();
     const dataRoot = getDataRoot();
-    const audioDir = path.join(dataRoot, "audio", sessionId);
-    await mkdir(audioDir, { recursive: true });
 
-    const audioPath = path.join(audioDir, `${segmentId}.${extension}`);
-    await writeFile(audioPath, Buffer.from(audioBytes));
-    const audioRef = toPortableRef(dataRoot, audioPath);
-
-    await appendEvent({
-      event_type: "audio_segment",
-      session_id: sessionId,
-      segment_id: segmentId,
-      created_at: createdAt,
-      audio_ref: audioRef,
-      audio_mime_type: mimeType || "unknown",
-      audio_size_bytes: audioBytes.byteLength,
-    });
-
-    const transcriptionStartedAt = Date.now();
-    const sttResult = await transcribeWithPython(enginePath, repoRoot, audioPath, getSttConfig());
-    const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
-
-    await appendEvent({
-      event_type: "stt_result",
-      session_id: sessionId,
-      segment_id: segmentId,
-      created_at: new Date().toISOString(),
-      audio_ref: audioRef,
-      stt_engine: sttResult.sttEngine,
-      stt_model: sttResult.sttModel,
-      stt_language: sttResult.sttLanguage,
-      stt_output: sttResult.transcript,
-      corrected_transcript: null,
-      audio_duration_seconds: sttResult.audioDurationSeconds,
-      transcription_duration_ms: transcriptionDurationMs,
-    });
-
-    // The raw stt_result above stays untouched. The policy either runs the full
-    // pipeline or keeps the STT output byte-identical, then returns the explicit
-    // normalization_result payload for this segment.
-    const preparedNormalization = await prepareNormalization(
-      sttResult.transcript,
-      normalizerEnabledForRun,
-      () =>
-        normalizeTranscript(sttResult.transcript, {
-          dictionaryPath: getDictionaryPath(),
-          rulesPath: getRulesPath(),
-        }),
+    return runDictationTranscription(
+      {
+        now: () => Date.now(),
+        isoNow: () => new Date().toISOString(),
+        storeAudio: async (segment, mime, bytes) => {
+          const audioDir = path.join(dataRoot, "audio", sessionId);
+          await mkdir(audioDir, { recursive: true });
+          const audioPath = path.join(audioDir, `${segment}.${getAudioExtension(mime)}`);
+          await writeFile(audioPath, Buffer.from(bytes));
+          return { audioPath, audioRef: toPortableRef(dataRoot, audioPath) };
+        },
+        appendEvent,
+        // The manager owns the persistent worker, sequential queueing, the
+        // config-change restart, and the bounded crash restart+replay. The
+        // Normalizer setting never restarts it: only the model/device/compute
+        // type does. On a second failure this rejects, and the flow leaves the
+        // audio and its audio_segment on disk for manual retry.
+        transcribe: (audioPath) =>
+          sttWorkerManager.transcribe(workerConfig, {
+            audioPath,
+            language: workerConfig.language,
+            promptVariant: workerConfig.promptVariant,
+          }),
+        normalize: (rawTranscript) =>
+          normalizeTranscript(rawTranscript, {
+            dictionaryPath: getDictionaryPath(),
+            rulesPath: getRulesPath(),
+          }),
+        writeClipboard: (text) => clipboard.writeText(text),
+        pasteActiveApp: pasteClipboardIntoActiveApp,
+      },
+      {
+        sessionId,
+        segmentId,
+        createdAt,
+        mimeType,
+        audioBytes,
+        normalizerEnabled: normalizerEnabledForRun,
+        autoPaste: options.autoPaste === true,
+      },
     );
-
-    await appendEvent({
-      event_type: "normalization_result",
-      session_id: sessionId,
-      segment_id: segmentId,
-      created_at: new Date().toISOString(),
-      audio_ref: audioRef,
-      input_transcript: preparedNormalization.inputTranscript,
-      output_transcript: preparedNormalization.outputTranscript,
-      ...preparedNormalization.eventState,
-      layers: preparedNormalization.layers,
-      diagnostics: preparedNormalization.normalizationDiagnostics,
-    });
-
-    const { insertedTranscript, normalizationApplied, normalizationDiagnostics } = preparedNormalization;
-
-    clipboard.writeText(insertedTranscript);
-    const pastedToActiveApp =
-      options.autoPaste === true && insertedTranscript.trim().length > 0
-        ? await pasteClipboardIntoActiveApp()
-        : false;
-
-    return {
-      transcript: sttResult.transcript,
-      normalizedTranscript: insertedTranscript,
-      normalizationApplied,
-      normalizationDiagnostics,
-      copiedToClipboard: true,
-      pastedToActiveApp,
-      sessionId,
-      segmentId,
-      audioRef,
-      sttEngine: sttResult.sttEngine,
-      sttModel: sttResult.sttModel,
-      sttLanguage: sttResult.sttLanguage,
-      audioDurationSeconds: sttResult.audioDurationSeconds,
-      transcriptionDurationMs,
-    };
   },
 );
 
@@ -632,12 +597,31 @@ app.whenReady().then(async () => {
   await loadPersistedSettings();
   createWindow();
   registerGlobalHotkey();
+  // Open the window normally, then warm the worker asynchronously so the first
+  // dictation does not pay the model load. A dictation that finishes before the
+  // worker is ready simply waits for it (no lost audio, no one-shot fallback).
+  sttWorkerManager.prewarm(getWorkerConfig());
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
       sendHotkeyStatus();
     }
+  });
+});
+
+// Ask the worker to stop, then force-kill it after a bounded delay, before the
+// app exits — so a model is never left resident. `preventDefault` lets the
+// bounded async shutdown finish; the guard makes the re-quit a no-op.
+let workerDisposeStarted = false;
+app.on("before-quit", (event) => {
+  if (workerDisposeStarted) {
+    return;
+  }
+  workerDisposeStarted = true;
+  event.preventDefault();
+  void sttWorkerManager.dispose().finally(() => {
+    app.quit();
   });
 });
 
