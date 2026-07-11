@@ -22,11 +22,21 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Install dependencies
         run: npm ci
 
       - name: Typecheck
         run: npm run typecheck
+
+      # The persistent STT worker (#114) is exercised with a fake provider/model,
+      # so this needs no model download, GPU, or network — it stays CI-safe.
+      - name: Engine tests
+        run: python -m unittest discover -s packages/engine/tests -v
 
       # Guards the no-sentinel-in-store invariant (#92). A sentinel is invisible,
       # so a corrupted store would look healthy — this suite is the only thing
