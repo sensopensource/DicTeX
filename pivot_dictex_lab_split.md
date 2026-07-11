@@ -3,7 +3,8 @@
 > **Archive historique.** Pivot adopté le 9 juillet 2026 et entièrement terminé
 > par les PR #74, #79, #80, #81 et #82. La séparation reste une décision
 > d'architecture, mais la priorité actuelle vit dans `docs/roadmap.md`. Les
-> nouveaux travaux et leur documentation sont rédigés en français.
+> tickets, commits, demandes de fusion et documents sont rédigés en français ;
+> le code et l'interface restent en anglais.
 
 Ce pivot a remplacé la capture de données intégrée à DicTeX pour tout ce qui
 concerne l'emplacement des corrections, mesures et exports. La stratégie de

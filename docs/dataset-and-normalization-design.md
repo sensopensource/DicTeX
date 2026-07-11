@@ -12,6 +12,13 @@ normalization strategy (`pivot_strategique_stt_normalisation.md`).
 Read this before adding a correction kind, a normalizer layer, or a dataset
 export field.
 
+**Provenance lorsque le normaliseur est désactivé (#105).** DicTeX conserve un
+événement `normalization_result` même si le pipeline ne s'exécute pas. Cet
+événement porte `disabled: true`, omet `passthrough`, répète le STT brut comme
+entrée et sortie, et contient des `layers` et `diagnostics` vides. Ainsi,
+`passthrough: true` continue de signifier exclusivement « pipeline exécuté sans
+modification » et les données futures peuvent distinguer les deux situations.
+
 ---
 
 ## 1. One segment, two datasets

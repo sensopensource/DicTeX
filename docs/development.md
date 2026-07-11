@@ -147,8 +147,9 @@ scripts\npm.cmd run dev
 11. Click `Open events log` and confirm `audio_segment`, `stt_result`, and `normalization_result` events were appended. (DicTeX no longer writes corrections or benchmark events — those live in DicTeX Lab.)
 12. Click `Open dictionary`, add an entry like `{"from":"dic tex","to":"DicTeX"}`, save the file, then dictate a phrase containing "dic tex". Confirm the clipboard/pasted text and the `Inserted (normalized)` line show `DicTeX`, the `Last transcript (raw)` textarea still shows the raw STT output, and a `normalization_result` event was appended while `stt_result.stt_output` kept the raw transcript. Break the JSON on purpose and confirm the next dictation still inserts the raw text with a quiet `Normalizer:` diagnostic instead of failing.
 13. Without touching `rules.json`, dictate "deux plus trois" spoken as digits (e.g. "2 plus 3") and confirm the inserted text shows `$2 + 3$` (canonical LaTeX wrapped in `$…$`, #107) from the shipped default rules alone. Then dictate an ordinary sentence containing "plus" or "moins" outside a math context (e.g. "je suis de plus en plus fatigué") and confirm it is inserted unchanged. Click `Open rules`, break the JSON on purpose, and confirm the next dictation inserts the (still dictionary-normalized) text unchanged by regex rules with a quiet `Normalizer:` diagnostic instead of failing.
-14. In the `STT model` selector (controls panel), pick a different model. Confirm the `Model` diagnostic reflects it, dictate a phrase, and confirm the `stt_result` event records the chosen model. Restart the app and confirm the selector still shows the chosen model (persisted in `data/settings.json`). Corrupt `settings.json` and confirm the app still starts and dictates using the env var / default `base`.
-15. Click **Open Lab**. With the Lab built (`scripts\npm.cmd run build`), confirm the DicTeX Lab app launches; without a build, confirm DicTeX shows a graceful "build/start the Lab first" message and does not crash.
+14. Placer l'interrupteur `Normalizer` sur **Off**, dicter « retour à la ligne x au carré », puis vérifier que le texte copié ou inséré est identique octet par octet à `Last transcript` : les mots de commande restent littéraux et aucun LaTeX n'est produit. Vérifier que le nouvel événement `normalization_result` contient `disabled: true`, aucun champ `passthrough` et des `layers` vides. Redémarrer DicTeX, confirmer que l'état Off persiste, puis repasser sur On et vérifier que règles et commandes s'appliquent à nouveau.
+15. Dans le sélecteur `STT model`, choisir un autre modèle. Vérifier le diagnostic `Model`, dicter une phrase et confirmer que l'événement `stt_result` contient le modèle choisi. Redémarrer l'application et vérifier la persistance dans `data/settings.json`. Corrompre ce fichier et confirmer que DicTeX redémarre avec la variable d'environnement ou `base`, et avec le normaliseur activé.
+16. Cliquer sur **Open Lab**. Avec un Lab construit (`scripts\npm.cmd run build`), vérifier son ouverture ; sans construction, vérifier que DicTeX affiche une erreur explicite sans planter.
 
 Benchmark, typed corrections, benchmark-set splits, candidate selection, Vosk, and the test_frozen dataset export are **no longer in DicTeX** (Pivot Phase 3) — they now live in DicTeX Lab and are verified there (see "DicTeX Lab" below).
 
@@ -419,7 +420,7 @@ data/settings.json
 ```
 
 ```json
-{"sttModel":"large-v3-turbo"}
+{"sttModel":"large-v3-turbo","normalizerEnabled":true}
 ```
 
 It is a minimal flat JSON object. Model precedence is:
@@ -432,6 +433,26 @@ A missing or malformed `settings.json` never crashes the app or blocks
 dictation: it degrades to the env var / default with a quiet console
 diagnostic. `stt_result` events keep recording the model actually used per
 segment.
+
+### Interrupteur du normaliseur
+
+La vue Home expose un interrupteur anglais `Normalizer` On/Off. Son booléen
+`normalizerEnabled` est enregistré dans `data/settings.json` et s'applique à la
+dictée suivante. Un champ absent — notamment dans un ancien fichier antérieur à
+#105 — vaut `true` afin de préserver le comportement historique.
+
+Sur On, le pipeline dictionnaire → extraction des commandes → regex s'exécute.
+Sur Off, DicTeX n'appelle jamais `normalizeTranscript` : le presse-papiers et le
+collage automatique reçoivent la sortie STT brute octet par octet, et les mots
+de commande restent littéraux. DicTeX ajoute tout de même un événement
+`normalization_result` portant `disabled: true`, sans `passthrough`, avec des
+`layers` et `diagnostics` vides. `passthrough` reste réservé à un pipeline activé
+qui s'est exécuté sans modifier son entrée.
+
+L'interrupteur est désactivé pendant l'enregistrement et la transcription afin
+qu'un segment ne change pas de politique en cours de traitement. Le Lab n'est
+pas concerné : son outil de saisie et son export rejouent toujours explicitement
+le normaliseur.
 
 ### GPU (CUDA) STT
 
@@ -699,11 +720,11 @@ automatically.
 
 ## Normalization Pipeline
 
-Before the transcript is copied/pasted, DicTeX runs it through an ordered
-text-to-text normalization pipeline (strategic pivot, Phase 2): the personal
-dictionary (layer 1) runs first, then the regex math-verbalization rules
-(layer 2). Layer 3 (seq2seq model) is added in a later issue without
-reshaping the interface.
+Lorsque l'interrupteur `Normalizer` est sur On, DicTeX exécute avant la copie ou
+le collage un pipeline texte-vers-texte ordonné : dictionnaire personnel
+(couche 1), extraction des commandes, puis règles regex de verbalisation
+mathématique (couche 2). La couche 3 seq2seq viendra plus tard sans modifier
+cette interface.
 
 The personal dictionary is a user-editable JSON file. Empty by default; a
 missing or invalid file degrades to passthrough (byte-identical output) with a

@@ -69,6 +69,8 @@ export type NormalizationResultEvent = {
   audio_ref?: string | null;
   input_transcript: string;
   output_transcript: string;
+  /** True only when DicTeX deliberately skipped the whole normalizer pipeline. */
+  disabled?: true;
   passthrough?: boolean;
   layers?: NormalizationLayerRecord[];
   diagnostics?: string[];

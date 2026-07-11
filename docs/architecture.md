@@ -17,7 +17,7 @@ flowchart LR
     A[Audio] --> B[DicTeX]
     B --> C[Processus Python STT ponctuel]
     C --> D[Texte littéral]
-    D --> E[Normaliseur partagé]
+    D --> E[Normaliseur partagé facultatif]
     E --> F[Markdown + LaTeX en ligne]
     F --> G[Presse-papiers / application active]
     B --> H[(Audio local)]

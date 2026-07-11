@@ -52,7 +52,7 @@ Le chemin immédiat est :
 
 ```text
 Typora
--> Démarrer/Arrêter et normaliseur fiables
+-> Start/Stop et normaliseur fiables
 -> modèle STT maintenu en mémoire
 -> comparaison de contextes initiaux STT
 -> test complet de correction dans le Lab
@@ -75,6 +75,8 @@ Déjà disponible :
 - stockage local à ajout uniquement (`append-only`) de l'audio, du texte brut
   et de la normalisation ;
 - dictionnaire personnel, mots de commande et règles mathématiques regex ;
+- interrupteur persistant du normaliseur, avec sortie STT brute lorsqu'il est
+  désactivé ;
 - convention LaTeX canonique et canonicalisation avant mesure ou export ;
 - historique de dictées avec copie et réécoute ;
 - Lab séparé pour les corrections, les comparaisons et les exports ;
@@ -82,8 +84,7 @@ Déjà disponible :
 
 Prochaines étapes :
 
-- interrupteur du normaliseur (#105) ;
-- Démarrer/Arrêter cohérent entre l'interface et le raccourci (#96) ;
+- Start/Stop cohérent entre l'interface et le raccourci (#96) ;
 - mécanisme explicite pour les mathématiques en bloc `$$…$$` ;
 - processus STT persistant afin de ne plus recharger le modèle à chaque dictée ;
 - comparaison des variantes de contexte initial sur `validation` (#94) ;
@@ -134,7 +135,7 @@ Les documents de pivot restent disponibles comme historique :
 
 ## Langue
 
-Depuis le 10 juillet 2026, les nouveaux commits, tickets, demandes de fusion,
-documents, textes d'interface et transmissions sont rédigés en français.
-L'anglais reste réservé aux termes et syntaxes techniques qui l'exigent. Les
-détails et exceptions sont définis dans [CONTRIBUTING.md](CONTRIBUTING.md).
+Depuis le 10 juillet 2026, les commits, tickets, demandes de fusion, revues et
+documents sont rédigés en français. Le code source, les commentaires techniques,
+les tests, les journaux et l'interface restent en anglais pour l'instant. Les
+détails sont définis dans [CONTRIBUTING.md](CONTRIBUTING.md).
