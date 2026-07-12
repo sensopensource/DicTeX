@@ -930,6 +930,20 @@ legacy `stt_benchmark_result` recorded before #122 carries no `run_id`; it stays
 readable and is reported as legacy, never attached to a modern run. See
 `docs/dataset-and-normalization-design.md` §9.
 
+Depuis #130, la référence d'un benchmark STT est exclusivement la dernière
+correction `acoustic` disponible au démarrage. Une correction
+`math_transform`, `normalization` ou `rephrasing` plus récente n'est jamais un
+repli. Le benchmark ponctuel applique directement cette règle ; le benchmark
+par lot fige le texte et la date dans son snapshot, puis les résultats, le
+résumé et l'export LLM réutilisent cette référence sans relire la correction
+courante. En l'absence de correction acoustique, les champs de référence et les
+scores restent `null`.
+
+Les runs créés avant #130 peuvent avoir figé par erreur une autre couche, en
+particulier une cible LaTeX `math_transform`. Ils restent append-only et ne sont
+ni modifiés ni réparés rétroactivement : les relancer pour obtenir une mesure
+acoustique valide avant toute comparaison ou sélection de candidat.
+
 ### Export local d'un run pour analyse par un LLM
 
 Un run STT **terminé** peut être exporté depuis `Candidate summary` avec

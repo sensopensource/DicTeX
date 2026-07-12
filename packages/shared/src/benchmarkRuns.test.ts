@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildSttBenchmarkRunSnapshot,
+  getLatestSttCorrectionByKind,
   getLegacySttBenchmarkResultsForSplit,
   getSttBenchmarkResultsForRun,
   getSttBenchmarkRun,
@@ -11,6 +12,7 @@ import {
   type LocalEvent,
 } from "./localEvents.js";
 import { summarizeLegacySttBenchmarkResultsByCandidate, summarizeSttBenchmarkRun } from "./benchmarkSummary.js";
+import { calculateCharacterErrorRate } from "./sttScoring.js";
 
 /**
  * Coverage for benchmark run tracking + acoustic snapshots (issue #122): a run
@@ -89,6 +91,7 @@ function runResult(
   segmentId: string,
   cer: number,
   ref: string,
+  transcript = "hypothesis",
 ): LocalEvent {
   return {
     event_type: "stt_benchmark_result",
@@ -100,7 +103,7 @@ function runResult(
     provider: "faster-whisper",
     model: "base",
     variant: "cpu-int8-fr",
-    transcript: "hypothesis",
+    transcript,
     transcription_duration_ms: 120,
     score_metric: "cer",
     score_value: cer,
@@ -138,6 +141,45 @@ test("buildSttBenchmarkRunSnapshot: excludes a no-audio math_transform-only entr
   assert.equal(snapshot[0].audioRef, "audio/session_a/seg_0001.webm");
   assert.equal(snapshot[0].referenceTranscript, "real reference");
   assert.equal(snapshot[0].correctionCreatedAt, "2026-07-12T09:00:00.000Z");
+});
+
+test("getLatestSttCorrectionByKind: keeps the latest correction within the requested layer", () => {
+  const events: LocalEvent[] = [
+    correction("session_a", "seg_0001", "literal v1", "2026-07-12T09:00:00.000Z", "acoustic"),
+    correction("session_a", "seg_0001", "literal v2", "2026-07-12T09:01:00.000Z", "acoustic"),
+    correction("session_a", "seg_0001", "$x^{2}$", "2026-07-12T09:02:00.000Z", "math_transform"),
+  ];
+
+  const acoustic = getLatestSttCorrectionByKind(events, "session_a", "seg_0001", "acoustic");
+  assert.equal(acoustic?.correctedTranscript, "literal v2");
+  assert.equal(acoustic?.correctionCreatedAt, "2026-07-12T09:01:00.000Z");
+  assert.equal(acoustic?.correctionKind, "acoustic");
+});
+
+test("buildSttBenchmarkRunSnapshot: freezes the latest acoustic correction before a later math transform", () => {
+  const events: LocalEvent[] = [
+    audioSegment("session_a", "seg_0001"),
+    membership("session_a", "seg_0001", "audio/session_a/seg_0001.webm"),
+    correction("session_a", "seg_0001", "literal v1", "2026-07-12T09:00:00.000Z", "acoustic"),
+    correction("session_a", "seg_0001", "literal v2", "2026-07-12T09:01:00.000Z", "acoustic"),
+    correction("session_a", "seg_0001", "$x^{2}$", "2026-07-12T09:02:00.000Z", "math_transform"),
+  ];
+
+  const snapshot = buildSttBenchmarkRunSnapshot(events, "validation");
+  assert.equal(snapshot[0].referenceTranscript, "literal v2");
+  assert.equal(snapshot[0].correctionCreatedAt, "2026-07-12T09:01:00.000Z");
+});
+
+test("buildSttBenchmarkRunSnapshot: another correction layer never replaces a missing acoustic reference", () => {
+  const events: LocalEvent[] = [
+    audioSegment("session_a", "seg_0001"),
+    membership("session_a", "seg_0001", "audio/session_a/seg_0001.webm"),
+    correction("session_a", "seg_0001", "$x^{2}$", "2026-07-12T09:00:00.000Z", "math_transform"),
+  ];
+
+  const snapshot = buildSttBenchmarkRunSnapshot(events, "validation");
+  assert.equal(snapshot[0].referenceTranscript, null);
+  assert.equal(snapshot[0].correctionCreatedAt, null);
 });
 
 test("buildSttBenchmarkRunSnapshot: includes an acoustic segment with no correction, reference null", () => {
@@ -226,9 +268,30 @@ test("summarizeSttBenchmarkRun: a re-correction AFTER the run never changes the 
   assert.ok(summary);
   assert.equal(summary.totalSegments, 1);
   assert.equal(summary.candidates.length, 1);
-  assert.equal(summary.candidates[0].meanCer, 0.2);
+  assert.equal(summary.candidates[0].meanCer, calculateCharacterErrorRate("hypothesis", "ref v1"));
   assert.equal(summary.candidates[0].resultCount, 1);
   assert.equal(summary.candidates[0].missingCount, 0);
+});
+
+test("summarizeSttBenchmarkRun: derives CER and WER from the frozen snapshot reference", () => {
+  const snapshot: BenchmarkRunSnapshotMember[] = [
+    {
+      sessionId: "session_a",
+      segmentId: "seg_0001",
+      audioRef: "audio/session_a/seg_0001.webm",
+      referenceTranscript: "hypothesis",
+      correctionCreatedAt: "2026-07-12T09:00:00.000Z",
+    },
+  ];
+  const result = runResult("run_1", "session_a", "seg_0001", 0.99, "$hypothesis^{2}$");
+
+  const summary = summarizeSttBenchmarkRun(
+    [runStarted("run_1", snapshot), result, runFinished("run_1", 1, 0, [])],
+    "run_1",
+  );
+
+  assert.equal(summary?.candidates[0].meanCer, 0);
+  assert.equal(summary?.candidates[0].meanWer, 0);
 });
 
 test("summarizeSttBenchmarkRun: two runs of the same split stay separate", () => {
@@ -237,17 +300,17 @@ test("summarizeSttBenchmarkRun: two runs of the same split stay separate", () =>
   ];
   const events: LocalEvent[] = [
     runStarted("run_1", snapshot),
-    runResult("run_1", "session_a", "seg_0001", 0.1, "ref"),
+    runResult("run_1", "session_a", "seg_0001", 0.1, "ref", "ref"),
     runFinished("run_1", 1, 0, []),
     { ...runStarted("run_2", snapshot), created_at: "2026-07-13T10:00:00.000Z" },
-    runResult("run_2", "session_a", "seg_0001", 0.8, "ref"),
+    runResult("run_2", "session_a", "seg_0001", 0.8, "ref", "wrong"),
     runFinished("run_2", 1, 0, []),
   ];
 
   const first = summarizeSttBenchmarkRun(events, "run_1");
   const second = summarizeSttBenchmarkRun(events, "run_2");
-  assert.equal(first?.candidates[0].meanCer, 0.1);
-  assert.equal(second?.candidates[0].meanCer, 0.8);
+  assert.equal(first?.candidates[0].meanCer, 0);
+  assert.equal(second?.candidates[0].meanCer, calculateCharacterErrorRate("wrong", "ref"));
 });
 
 test("summarizeSttBenchmarkRun: a partial stop leaves an unexecuted segment as missing, distinct from a failure", () => {
@@ -294,7 +357,7 @@ test("legacy results (no run_id) are readable, summarized as legacy, and never c
     runResult(null, "session_a", "seg_0001", 0.3, "ref"),
     // A modern run over the same segment.
     runStarted("run_1", snapshot),
-    runResult("run_1", "session_a", "seg_0001", 0.05, "ref"),
+    runResult("run_1", "session_a", "seg_0001", 0.05, "ref", "ref"),
     runFinished("run_1", 1, 0, []),
   ];
 
@@ -308,6 +371,6 @@ test("legacy results (no run_id) are readable, summarized as legacy, and never c
 
   // The run summary must see only its own result, never the legacy one.
   const runSummary = summarizeSttBenchmarkRun(events, "run_1");
-  assert.equal(runSummary?.candidates[0].meanCer, 0.05);
+  assert.equal(runSummary?.candidates[0].meanCer, 0);
   assert.equal(runSummary?.candidates[0].resultCount, 1);
 });

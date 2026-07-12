@@ -159,6 +159,16 @@ test("buildSttBenchmarkRunExport: keeps the run snapshot after current validatio
       correction_kind: "acoustic",
     },
     {
+      event_type: "stt_correction",
+      created_at: "2026-07-12T12:00:30.000Z",
+      session_id: "session_a",
+      segment_id: "seg_1",
+      audio_ref: "audio/session_a/seg_1.webm",
+      raw_transcript: "CHANGED AFTER RUN",
+      corrected_transcript: "$CHANGED^{2}$",
+      correction_kind: "math_transform",
+    },
+    {
       event_type: "stt_benchmark_set_membership",
       created_at: "2026-07-12T12:01:00.000Z",
       session_id: "session_a",
