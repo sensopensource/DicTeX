@@ -53,6 +53,13 @@ export type SttBenchmarkResultEvent = {
   session_id: string;
   segment_id: string;
   created_at?: string;
+  /**
+   * The tracked benchmark run this result belongs to (issue #122). Present on
+   * every result appended by a set run since #122; ABSENT on a legacy result
+   * recorded before runs were tracked. A legacy result is read for
+   * backward-compatibility but is never attached to a modern run.
+   */
+  run_id?: string;
   audio_ref?: string;
   stage?: string;
   provider?: string;
@@ -152,6 +159,75 @@ export type SttPromptVariantDefinedEvent = {
   prompt_text: string;
 };
 
+/**
+ * One acoustic member of a benchmark run's frozen input snapshot (issue #122),
+ * as written into the run-start event. Only real-audio segments appear here:
+ * a no-audio, math_transform-only entry is never part of an STT run snapshot.
+ * `reference_transcript` / `correction_created_at` capture the exact reference
+ * available at run start, so a later re-correction cannot change the run.
+ */
+export type SttBenchmarkRunSnapshotMemberRecord = {
+  session_id: string;
+  segment_id: string;
+  audio_ref: string;
+  reference_transcript: string | null;
+  correction_created_at: string | null;
+};
+
+/**
+ * Full identity of a candidate as launched in a run (issue #122), plus the
+ * optional reference to its immutable prompt-variant definition (issue #121):
+ * `prompt_variant` is the variant NAME that keys the `stt_prompt_variant_defined`
+ * event for a Lab-local variant, or the external `DICTEX_STT_PROMPT_VARIANTS`
+ * key; null for a no-prompt baseline candidate.
+ */
+export type SttBenchmarkRunCandidateRecord = {
+  stage: string;
+  provider: string;
+  model: string;
+  variant: string | null;
+  prompt_variant?: string | null;
+};
+
+/**
+ * Append-only run-start event (issue #122). Fixes the identity of one STT
+ * benchmark batch: its `run_id`, the requested `split`, the explicit
+ * `dataset_kind` (always "acoustic" — an STT run never scores a math_transform
+ * record without audio), the candidates actually launched, and the exact input
+ * snapshot. Written once, before any result of the run.
+ */
+export type SttBenchmarkRunStartedEvent = {
+  event_type: "stt_benchmark_run_started";
+  run_id: string;
+  created_at?: string;
+  stage: string;
+  dataset_kind: "acoustic";
+  split: SttBenchmarkSetSplit;
+  candidates: SttBenchmarkRunCandidateRecord[];
+  snapshot: SttBenchmarkRunSnapshotMemberRecord[];
+};
+
+export type SttBenchmarkRunFailureRecord = {
+  session_id: string;
+  segment_id: string;
+  error: string;
+};
+
+/**
+ * Append-only run-end event (issue #122). Records the terminal counts and the
+ * observed per-segment failures, so a segment that failed is distinguishable
+ * from one that was never executed (a segment in the snapshot with neither a
+ * result nor a failure entry was not run — e.g. a partial stop).
+ */
+export type SttBenchmarkRunFinishedEvent = {
+  event_type: "stt_benchmark_run_finished";
+  run_id: string;
+  created_at?: string;
+  done: number;
+  failed: number;
+  failures: SttBenchmarkRunFailureRecord[];
+};
+
 export type UnknownLocalEvent = {
   event_type: string;
   [key: string]: unknown;
@@ -162,6 +238,8 @@ export type LocalEvent =
   | SttResultEvent
   | SttEngineReadyEvent
   | SttBenchmarkResultEvent
+  | SttBenchmarkRunStartedEvent
+  | SttBenchmarkRunFinishedEvent
   | SttCorrectionEvent
   | SttBenchmarkSetMembershipEvent
   | SttCandidateSelectionEvent
@@ -228,6 +306,47 @@ export type SttCandidateSelection = {
   createdAt: string | null;
   candidate: BenchmarkCandidateIdentity;
   selectionReason: string | null;
+};
+
+/** Derived (camelCase) acoustic snapshot member of a benchmark run (issue #122). */
+export type BenchmarkRunSnapshotMember = {
+  sessionId: string;
+  segmentId: string;
+  audioRef: string;
+  referenceTranscript: string | null;
+  correctionCreatedAt: string | null;
+};
+
+/** Derived candidate identity launched in a run, with its immutable prompt reference (issue #122). */
+export type BenchmarkRunCandidate = BenchmarkCandidateIdentity & {
+  promptVariant: string | null;
+};
+
+export type BenchmarkRunFailure = {
+  sessionId: string;
+  segmentId: string;
+  error: string;
+};
+
+/**
+ * A fully-derived tracked benchmark run (issue #122): its frozen snapshot and
+ * candidate list from the run-start event, plus its terminal counts/failures
+ * from the run-finished event (null while unfinished/interrupted).
+ */
+export type SttBenchmarkRun = {
+  runId: string;
+  createdAt: string | null;
+  stage: string;
+  datasetKind: string;
+  split: SttBenchmarkSetSplit;
+  candidates: BenchmarkRunCandidate[];
+  snapshot: BenchmarkRunSnapshotMember[];
+  finished: {
+    createdAt: string | null;
+    done: number;
+    failed: number;
+    failures: BenchmarkRunFailure[];
+  } | null;
 };
 
 type SegmentDraft = {
@@ -517,18 +636,15 @@ export function getSttBenchmarkSetSegments(
 }
 
 /**
- * Returns the latest stt_benchmark_result per (segment, candidate) pair for
- * segments currently in `split`, matching the latest-event-wins rule used
- * elsewhere so a re-run of a candidate replaces its prior result.
+ * Latest stt_benchmark_result per (segment, candidate) pair among the events
+ * accepted by `include`, applying the latest-event-wins rule used elsewhere so
+ * a re-run of a candidate replaces its prior result. Shared core of the split-,
+ * run-, and legacy-scoped readers below.
  */
-export function getSttBenchmarkResultsForSplit(
+function collectLatestBenchmarkResults(
   events: LocalEvent[],
-  split: SttBenchmarkSetSplit,
+  include: (event: SttBenchmarkResultEvent, segmentKey: string) => boolean,
 ): SttScoredBenchmarkResult[] {
-  const splitSegmentKeys = new Set(
-    getSttBenchmarkSetSegments(events, split).map((segment) => getSegmentKey(segment.sessionId, segment.segmentId)),
-  );
-
   const latestByKey = new Map<string, { eventIndex: number; result: SttScoredBenchmarkResult }>();
 
   events.forEach((event, eventIndex) => {
@@ -537,7 +653,7 @@ export function getSttBenchmarkResultsForSplit(
     }
 
     const segmentKey = getSegmentKey(event.session_id, event.segment_id);
-    if (!splitSegmentKeys.has(segmentKey)) {
+    if (!include(event, segmentKey)) {
       return;
     }
 
@@ -568,6 +684,163 @@ export function getSttBenchmarkResultsForSplit(
   });
 
   return Array.from(latestByKey.values()).map((entry) => entry.result);
+}
+
+/**
+ * Latest legacy stt_benchmark_result (no `run_id`) per (segment, candidate)
+ * for segments currently in `split` (issue #122). These predate run tracking;
+ * they are read for backward-compatibility and reported as legacy, never
+ * attached to a modern run. A result carrying a `run_id` is excluded here.
+ */
+export function getLegacySttBenchmarkResultsForSplit(
+  events: LocalEvent[],
+  split: SttBenchmarkSetSplit,
+): SttScoredBenchmarkResult[] {
+  const splitSegmentKeys = getSplitSegmentKeys(events, split);
+  return collectLatestBenchmarkResults(
+    events,
+    (event, segmentKey) => splitSegmentKeys.has(segmentKey) && getString(event.run_id) === null,
+  );
+}
+
+/**
+ * Latest stt_benchmark_result per (snapshot segment, candidate) carrying
+ * `runId` (issue #122). Scoped to the run's frozen snapshot segments so a
+ * result appended for a segment later removed from the split still belongs to
+ * the run that measured it, and a result of another run — or a legacy result
+ * with no run_id — is never counted in this run.
+ */
+export function getSttBenchmarkResultsForRun(
+  events: LocalEvent[],
+  runId: string,
+  snapshot: BenchmarkRunSnapshotMember[],
+): SttScoredBenchmarkResult[] {
+  const snapshotKeys = new Set(snapshot.map((member) => getSegmentKey(member.sessionId, member.segmentId)));
+  return collectLatestBenchmarkResults(
+    events,
+    (event, segmentKey) => getString(event.run_id) === runId && snapshotKeys.has(segmentKey),
+  );
+}
+
+function getSplitSegmentKeys(events: LocalEvent[], split: SttBenchmarkSetSplit): Set<string> {
+  return new Set(
+    getSttBenchmarkSetSegments(events, split).map((segment) => getSegmentKey(segment.sessionId, segment.segmentId)),
+  );
+}
+
+/**
+ * Builds the acoustic input snapshot for an STT benchmark run over `split`
+ * (issue #122): the ordered list of evaluable ACOUSTIC members with the exact
+ * reference transcription and correction timestamp available at run start.
+ *
+ * Only real-audio segments are included — a no-audio, math_transform-only
+ * entry (a paste-sourced dataset-builder entry carries an empty audio_ref, see
+ * datasetBuilder.ts NO_AUDIO_REF) is excluded, so an STT run's snapshot never
+ * contains a math_transform record without audio. Ordering mirrors
+ * getSttBenchmarkSetSegments (session id then segment id) so the snapshot is
+ * deterministic. The reference is the segment's latest correction — exactly
+ * what runSttBenchmarkForAudioSegment scores against — captured here so a later
+ * re-correction or membership change cannot alter this run's snapshot.
+ */
+export function buildSttBenchmarkRunSnapshot(
+  events: LocalEvent[],
+  split: SttBenchmarkSetSplit,
+): BenchmarkRunSnapshotMember[] {
+  return getSttBenchmarkSetSegments(events, split)
+    .filter((segment) => segment.audioRef.length > 0)
+    .map((segment) => {
+      const correction = getLatestSttCorrection(events, segment.sessionId, segment.segmentId);
+      return {
+        sessionId: segment.sessionId,
+        segmentId: segment.segmentId,
+        audioRef: segment.audioRef,
+        referenceTranscript: correction ? correction.correctedTranscript : null,
+        correctionCreatedAt: correction ? correction.correctionCreatedAt : null,
+      };
+    });
+}
+
+/**
+ * Returns every tracked benchmark run (issue #122) in run-start event order. A
+ * run is identified by the FIRST stt_benchmark_run_started event for a
+ * `run_id` (append-only and immutable — a duplicate id is ignored, never
+ * overriding the original). Its terminal counts/failures come from the latest
+ * matching stt_benchmark_run_finished; a run with none is unfinished or was
+ * interrupted (`finished` is null).
+ */
+export function getSttBenchmarkRuns(events: LocalEvent[]): SttBenchmarkRun[] {
+  const started = new Map<string, { eventIndex: number; run: SttBenchmarkRun }>();
+  const finished = new Map<string, { eventIndex: number; finished: NonNullable<SttBenchmarkRun["finished"]> }>();
+
+  events.forEach((event, eventIndex) => {
+    if (isSttBenchmarkRunStartedEvent(event)) {
+      if (started.has(event.run_id)) {
+        return;
+      }
+      started.set(event.run_id, {
+        eventIndex,
+        run: {
+          runId: event.run_id,
+          createdAt: getString(event.created_at),
+          stage: event.stage,
+          datasetKind: event.dataset_kind,
+          split: event.split,
+          candidates: event.candidates.map(toRunCandidate),
+          snapshot: event.snapshot.map(toRunSnapshotMember),
+          finished: null,
+        },
+      });
+      return;
+    }
+
+    if (isSttBenchmarkRunFinishedEvent(event)) {
+      const existing = finished.get(event.run_id);
+      if (existing && existing.eventIndex > eventIndex) {
+        return;
+      }
+      finished.set(event.run_id, {
+        eventIndex,
+        finished: {
+          createdAt: getString(event.created_at),
+          done: getNumber(event.done) ?? 0,
+          failed: getNumber(event.failed) ?? 0,
+          failures: event.failures.map((failure) => ({
+            sessionId: failure.session_id,
+            segmentId: failure.segment_id,
+            error: failure.error,
+          })),
+        },
+      });
+    }
+  });
+
+  return Array.from(started.values())
+    .sort((left, right) => left.eventIndex - right.eventIndex)
+    .map((entry) => ({ ...entry.run, finished: finished.get(entry.run.runId)?.finished ?? null }));
+}
+
+export function getSttBenchmarkRun(events: LocalEvent[], runId: string): SttBenchmarkRun | null {
+  return getSttBenchmarkRuns(events).find((run) => run.runId === runId) ?? null;
+}
+
+function toRunSnapshotMember(record: SttBenchmarkRunSnapshotMemberRecord): BenchmarkRunSnapshotMember {
+  return {
+    sessionId: record.session_id,
+    segmentId: record.segment_id,
+    audioRef: record.audio_ref,
+    referenceTranscript: getString(record.reference_transcript),
+    correctionCreatedAt: getString(record.correction_created_at),
+  };
+}
+
+function toRunCandidate(record: SttBenchmarkRunCandidateRecord): BenchmarkRunCandidate {
+  return {
+    stage: record.stage,
+    provider: record.provider,
+    model: record.model,
+    variant: getString(record.variant),
+    promptVariant: getString(record.prompt_variant),
+  };
 }
 
 function getBenchmarkCandidateIdentity(event: SttBenchmarkResultEvent): BenchmarkCandidateIdentity | null {
@@ -815,6 +1088,28 @@ function isSttBenchmarkResultEvent(event: LocalEvent): event is SttBenchmarkResu
     event.event_type === "stt_benchmark_result" &&
     typeof event.session_id === "string" &&
     typeof event.segment_id === "string"
+  );
+}
+
+function isSttBenchmarkRunStartedEvent(event: LocalEvent): event is SttBenchmarkRunStartedEvent {
+  const candidate = event as SttBenchmarkRunStartedEvent;
+  return (
+    event.event_type === "stt_benchmark_run_started" &&
+    typeof candidate.run_id === "string" &&
+    candidate.run_id.length > 0 &&
+    isSttBenchmarkSetSplit(candidate.split) &&
+    Array.isArray(candidate.candidates) &&
+    Array.isArray(candidate.snapshot)
+  );
+}
+
+function isSttBenchmarkRunFinishedEvent(event: LocalEvent): event is SttBenchmarkRunFinishedEvent {
+  const candidate = event as SttBenchmarkRunFinishedEvent;
+  return (
+    event.event_type === "stt_benchmark_run_finished" &&
+    typeof candidate.run_id === "string" &&
+    candidate.run_id.length > 0 &&
+    Array.isArray(candidate.failures)
   );
 }
 

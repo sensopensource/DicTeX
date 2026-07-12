@@ -387,6 +387,23 @@ whatever is left in the field, same as before this issue.
    column and spill the panel's other children past its border). Confirm the
    whole selector is usable by keyboard with a visible focus ring and that
    expanded/collapsed controls are announced (aria-expanded / listbox roles).
+4sexies. Run tracking + acoustic snapshot (issue #122). With at least one
+   corrected `Validation` segment, run `Run analysis`; confirm the
+   `Candidate summary` run selector now lists the run just created
+   (`date · N seg · done/failed`) and is auto-selected. Run `Run analysis`
+   again: confirm a second, distinct run appears and that switching the selector
+   between the two shows each run's own numbers (they are not merged).
+   Then, in the Segments view, re-correct one of the run's segments with a
+   deliberately different transcript; go back to `Benchmark`, re-select the
+   earlier run from the selector, and confirm its CER/WER are unchanged (the
+   snapshot is frozen). Assign a paste-sourced (no-audio) `math_transform`-only
+   entry to `Validation`, run `Run analysis`, and confirm it is NOT counted in
+   the run's segment total (an STT run is acoustic-only) and never appears as a
+   failed segment. Confirm `Open Lab events log` shows one
+   `stt_benchmark_run_started` (with the snapshot + `dataset_kind:"acoustic"`),
+   the per-candidate `stt_benchmark_result` events carrying that `run_id`, and a
+   terminal `stt_benchmark_run_finished`. Finally select `Legacy (pre-run
+   results)` and confirm it only ever shows results with no `run_id`.
 5. In `Dataset`, use **Build a dataset entry**: paste a transcription (no
    segment) and type a Layer 1 literal transcript containing a rule the
    shipped default regex recognizes plus a word it does not (e.g.
@@ -874,11 +891,28 @@ un événement d'observabilité distinct :
 {"event_type":"stt_engine_ready","worker_generation":"generation_...","stt_engine":"faster-whisper","stt_model":"base","stt_device":"cpu","stt_compute_type":"int8","worker_startup_ms":4200,"model_load_ms":3900}
 ```
 
-The STT benchmark actions reuse stored audio segments and append one result per tested model:
+The STT benchmark set run (issue #122) is a tracked, append-only experiment. It
+writes a run-start event fixing the acoustic snapshot and the launched
+candidates, then one result per (segment, candidate) carrying the run's
+`run_id`, then a terminal run-finished event:
 
 ```json
-{"event_type":"stt_benchmark_result","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","stage":"stt","provider":"faster-whisper","model":"small","variant":"cpu-int8-fr","candidate":{"stage":"stt","provider":"faster-whisper","model":"small","variant":"cpu-int8-fr"},"stt_engine":"faster-whisper","stt_model":"small","stt_language":"fr","transcript":"...","audio_duration_seconds":2.4,"transcription_duration_ms":1830,"score_metric":"cer","score_value":0.12,"score_reference_type":"stt_correction"}
+{"event_type":"stt_benchmark_run_started","run_id":"run_20260712T100000000Z_ab12cd34","created_at":"2026-07-12T10:00:00.000Z","stage":"stt","dataset_kind":"acoustic","split":"validation","candidates":[{"stage":"stt","provider":"faster-whisper","model":"small","variant":"cpu-int8-fr","prompt_variant":null}],"snapshot":[{"session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","reference_transcript":"x au carré","correction_created_at":"2026-07-09T00:00:00.000Z"}]}
 ```
+
+```json
+{"event_type":"stt_benchmark_result","run_id":"run_20260712T100000000Z_ab12cd34","session_id":"session_...","segment_id":"seg_0001","audio_ref":"audio/session_.../seg_0001.webm","stage":"stt","provider":"faster-whisper","model":"small","variant":"cpu-int8-fr","candidate":{"stage":"stt","provider":"faster-whisper","model":"small","variant":"cpu-int8-fr"},"stt_engine":"faster-whisper","stt_model":"small","stt_language":"fr","transcript":"...","audio_duration_seconds":2.4,"transcription_duration_ms":1830,"score_metric":"cer","score_value":0.12,"score_reference_type":"stt_correction"}
+```
+
+```json
+{"event_type":"stt_benchmark_run_finished","run_id":"run_20260712T100000000Z_ab12cd34","created_at":"2026-07-12T10:05:00.000Z","done":1,"failed":0,"failures":[]}
+```
+
+The `dataset_kind` is always `acoustic`: the snapshot excludes any no-audio
+`math_transform`-only entry, so an STT run never scores an audio-less record. A
+legacy `stt_benchmark_result` recorded before #122 carries no `run_id`; it stays
+readable and is reported as legacy, never attached to a modern run. See
+`docs/dataset-and-normalization-design.md` §9.
 
 STT corrections are append-only events linked to the original segment:
 
@@ -890,16 +924,24 @@ The important MVP decision is to preserve the audio -> raw STT -> correction -> 
 
 ## STT Candidate Summary
 
-The `Candidate summary` panel aggregates `stt_benchmark_result` events for a
-chosen benchmark set split (`Test frozen` or `Validation`) by candidate
-identity (`stage` + `provider` + `model` + `variant`). It is read-only: it
-never appends events, it only reads and summarizes what `Run set benchmark`
+The `Candidate summary` panel aggregates `stt_benchmark_result` events by
+candidate identity (`stage` + `provider` + `model` + `variant`). It is
+read-only: it never appends events, it only reads and summarizes what a run
 already logged.
+
+Since issue #122 the summary is scoped to **one tracked run**, not to the whole
+split: the run selector lists each run of the current split (newest first,
+`date · N seg · done/failed`), and `Run analysis` auto-selects the run it just
+created. The numbers come from that run's frozen snapshot and its own
+`run_id`-tagged results, so two runs of the same split stay separate and a later
+re-correction or membership change never moves a historical run's numbers. A
+final `Legacy (pre-run results)` option summarizes any pre-#122 results (no
+`run_id`), clearly flagged as legacy.
 
 Per candidate it reports:
 
-- **segments**: how many split segments have a logged result for that
-  candidate;
+- **segments**: how many of the run's snapshot segments have a logged result for
+  that candidate;
 - **mean/median CER**: Character Error Rate, the edit distance between the
   candidate transcript and the corrected transcript divided by the corrected
   transcript's length. `0%` is a perfect match; higher is worse. CER is
@@ -912,10 +954,11 @@ Per candidate it reports:
 - **mean latency**: average `transcription_duration_ms` across that
   candidate's logged results, so a lower-CER candidate that is much slower is
   still visible, not hidden behind the score;
-- **missing**: split segments with no logged result for that candidate. A run
-  that crashed mid-flight never appended an `stt_benchmark_result` event, so a
-  failed attempt and a segment that was never benchmarked look the same here;
-  re-run the set benchmark to fill gaps.
+- **missing**: run snapshot segments with no logged result for that candidate.
+  In this table alone a failed attempt and a segment that was never benchmarked
+  look the same; the run-finished event's `failures` list is what separates the
+  two (a snapshot segment absent from both results and `failures` was not
+  executed — e.g. a partial stop). Re-run the set benchmark to fill gaps.
 
 Only the STT stage is scored today; the summary is STT-only by construction
 because it groups by `stage`, so a future `math_transform` or `normalization`

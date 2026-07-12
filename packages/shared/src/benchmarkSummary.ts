@@ -1,5 +1,7 @@
 import {
-  getSttBenchmarkResultsForSplit,
+  getLegacySttBenchmarkResultsForSplit,
+  getSttBenchmarkResultsForRun,
+  getSttBenchmarkRun,
   getSttBenchmarkSetSegments,
   type BenchmarkCandidateIdentity,
   type LocalEvent,
@@ -27,20 +29,37 @@ export type SttBenchmarkCandidateSummaryResponse = {
 };
 
 /**
- * Aggregates stt_benchmark_result events by candidate identity for a corrected
- * benchmark split. CER is read from the stored score; WER is derived here from
- * the stored transcript + reference so no new event fields are needed.
- * "Missing" counts segments in the split that have no result for a candidate;
- * a run that failed mid-flight never appended an event, so it is
- * indistinguishable from "not run yet" and is reported the same way.
+ * Per-run candidate summary (issue #122): scoped to ONE tracked run's frozen
+ * snapshot and its own `run_id`-tagged results, so two runs of the same split
+ * at different dates stay separate and a later re-correction or membership
+ * change cannot move a historical run's numbers. `createdAt`/`done`/`failed`
+ * come from the run's start/finish events. Null is returned when `runId` names
+ * no run.
  */
-export function summarizeSttBenchmarkResultsByCandidate(
-  events: LocalEvent[],
-  split: SttBenchmarkSetSplit,
-): SttBenchmarkCandidateSummaryResponse {
-  const totalSegments = getSttBenchmarkSetSegments(events, split).length;
-  const results = getSttBenchmarkResultsForSplit(events, split);
+export type SttBenchmarkRunSummaryResponse = {
+  runId: string;
+  split: SttBenchmarkSetSplit;
+  createdAt: string | null;
+  datasetKind: string;
+  totalSegments: number;
+  candidates: SttBenchmarkCandidateSummary[];
+  done: number | null;
+  failed: number | null;
+};
 
+/**
+ * Aggregates scored benchmark results by candidate identity. CER is read from
+ * the stored score; WER is derived here from the stored transcript + reference
+ * so no new event fields are needed. "Missing" counts snapshot/split segments
+ * with no result for a candidate; a run that failed mid-flight never appended a
+ * result event, so from this table it is indistinguishable from "not run yet"
+ * and is reported the same way — the run-finished event's failures are what
+ * separate a failure from an unexecuted segment (issue #122).
+ */
+function aggregateByCandidate(
+  results: SttScoredBenchmarkResult[],
+  totalSegments: number,
+): SttBenchmarkCandidateSummary[] {
   const byCandidateKey = new Map<
     string,
     { candidate: BenchmarkCandidateIdentity; results: SttScoredBenchmarkResult[] }
@@ -53,7 +72,7 @@ export function summarizeSttBenchmarkResultsByCandidate(
     byCandidateKey.set(key, entry);
   }
 
-  const candidates: SttBenchmarkCandidateSummary[] = Array.from(byCandidateKey.values())
+  return Array.from(byCandidateKey.values())
     .map(({ candidate, results: candidateResults }) => {
       const cerValues = candidateResults
         .filter((result) => result.scoreMetric === "cer" && result.scoreValue !== null)
@@ -91,8 +110,50 @@ export function summarizeSttBenchmarkResultsByCandidate(
       }
       return (left.candidate.variant ?? "") < (right.candidate.variant ?? "") ? -1 : 1;
     });
+}
 
-  return { split, totalSegments, candidates };
+/**
+ * Summarizes ONE tracked benchmark run (issue #122). The snapshot size and
+ * candidate results are frozen to the run, so re-running, re-correcting, or
+ * moving a segment between splits afterward never changes this run's summary.
+ * Returns null when `runId` names no run.
+ */
+export function summarizeSttBenchmarkRun(
+  events: LocalEvent[],
+  runId: string,
+): SttBenchmarkRunSummaryResponse | null {
+  const run = getSttBenchmarkRun(events, runId);
+  if (!run) {
+    return null;
+  }
+
+  const results = getSttBenchmarkResultsForRun(events, runId, run.snapshot);
+
+  return {
+    runId: run.runId,
+    split: run.split,
+    createdAt: run.createdAt,
+    datasetKind: run.datasetKind,
+    totalSegments: run.snapshot.length,
+    candidates: aggregateByCandidate(results, run.snapshot.length),
+    done: run.finished ? run.finished.done : null,
+    failed: run.finished ? run.finished.failed : null,
+  };
+}
+
+/**
+ * Summarizes only the LEGACY (pre-#122, no `run_id`) benchmark results for a
+ * split. These predate run tracking; they are surfaced as legacy rather than
+ * merged into any run. Modern results are summarized per run
+ * (summarizeSttBenchmarkRun), never here.
+ */
+export function summarizeLegacySttBenchmarkResultsByCandidate(
+  events: LocalEvent[],
+  split: SttBenchmarkSetSplit,
+): SttBenchmarkCandidateSummaryResponse {
+  const totalSegments = getSttBenchmarkSetSegments(events, split).length;
+  const results = getLegacySttBenchmarkResultsForSplit(events, split);
+  return { split, totalSegments, candidates: aggregateByCandidate(results, totalSegments) };
 }
 
 function candidateKey(candidate: BenchmarkCandidateIdentity): string {

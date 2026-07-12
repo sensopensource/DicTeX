@@ -7,13 +7,15 @@ import {
   getLatestAudioSegment as getLatestAudioSegmentFromEvents,
   getLatestSttCandidateSelection,
   getLatestSttCorrection,
-  getSttBenchmarkSetSegments,
   getSttPromptVariantDefinitions,
   isCorrectionKind,
   readLocalEvents,
   reconstructRecentSegments,
   calculateCharacterErrorRate,
-  summarizeSttBenchmarkResultsByCandidate,
+  buildSttBenchmarkRunSnapshot,
+  getSttBenchmarkRuns,
+  summarizeLegacySttBenchmarkResultsByCandidate,
+  summarizeSttBenchmarkRun,
   buildSttDatasetExport,
   normalizeTranscript,
   restoreCommandWords,
@@ -41,6 +43,8 @@ import {
   type SttBenchmarkSetSegmentOutcome,
   type SttBenchmarkSetRunResponse,
   type SttBenchmarkSetProgress,
+  type SttBenchmarkRunListEntry,
+  type SttBenchmarkRunSummaryResponse,
   type SttDatasetExportFileSummary,
   type SttDatasetExportSplitSummary,
   type SttDatasetExportSummary,
@@ -228,6 +232,15 @@ async function appendOwnEvent(event: Record<string, JsonValue>): Promise<void> {
   await appendFile(getOwnEventsPath(), `${JSON.stringify(event)}\n`, { encoding: "utf8" });
 }
 
+/** Stable, unique id for one tracked benchmark run (issue #122): a timestamp
+ * for human-readable ordering plus a random suffix so two runs started in the
+ * same millisecond never collide. */
+function mintBenchmarkRunId(): string {
+  const stamp = new Date().toISOString().replace(/[^0-9]/g, "");
+  const suffix = Math.random().toString(36).slice(2, 10);
+  return `run_${stamp}_${suffix}`;
+}
+
 function isSttBenchmarkSetSplit(value: unknown): value is SttBenchmarkSetSplit {
   return value === "train_candidate_pool" || value === "validation" || value === "test_frozen";
 }
@@ -254,6 +267,7 @@ async function runSttBenchmarkForAudioSegment(
   audioSegment: AudioSegmentRecord,
   events?: LocalEvent[],
   candidateFilter?: SttBenchmarkCandidateConfig[],
+  runId?: string,
 ): Promise<SttBenchmarkResponse> {
   const audioPath = resolveSourceAudioRef(audioSegment.audioRef);
   if (!existsSync(audioPath)) {
@@ -326,11 +340,14 @@ async function runSttBenchmarkForAudioSegment(
     };
 
     // Appended to the Lab's OWN event log — never DicTeX's events.jsonl.
+    // `run_id` binds the result to its tracked run (issue #122); it is only
+    // omitted by the unfiltered single-segment endpoints, which are not runs.
     await appendOwnEvent({
       event_type: "stt_benchmark_result",
       session_id: result.sessionId,
       segment_id: result.segmentId,
       created_at: new Date().toISOString(),
+      ...(runId ? { run_id: runId } : {}),
       audio_ref: result.audioRef,
       stage: result.stage,
       provider: result.provider,
@@ -729,24 +746,59 @@ ipcMain.handle(
     // later lookups within this run.
     const events = await readAllEvents();
 
+    // The candidates actually launched: the validated checkbox selection, or
+    // the full catalog for the (unfiltered) legacy path. Both feed the run
+    // manifest so the run records exactly which candidates it ran.
+    const catalog = buildSttBenchmarkCandidateCatalog(getBaseSttConfig(), getSttPromptVariantDefinitions(events));
     let candidateFilter: SttBenchmarkCandidateConfig[] | undefined;
-    if (request.candidates !== undefined) {
-      const catalog = buildSttBenchmarkCandidateCatalog(getBaseSttConfig(), getSttPromptVariantDefinitions(events));
-      candidateFilter = validateRequestedCandidates(request.candidates, catalog);
-    }
+    const runCandidates =
+      request.candidates !== undefined
+        ? (candidateFilter = validateRequestedCandidates(request.candidates, catalog))
+        : catalog;
 
-    const segments = getSttBenchmarkSetSegments(events, split);
-    const total = segments.length;
+    // Freeze the acoustic input snapshot at run start (issue #122): only
+    // real-audio segments, with the reference and correction timestamp used by
+    // this run. A later re-correction or membership change cannot alter it.
+    const snapshot = buildSttBenchmarkRunSnapshot(events, split);
+    const total = snapshot.length;
+    const runId = mintBenchmarkRunId();
+    const startedAt = new Date().toISOString();
+
+    await appendOwnEvent({
+      event_type: "stt_benchmark_run_started",
+      run_id: runId,
+      created_at: startedAt,
+      stage: "stt",
+      // An STT run is always acoustic: a math_transform record without audio is
+      // never part of the snapshot (buildSttBenchmarkRunSnapshot excludes it).
+      dataset_kind: "acoustic",
+      split,
+      candidates: runCandidates.map((candidate) => ({
+        stage: candidate.stage,
+        provider: candidate.provider,
+        model: candidate.model,
+        variant: candidate.variant ?? null,
+        prompt_variant: candidate.promptVariant ?? null,
+      })),
+      snapshot: snapshot.map((member) => ({
+        session_id: member.sessionId,
+        segment_id: member.segmentId,
+        audio_ref: member.audioRef,
+        reference_transcript: member.referenceTranscript,
+        correction_created_at: member.correctionCreatedAt,
+      })),
+    });
 
     let queued = total;
     let running = 0;
     let done = 0;
     let failed = 0;
     const outcomes: SttBenchmarkSetSegmentOutcome[] = [];
+    const failures: { session_id: string; segment_id: string; error: string }[] = [];
 
     sendBatchBenchmarkProgress({ split, total, queued, running, done, failed, current: null, lastOutcome: null });
 
-    for (const segment of segments) {
+    for (const member of snapshot) {
       queued -= 1;
       running = 1;
       sendBatchBenchmarkProgress({
@@ -756,22 +808,23 @@ ipcMain.handle(
         running,
         done,
         failed,
-        current: { sessionId: segment.sessionId, segmentId: segment.segmentId },
+        current: { sessionId: member.sessionId, segmentId: member.segmentId },
         lastOutcome: null,
       });
 
       try {
         const response = await runSttBenchmarkForAudioSegment(
-          { sessionId: segment.sessionId, segmentId: segment.segmentId, audioRef: segment.audioRef },
+          { sessionId: member.sessionId, segmentId: member.segmentId, audioRef: member.audioRef },
           events,
           candidateFilter,
+          runId,
         );
         running = 0;
         done += 1;
         outcomes.push({
-          sessionId: segment.sessionId,
-          segmentId: segment.segmentId,
-          audioRef: segment.audioRef,
+          sessionId: member.sessionId,
+          segmentId: member.segmentId,
+          audioRef: member.audioRef,
           status: "done",
           error: null,
           results: response.results,
@@ -785,8 +838,8 @@ ipcMain.handle(
           failed,
           current: null,
           lastOutcome: {
-            sessionId: segment.sessionId,
-            segmentId: segment.segmentId,
+            sessionId: member.sessionId,
+            segmentId: member.segmentId,
             status: "done",
             error: null,
             resultCount: response.results.length,
@@ -796,10 +849,11 @@ ipcMain.handle(
         running = 0;
         failed += 1;
         const message = error instanceof Error ? error.message : "Benchmark failed";
+        failures.push({ session_id: member.sessionId, segment_id: member.segmentId, error: message });
         outcomes.push({
-          sessionId: segment.sessionId,
-          segmentId: segment.segmentId,
-          audioRef: segment.audioRef,
+          sessionId: member.sessionId,
+          segmentId: member.segmentId,
+          audioRef: member.audioRef,
           status: "failed",
           error: message,
           results: [],
@@ -813,8 +867,8 @@ ipcMain.handle(
           failed,
           current: null,
           lastOutcome: {
-            sessionId: segment.sessionId,
-            segmentId: segment.segmentId,
+            sessionId: member.sessionId,
+            segmentId: member.segmentId,
             status: "failed",
             error: message,
             resultCount: 0,
@@ -823,19 +877,68 @@ ipcMain.handle(
       }
     }
 
-    return { split, total, done, failed, outcomes };
+    // Terminal run event (issue #122): done/failed counts plus the observed
+    // failures, so a failed segment is distinguishable from one that was never
+    // executed (in the snapshot but absent from both results and failures).
+    await appendOwnEvent({
+      event_type: "stt_benchmark_run_finished",
+      run_id: runId,
+      created_at: new Date().toISOString(),
+      done,
+      failed,
+      failures,
+    });
+
+    return { split, runId, total, done, failed, outcomes };
   },
 );
 
 ipcMain.handle(
-  "benchmark-set:summarize-stt",
+  "benchmark-set:summarize-run",
+  async (_event, request: { runId?: unknown }): Promise<SttBenchmarkRunSummaryResponse | null> => {
+    if (!request || typeof request.runId !== "string" || request.runId.length === 0) {
+      throw new Error("A run id is required");
+    }
+
+    const events = await readAllEvents();
+    return summarizeSttBenchmarkRun(events, request.runId);
+  },
+);
+
+ipcMain.handle(
+  "benchmark-set:list-runs",
+  async (_event, request: SttBenchmarkSetRunRequest): Promise<SttBenchmarkRunListEntry[]> => {
+    if (!request || !isSttBenchmarkSetSplit(request.split)) {
+      throw new Error("Invalid STT benchmark set split");
+    }
+
+    const events = await readAllEvents();
+    return getSttBenchmarkRuns(events)
+      .filter((run) => run.split === request.split)
+      .map((run) => ({
+        runId: run.runId,
+        createdAt: run.createdAt,
+        split: run.split,
+        datasetKind: run.datasetKind,
+        snapshotSize: run.snapshot.length,
+        candidateCount: run.candidates.length,
+        done: run.finished ? run.finished.done : null,
+        failed: run.finished ? run.finished.failed : null,
+        finished: run.finished !== null,
+      }))
+      .reverse();
+  },
+);
+
+ipcMain.handle(
+  "benchmark-set:summarize-legacy-stt",
   async (_event, request: SttBenchmarkSetRunRequest): Promise<SttBenchmarkCandidateSummaryResponse> => {
     if (!request || !isSttBenchmarkSetSplit(request.split)) {
       throw new Error("Invalid STT benchmark set split");
     }
 
     const events = await readAllEvents();
-    return summarizeSttBenchmarkResultsByCandidate(events, request.split);
+    return summarizeLegacySttBenchmarkResultsByCandidate(events, request.split);
   },
 );
 
