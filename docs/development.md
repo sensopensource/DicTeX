@@ -761,6 +761,70 @@ sur `validation` ; `test_frozen` demeure sélectionnable explicitement mais
 n'est jamais implicite (voir « Discipline d'évaluation » dans
 `docs/roadmap.md`).
 
+### Plusieurs runtimes par modèle dans le benchmark (issue #131)
+
+Le catalogue peut proposer plusieurs runtimes faster-whisper pour un même
+modèle, afin de comparer explicitement CPU/GPU et types de calcul dans un même
+run, sans redémarrer le Lab. La variable `DICTEX_STT_BENCHMARK_RUNTIMES` est une
+liste séparée par des virgules de couples `device:compute_type` :
+
+```powershell
+$env:DICTEX_STT_BENCHMARK_RUNTIMES = "cpu:int8,cpu:int16,cuda:float16,cuda:int8_float16"
+```
+
+`parseSttBenchmarkRuntimes` (`apps/lab/src/main/candidateCatalog.ts`) normalise
+les espaces, déduplique les couples exacts et **rejette bruyamment** une entrée
+mal formée avec un diagnostic actionnable — un couple sans `:`, un device ou un
+type de calcul vide, ou `auto`/`default` (un candidat reproductible doit
+annoncer un type de calcul explicite, jamais laisser CTranslate2 en choisir un
+derrière son identité). Une entrée invalide fait échouer la construction du
+catalogue au lieu d'être ignorée ou devinée.
+
+Lorsque la variable est **absente ou vide**, le comportement historique à un
+seul runtime est reproduit exactement à partir de `DICTEX_STT_DEVICE` et
+`DICTEX_STT_COMPUTE_TYPE` (défauts `cpu` / `int8`), sans changer l'identité d'un
+candidat existant. La langue reste une dimension globale unique
+(`DICTEX_STT_LANGUAGE`), partagée par tous les runtimes.
+
+`buildSttBenchmarkCandidateCatalog` construit le produit cartésien
+`modèle × runtime × (baseline + variantes de prompt)` : chaque runtime devient
+un jeu de candidats distinct par modèle, portant son runtime structuré
+(`{device, computeType, language}`) et une identité `variant` distincte via
+`buildSttVariantId`. L'exécution construit le `SttConfig` du sidecar depuis ce
+runtime structuré (`buildSttConfigForCandidate`), jamais en reparcourant la
+chaîne `variant` ni en reprenant un runtime global : un candidat affiché
+`cuda-float16-fr` s'exécute réellement sur cuda/float16. Le sélecteur progressif
+de #126 fait apparaître automatiquement chaque runtime configuré comme un choix
+séparé et cliquable, sans fabriquer de combinaison côté renderer. Vosk reste un
+fournisseur CPU sans dimension de type de calcul : il n'est **pas** multiplié
+par les runtimes et conserve son identité `cpu-<langue>` et son absence de
+prompt.
+
+Combinaisons de départ recommandées :
+
+- `cpu:int8` — référence CPU portable et par défaut ;
+- `cpu:int16` — expérimental, seulement sur un CPU Intel adapté (jeu
+  d'instructions récent) ; sinon CTranslate2 peut le convertir implicitement ;
+- `cuda:float16` — référence GPU sur la machine de développement (voir
+  « GPU (CUDA) STT ») ;
+- `cuda:int8_float16` — quantification mixte INT8/FP16 sur GPU.
+
+Limites matérielles à garder en tête : un runtime configuré n'est pas garanti
+utilisable par tous les modèles ni sur toute machine ; le Lab ne détecte pas
+CUDA et ne sonde pas la VRAM, il exécute exactement la liste configurée.
+CTranslate2 peut **convertir implicitement** un type de calcul non supporté vers
+un autre (par ex. `cuda:int16` ou `cpu:float16`), ce qui rendrait l'identité du
+candidat trompeuse ; c'est pourquoi ces valeurs ne sont pas recommandées et
+pourquoi `auto`/`default` sont refusés. Un couple demandé mais non exécutable
+sur la machine échoue au lancement de ce candidat, sans invalider les autres.
+
+Variables pertinentes :
+
+```text
+DICTEX_STT_BENCHMARK_RUNTIMES  liste "device:compute_type" séparée par des virgules
+                               (absente/vide = runtime unique DICTEX_STT_DEVICE/COMPUTE_TYPE)
+```
+
 ### Sélecteur progressif de candidats (issue #126)
 
 La sélection des candidats dans « Benchmark set » est recomposée pour rester

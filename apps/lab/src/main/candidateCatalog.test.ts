@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   buildSttBenchmarkCandidateCatalog,
+  buildSttConfigForCandidate,
   candidateIdentityKey,
+  getSttBenchmarkRuntimes,
+  parseSttBenchmarkRuntimes,
   toCandidateOption,
   validateRequestedCandidates,
   FASTER_WHISPER_PROVIDER,
@@ -47,9 +50,9 @@ function withEnv(entries: Record<string, string | undefined>, fn: () => void): v
 
 test("buildSttBenchmarkCandidateCatalog: no prompt variants configured yields only baselines", () => {
   withEnv({ DICTEX_STT_BENCHMARK_MODELS: "base", DICTEX_STT_PROMPT_VARIANTS: undefined, DICTEX_VOSK_BENCHMARK_MODELS: "" }, () => {
-    const catalog = buildSttBenchmarkCandidateCatalog(RUNTIME);
+    const catalog = buildSttBenchmarkCandidateCatalog([RUNTIME]);
     assert.deepEqual(catalog, [
-      { stage: "stt", provider: FASTER_WHISPER_PROVIDER, model: "base", variant: "cpu-int8-fr" },
+      { stage: "stt", provider: FASTER_WHISPER_PROVIDER, model: "base", variant: "cpu-int8-fr", runtime: RUNTIME },
     ]);
   });
 });
@@ -62,7 +65,7 @@ test("buildSttBenchmarkCandidateCatalog: baseline and multiple prompt variants o
       DICTEX_VOSK_BENCHMARK_MODELS: "",
     },
     () => {
-      const catalog = buildSttBenchmarkCandidateCatalog(RUNTIME);
+      const catalog = buildSttBenchmarkCandidateCatalog([RUNTIME]);
       const keys = catalog.map((candidate) => candidateIdentityKey(candidate));
       assert.deepEqual(keys, [
         "stt/faster-whisper/base/cpu-int8-fr",
@@ -80,7 +83,7 @@ test("buildSttBenchmarkCandidateCatalog: a locally-defined prompt variant (issue
   withEnv(
     { DICTEX_STT_BENCHMARK_MODELS: "base,small", DICTEX_STT_PROMPT_VARIANTS: undefined, DICTEX_VOSK_BENCHMARK_MODELS: "" },
     () => {
-      const catalog = buildSttBenchmarkCandidateCatalog(RUNTIME, [
+      const catalog = buildSttBenchmarkCandidateCatalog([RUNTIME], [
         { name: "local-v1", displayName: "Local variant", promptText: "local prompt text", createdAt: null },
       ]);
       const localCandidates = catalog.filter((candidate) => candidate.promptVariant === "local-v1");
@@ -101,7 +104,7 @@ test("buildSttBenchmarkCandidateCatalog: a local variant whose id collides with 
       DICTEX_VOSK_BENCHMARK_MODELS: "",
     },
     () => {
-      const catalog = buildSttBenchmarkCandidateCatalog(RUNTIME, [
+      const catalog = buildSttBenchmarkCandidateCatalog([RUNTIME], [
         { name: "collide", displayName: "Local", promptText: "local text", createdAt: null },
       ]);
       const matching = catalog.filter((candidate) => candidate.promptVariant === "collide");
@@ -115,7 +118,7 @@ test("buildSttBenchmarkCandidateCatalog: two additional faster-whisper models ap
   withEnv(
     { DICTEX_STT_BENCHMARK_MODELS: "base,small,large-v3-turbo", DICTEX_STT_PROMPT_VARIANTS: undefined, DICTEX_VOSK_BENCHMARK_MODELS: "" },
     () => {
-      const catalog = buildSttBenchmarkCandidateCatalog(RUNTIME);
+      const catalog = buildSttBenchmarkCandidateCatalog([RUNTIME]);
       assert.deepEqual(
         catalog.map((candidate) => candidate.model),
         ["base", "small", "large-v3-turbo"],
@@ -132,10 +135,16 @@ test("buildSttBenchmarkCandidateCatalog: Vosk never gets a prompt-variant candid
       DICTEX_VOSK_BENCHMARK_MODELS: "vosk-model-small-fr-0.22",
     },
     () => {
-      const catalog = buildSttBenchmarkCandidateCatalog(RUNTIME);
+      const catalog = buildSttBenchmarkCandidateCatalog([RUNTIME]);
       const voskCandidates = catalog.filter((candidate) => candidate.provider === VOSK_PROVIDER);
       assert.deepEqual(voskCandidates, [
-        { stage: "stt", provider: VOSK_PROVIDER, model: "vosk-model-small-fr-0.22", variant: "cpu-fr" },
+        {
+          stage: "stt",
+          provider: VOSK_PROVIDER,
+          model: "vosk-model-small-fr-0.22",
+          variant: "cpu-fr",
+          runtime: { device: "cpu", computeType: "int8", language: "fr" },
+        },
       ]);
       assert.ok(voskCandidates.every((candidate) => candidate.promptVariant === undefined));
     },
@@ -148,6 +157,7 @@ test("toCandidateOption: baseline gets a friendly 'baseline' label, not a techni
     provider: FASTER_WHISPER_PROVIDER,
     model: "base",
     variant: "cpu-int8-fr",
+    runtime: RUNTIME,
   });
   assert.equal(option.providerLabel, FASTER_WHISPER_PROVIDER);
   assert.equal(option.modelLabel, "base");
@@ -160,6 +170,7 @@ test("toCandidateOption: a prompt variant is labelled by its name, not the raw r
     provider: FASTER_WHISPER_PROVIDER,
     model: "base",
     variant: "cpu-int8-fr+v-fr-math",
+    runtime: RUNTIME,
     promptVariant: "v-fr-math",
   });
   assert.equal(option.variantLabel, "v-fr-math");
@@ -171,6 +182,7 @@ test("toCandidateOption (issue #126): a baseline exposes its runtime, no prompt 
     provider: FASTER_WHISPER_PROVIDER,
     model: "base",
     variant: "cpu-int8-fr",
+    runtime: RUNTIME,
   });
   assert.equal(option.runtimeLabel, "cpu-int8-fr");
   assert.equal(option.promptText, null);
@@ -183,6 +195,7 @@ test("toCandidateOption (issue #126): a prompt variant strips the prompt suffix 
     provider: FASTER_WHISPER_PROVIDER,
     model: "base",
     variant: "cpu-int8-fr+v-fr-math",
+    runtime: RUNTIME,
     promptVariant: "v-fr-math",
     displayPromptText: "Dictée mathématique",
   });
@@ -197,6 +210,7 @@ test("toCandidateOption (issue #126): a Vosk candidate never supports a prompt",
     provider: VOSK_PROVIDER,
     model: "vosk-model-small-fr-0.22",
     variant: "cpu-fr",
+    runtime: { device: "cpu", computeType: "int8", language: "fr" },
   });
   assert.equal(option.runtimeLabel, "cpu-fr");
   assert.equal(option.promptText, null);
@@ -211,7 +225,7 @@ test("buildSttBenchmarkCandidateCatalog + toCandidateOption (issue #126): an ext
       DICTEX_VOSK_BENCHMARK_MODELS: "",
     },
     () => {
-      const config = buildSttBenchmarkCandidateCatalog(RUNTIME).find(
+      const config = buildSttBenchmarkCandidateCatalog([RUNTIME]).find(
         (candidate) => candidate.promptVariant === "v-fr-math",
       );
       assert.ok(config);
@@ -258,6 +272,185 @@ test("validateRequestedCandidates: rejects a malformed request shape", () => {
   assert.throws(() => validateRequestedCandidates([{ provider: FASTER_WHISPER_PROVIDER }], catalog));
 });
 
+// ---- issue #131: multiple runtimes per model ----
+
+test("parseSttBenchmarkRuntimes: parses a list of device:compute_type pairs, normalizing whitespace", () => {
+  assert.deepEqual(parseSttBenchmarkRuntimes(" cpu:int8 , cpu:int16 ,cuda:float16, cuda:int8_float16 "), [
+    { device: "cpu", computeType: "int8" },
+    { device: "cpu", computeType: "int16" },
+    { device: "cuda", computeType: "float16" },
+    { device: "cuda", computeType: "int8_float16" },
+  ]);
+});
+
+test("parseSttBenchmarkRuntimes: drops exact duplicates and tolerates stray separators", () => {
+  assert.deepEqual(parseSttBenchmarkRuntimes("cpu:int8,cpu:int8, ,cuda:float16,"), [
+    { device: "cpu", computeType: "int8" },
+    { device: "cuda", computeType: "float16" },
+  ]);
+});
+
+test("parseSttBenchmarkRuntimes: a malformed entry throws with an actionable diagnostic, never silently skipped", () => {
+  assert.throws(() => parseSttBenchmarkRuntimes("cpu:int8,cudafloat16"), /device:compute_type/);
+  assert.throws(() => parseSttBenchmarkRuntimes("cpu:"), /non-empty/);
+  assert.throws(() => parseSttBenchmarkRuntimes(":int8"), /non-empty/);
+  assert.throws(() => parseSttBenchmarkRuntimes("cpu:int8:extra"), /device:compute_type/);
+  // A value made only of separators has no runtime at all.
+  assert.throws(() => parseSttBenchmarkRuntimes(", ,"), /no runtime found/);
+});
+
+test("parseSttBenchmarkRuntimes: rejects auto/default as a benchmark identity", () => {
+  assert.throws(() => parseSttBenchmarkRuntimes("cuda:auto"), /not allowed/);
+  assert.throws(() => parseSttBenchmarkRuntimes("auto:int8"), /not allowed/);
+  assert.throws(() => parseSttBenchmarkRuntimes("cpu:DEFAULT"), /not allowed/);
+});
+
+test("getSttBenchmarkRuntimes: an absent variable reproduces the historical single runtime from DICTEX_STT_DEVICE/COMPUTE_TYPE", () => {
+  withEnv(
+    {
+      DICTEX_STT_BENCHMARK_RUNTIMES: undefined,
+      DICTEX_STT_DEVICE: "cuda",
+      DICTEX_STT_COMPUTE_TYPE: "float16",
+      DICTEX_STT_LANGUAGE: "fr",
+    },
+    () => {
+      assert.deepEqual(getSttBenchmarkRuntimes(), [{ device: "cuda", computeType: "float16", language: "fr" }]);
+    },
+  );
+});
+
+test("getSttBenchmarkRuntimes: a blank variable also falls back to the single historical runtime", () => {
+  withEnv(
+    { DICTEX_STT_BENCHMARK_RUNTIMES: "   ", DICTEX_STT_DEVICE: undefined, DICTEX_STT_COMPUTE_TYPE: undefined, DICTEX_STT_LANGUAGE: undefined },
+    () => {
+      assert.deepEqual(getSttBenchmarkRuntimes(), [{ device: "cpu", computeType: "int8", language: "fr" }]);
+    },
+  );
+});
+
+test("getSttBenchmarkRuntimes: the configured runtimes each carry the single global language", () => {
+  withEnv(
+    { DICTEX_STT_BENCHMARK_RUNTIMES: "cpu:int8,cuda:float16", DICTEX_STT_LANGUAGE: "en" },
+    () => {
+      assert.deepEqual(getSttBenchmarkRuntimes(), [
+        { device: "cpu", computeType: "int8", language: "en" },
+        { device: "cuda", computeType: "float16", language: "en" },
+      ]);
+    },
+  );
+});
+
+test("buildSttBenchmarkCandidateCatalog: builds the cartesian product model × runtime × (baseline + prompt variants)", () => {
+  withEnv(
+    {
+      DICTEX_STT_BENCHMARK_MODELS: "large-v3-turbo",
+      DICTEX_STT_PROMPT_VARIANTS: JSON.stringify({ "v-fr-math": "math" }),
+      DICTEX_VOSK_BENCHMARK_MODELS: "",
+    },
+    () => {
+      const runtimes = [
+        { device: "cpu", computeType: "int8", language: "fr" },
+        { device: "cuda", computeType: "float16", language: "fr" },
+        { device: "cuda", computeType: "int8_float16", language: "fr" },
+      ];
+      const catalog = buildSttBenchmarkCandidateCatalog(runtimes);
+      // Three baselines + three prompt declensions for the one model.
+      assert.deepEqual(
+        catalog.map((candidate) => candidate.variant),
+        [
+          "cpu-int8-fr",
+          "cpu-int8-fr+v-fr-math",
+          "cuda-float16-fr",
+          "cuda-float16-fr+v-fr-math",
+          "cuda-int8_float16-fr",
+          "cuda-int8_float16-fr+v-fr-math",
+        ],
+      );
+      // Each candidate carries its own structured runtime, matching its identity.
+      for (const candidate of catalog) {
+        assert.equal(candidate.variant?.startsWith(`${candidate.runtime.device}-${candidate.runtime.computeType}-`), true);
+      }
+      // A baseline and a prompt variant of the same runtime share the runtime and
+      // differ only by the prompt.
+      const cpuBaseline = catalog.find((c) => c.variant === "cpu-int8-fr");
+      const cpuPrompt = catalog.find((c) => c.variant === "cpu-int8-fr+v-fr-math");
+      assert.deepEqual(cpuBaseline?.runtime, cpuPrompt?.runtime);
+      assert.equal(cpuPrompt?.promptVariant, "v-fr-math");
+    },
+  );
+});
+
+test("buildSttBenchmarkCandidateCatalog: two runtimes of the same model are distinct, selectable candidates", () => {
+  withEnv({ DICTEX_STT_BENCHMARK_MODELS: "large-v3-turbo", DICTEX_STT_PROMPT_VARIANTS: undefined, DICTEX_VOSK_BENCHMARK_MODELS: "" }, () => {
+    const catalog = buildSttBenchmarkCandidateCatalog([
+      { device: "cpu", computeType: "int8", language: "fr" },
+      { device: "cuda", computeType: "float16", language: "fr" },
+    ]);
+    const keys = catalog.map(candidateIdentityKey);
+    assert.deepEqual(keys, [
+      "stt/faster-whisper/large-v3-turbo/cpu-int8-fr",
+      "stt/faster-whisper/large-v3-turbo/cuda-float16-fr",
+    ]);
+    // Both can be validated together in the same run (the #131 acceptance).
+    const matched = validateRequestedCandidates(
+      catalog.map((c) => ({ stage: c.stage, provider: c.provider, model: c.model, variant: c.variant })),
+      catalog,
+    );
+    assert.equal(matched.length, 2);
+  });
+});
+
+test("buildSttBenchmarkCandidateCatalog: Vosk keeps a single CPU identity, not multiplied by the runtimes", () => {
+  withEnv(
+    { DICTEX_STT_BENCHMARK_MODELS: "base", DICTEX_STT_PROMPT_VARIANTS: undefined, DICTEX_VOSK_BENCHMARK_MODELS: "vosk-model-small-fr-0.22" },
+    () => {
+      const catalog = buildSttBenchmarkCandidateCatalog([
+        { device: "cpu", computeType: "int8", language: "fr" },
+        { device: "cuda", computeType: "float16", language: "fr" },
+      ]);
+      const vosk = catalog.filter((c) => c.provider === VOSK_PROVIDER);
+      assert.equal(vosk.length, 1);
+      assert.equal(vosk[0].variant, "cpu-fr");
+      assert.equal(vosk[0].promptVariant, undefined);
+      assert.deepEqual(vosk[0].runtime, { device: "cpu", computeType: "int8", language: "fr" });
+    },
+  );
+});
+
+test("buildSttConfigForCandidate: the sidecar config comes from the candidate's runtime, not a global one", () => {
+  const candidate = {
+    stage: "stt" as const,
+    provider: FASTER_WHISPER_PROVIDER,
+    model: "large-v3-turbo",
+    variant: "cuda-float16-fr",
+    runtime: { device: "cuda", computeType: "float16", language: "fr" },
+  };
+  // A different ambient global must not leak into the built config.
+  withEnv({ DICTEX_STT_DEVICE: "cpu", DICTEX_STT_COMPUTE_TYPE: "int8", DICTEX_STT_LANGUAGE: "en" }, () => {
+    const config = buildSttConfigForCandidate(candidate);
+    assert.equal(config.engine, FASTER_WHISPER_PROVIDER);
+    assert.equal(config.model, "large-v3-turbo");
+    assert.equal(config.device, "cuda");
+    assert.equal(config.computeType, "float16");
+    assert.equal(config.language, "fr");
+    assert.equal(config.promptVariant, undefined);
+  });
+});
+
+test("buildSttConfigForCandidate: a prompt variant threads its name and local text through unchanged", () => {
+  const config = buildSttConfigForCandidate({
+    stage: "stt",
+    provider: FASTER_WHISPER_PROVIDER,
+    model: "base",
+    variant: "cpu-int8-fr+v-fr-math",
+    runtime: { device: "cpu", computeType: "int8", language: "fr" },
+    promptVariant: "v-fr-math",
+    promptText: "local prompt",
+  });
+  assert.equal(config.promptVariant, "v-fr-math");
+  assert.equal(config.promptText, "local prompt");
+});
+
 function buildCatalogFor(models: string, promptVariants: Record<string, string> | undefined) {
   let catalog: ReturnType<typeof buildSttBenchmarkCandidateCatalog> = [];
   withEnv(
@@ -267,7 +460,7 @@ function buildCatalogFor(models: string, promptVariants: Record<string, string> 
       DICTEX_VOSK_BENCHMARK_MODELS: "",
     },
     () => {
-      catalog = buildSttBenchmarkCandidateCatalog(RUNTIME);
+      catalog = buildSttBenchmarkCandidateCatalog([RUNTIME]);
     },
   );
   return catalog;
