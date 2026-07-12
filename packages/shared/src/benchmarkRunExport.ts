@@ -4,9 +4,16 @@ import {
   type BenchmarkCandidateIdentity,
   type LocalEvent,
 } from "./localEvents.js";
-import { calculateCharacterErrorRate, calculateWordErrorRate } from "./sttScoring.js";
+import {
+  calculateAcousticCharacterErrorRate,
+  calculateCharacterErrorRate,
+  calculateWordErrorRate,
+} from "./sttScoring.js";
 
-export const STT_BENCHMARK_RUN_EXPORT_SCHEMA_VERSION = 1;
+// Bumped to 2 for issue #134: each candidate output now carries `strict_cer`
+// (formerly `cer`) plus a new `acoustic_cer`, and the manifest `scoring` block
+// documents the two CER metrics distinctly.
+export const STT_BENCHMARK_RUN_EXPORT_SCHEMA_VERSION = 2;
 export const STT_BENCHMARK_RUN_EXPORT_FILES = {
   manifest: "manifest.json",
   dataset: "dataset.acoustic.jsonl",
@@ -36,7 +43,10 @@ export type SttBenchmarkRunExportCandidateOutput = {
   status: "done" | "failed" | "missing";
   transcript: string | null;
   latency_ms: number | null;
-  cer: number | null;
+  /** Strict CER: exact fidelity, sentence punctuation counted (issue #134). */
+  strict_cer: number | null;
+  /** Acoustic CER: same texts, sentence punctuation neutralized (issue #134). */
+  acoustic_cer: number | null;
   wer: number | null;
   error: string | null;
 };
@@ -71,7 +81,8 @@ export type SttBenchmarkRunExportManifest = {
     outputs: string;
   };
   scoring: {
-    cer: string;
+    strict_cer: string;
+    acoustic_cer: string;
     wer: string;
     limitations: string[];
   };
@@ -187,7 +198,8 @@ export function buildSttBenchmarkRunExport(
             status: failure ? ("failed" as const) : ("missing" as const),
             transcript: null,
             latency_ms: null,
-            cer: null,
+            strict_cer: null,
+            acoustic_cer: null,
             wer: null,
             error: failure,
           };
@@ -200,7 +212,9 @@ export function buildSttBenchmarkRunExport(
           status: "done" as const,
           transcript: result.transcript,
           latency_ms: result.transcriptionDurationMs,
-          cer: reference === null ? null : calculateCharacterErrorRate(result.transcript, reference),
+          strict_cer: reference === null ? null : calculateCharacterErrorRate(result.transcript, reference),
+          acoustic_cer:
+            reference === null ? null : calculateAcousticCharacterErrorRate(result.transcript, reference),
           wer: reference === null ? null : calculateWordErrorRate(result.transcript, reference),
           error: null,
         };
@@ -230,13 +244,22 @@ export function buildSttBenchmarkRunExport(
         outputs: STT_BENCHMARK_RUN_EXPORT_FILES.outputs,
       },
       scoring: {
-        cer: "Levenshtein distance over canonicalized, trimmed, case-folded characters divided by reference length.",
+        strict_cer:
+          "Strict CER: Levenshtein distance over canonicalized, trimmed, case-folded characters divided by " +
+          "reference length. Sentence punctuation is counted, so it measures exact output fidelity.",
+        acoustic_cer:
+          "Acoustic CER: the same strict normalization, then every sentence-punctuation mark (. , ; : ! ? …) is " +
+          "replaced by a space and runs of whitespace collapsed, before the same character Levenshtein distance " +
+          "divided by reference length. It ignores ONLY sentence punctuation, so a candidate that heard the words " +
+          "but not the commas is not penalized. Apostrophes, hyphens, digits, Greek letters, math symbols, " +
+          "parentheses and the LaTeX $ delimiter are NOT neutralized.",
         wer:
           "Levenshtein distance over canonicalized, trimmed, case-folded whitespace tokens divided by reference token count.",
         limitations: [
           "Strict text scoring does not equate spoken and written numbers, Greek letter names and symbols, " +
-            "or punctuation variants.",
-          "CER and WER are null when the frozen snapshot has no reference transcript or the candidate has no output.",
+            "or punctuation variants; only the acoustic CER additionally ignores sentence punctuation.",
+          "Strict CER, acoustic CER and WER are null when the frozen snapshot has no reference transcript or the " +
+            "candidate has no output.",
           "LaTeX canonicalization only normalizes supported delimited math spelling; " +
             "it does not compare mathematical meaning.",
         ],

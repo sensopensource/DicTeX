@@ -735,11 +735,50 @@ lieu d'être supprimée. Aucun enregistrement `math_transform`, segment sans aud
 ou fichier audio ne peut entrer dans le paquet.
 
 Le manifeste référence ses deux fichiers JSONL par des chemins relatifs et
-porte les limites du scoring textuel strict. Les prompts ne sont pas répétés
-par candidat : une table unique contient leur identifiant, leur nom affiché et
-leur texte complet, tandis que chaque candidat référence l'identifiant. Pour
-que les variantes externes soient aussi reproductibles que celles créées dans
-le Lab, tout nouveau `stt_benchmark_run_started` fige cette table dans son champ
-optionnel `prompt_definitions`. L'absence de ce champ reste lisible pour les
-runs #122 antérieurs ; leur export exige que la définition référencée soit
-encore disponible et échoue explicitement sinon.
+porte les limites des deux CER et du WER (voir « Deux CER » ci-dessous). Les
+prompts ne sont pas répétés par candidat : une table unique contient leur
+identifiant, leur nom affiché et leur texte complet, tandis que chaque candidat
+référence l'identifiant. Pour que les variantes externes soient aussi
+reproductibles que celles créées dans le Lab, tout nouveau
+`stt_benchmark_run_started` fige cette table dans son champ optionnel
+`prompt_definitions`. L'absence de ce champ reste lisible pour les runs #122
+antérieurs ; leur export exige que la définition référencée soit encore
+disponible et échoue explicitement sinon.
+
+### Deux CER : strict et acoustique (issue #134)
+
+> **Statut : implémenté** (issue #134). La fonction
+> `calculateAcousticCharacterErrorRate` vit dans
+> `packages/shared/src/sttScoring.ts`, à côté du CER strict. Les résumés
+> (`benchmarkSummary.ts`), l'interface Benchmark et l'export LLM
+> (`benchmarkRunExport.ts`, schéma d'export porté à `2`) exposent les deux.
+
+Le CER strict compare les caractères après canonicalisation LaTeX, normalisation
+de casse et des espaces de bord. Il **compte la ponctuation de phrase**, donc une
+sortie comme `racine carrée de a, plus b` est pénalisée face à la référence
+`racine carrée de a plus b` alors que les mots entendus sont identiques. Ce score
+reste utile pour décrire la fidélité exacte de la sortie, mais ne doit pas être le
+seul levier de comparaison des candidats STT ou des variantes d'`initial_prompt`.
+
+Le **CER acoustique** est une seconde projection déterministe de la **même** paire
+transcript/référence. Il applique aux deux textes la normalisation stricte
+existante, puis remplace par un séparateur les seuls signes de ponctuation de
+phrase `.` `,` `;` `:` `!` `?` `…` et réduit les espaces, avant le même calcul de
+distance d'édition sur les caractères. Il neutralise donc **uniquement** la
+ponctuation de phrase :
+
+- une apostrophe, un trait d'union, un chiffre, une lettre grecque, un symbole
+  mathématique, une parenthèse ou un délimiteur `$` restent comptés ;
+- une différence lexicale reste comptée ;
+- ajouter ou retirer seulement `.` `,` `;` `:` `!` `?` ou `…` ne le modifie pas.
+
+C'est la métrique **mise en avant** pour comparer baseline et prompts, sans
+sélectionner automatiquement un candidat. Il ne change ni les corrections, ni les
+audios, ni la grammaire orale ; il ne décide pas non plus que la virgule signifie
+une pause. Le CER acoustique n'est **jamais** stocké : il est dérivé à la lecture
+depuis le transcript et la référence figée du snapshot, donc il s'applique aussi
+aux runs historiques sans réécrire l'historique. Un run antérieur à #130 dont la
+référence n'est pas acoustique reste identifié comme non comparable (voir
+« Compatibilité des runs antérieurs à #130 » ci-dessus) et n'est pas corrigé
+rétroactivement. Une projection WER acoustique n'est pas incluse ici ; elle
+pourra faire l'objet d'un ticket séparé si elle devient nécessaire.

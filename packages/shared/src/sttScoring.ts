@@ -43,6 +43,51 @@ export function calculateCharacterErrorRate(candidateTranscript: string, referen
   return calculateEditDistance(candidate.split(""), reference.split("")) / reference.length;
 }
 
+/**
+ * Sentence punctuation neutralized by the acoustic CER (issue #134). These are
+ * the only marks whose presence or absence must not penalize a candidate that
+ * heard the words correctly but did not reproduce the punctuation. Deliberately
+ * NOT here — and therefore still scored by the acoustic metric — are
+ * apostrophes, hyphens, digits, Greek letters, math symbols, parentheses, and
+ * the LaTeX `$` delimiter.
+ */
+const SENTENCE_PUNCTUATION = /[.,;:!?…]/gu;
+
+/**
+ * Normalizes a text for ACOUSTIC scoring (issue #134): the exact strict
+ * normalization used by CER/WER (LaTeX-canonicalized, trimmed, case-folded),
+ * then every sentence-punctuation mark replaced by a separating space and runs
+ * of whitespace collapsed. The strict and acoustic CER therefore differ ONLY by
+ * this punctuation neutralization.
+ */
+export function normalizeForAcousticScoring(value: string): string {
+  return normalizeForScoring(canonicalizeLatex(value))
+    .replace(SENTENCE_PUNCTUATION, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+/**
+ * Character error rate that ignores sentence punctuation (issue #134). Same edit
+ * distance as `calculateCharacterErrorRate`, but both texts pass through
+ * `normalizeForAcousticScoring` first, so `racine carrée de a, plus b` scores
+ * zero against `racine carrée de a plus b`. It is kept separate from the strict
+ * CER, which stays the exact-fidelity measure of the output.
+ */
+export function calculateAcousticCharacterErrorRate(
+  candidateTranscript: string,
+  referenceTranscript: string,
+): number {
+  const candidate = normalizeForAcousticScoring(candidateTranscript);
+  const reference = normalizeForAcousticScoring(referenceTranscript);
+
+  if (reference.length === 0) {
+    return candidate.length === 0 ? 0 : 1;
+  }
+
+  return calculateEditDistance(candidate.split(""), reference.split("")) / reference.length;
+}
+
 export function calculateWordErrorRate(candidateTranscript: string, referenceTranscript: string): number {
   const candidate = tokenizeWords(candidateTranscript);
   const reference = tokenizeWords(referenceTranscript);

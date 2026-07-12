@@ -13,7 +13,7 @@ import { writeSttBenchmarkRunExport } from "./benchmarkRunExportWriter.js";
 function fixture(): SttBenchmarkRunExport {
   return {
     manifest: {
-      schema_version: 1,
+      schema_version: 2,
       export_type: "stt_benchmark_run_llm",
       run_id: "run_1",
       exported_at: "2026-07-12T11:00:00.000Z",
@@ -32,7 +32,7 @@ function fixture(): SttBenchmarkRunExport {
         dataset: STT_BENCHMARK_RUN_EXPORT_FILES.dataset,
         outputs: STT_BENCHMARK_RUN_EXPORT_FILES.outputs,
       },
-      scoring: { cer: "cer", wer: "wer", limitations: [] },
+      scoring: { strict_cer: "strict", acoustic_cer: "acoustic", wer: "wer", limitations: [] },
       prompt_variants: [],
       candidates: [
         { stage: "stt", provider: "faster-whisper", model: "small", variant: "cpu-int8-fr", prompt_variant_id: null },
@@ -61,7 +61,8 @@ function fixture(): SttBenchmarkRunExport {
             status: "done",
             transcript: "bonjour",
             latency_ms: 900,
-            cer: 0,
+            strict_cer: 0,
+            acoustic_cer: 0,
             wer: 0,
             error: null,
           },

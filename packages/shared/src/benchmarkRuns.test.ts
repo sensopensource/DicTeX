@@ -12,7 +12,7 @@ import {
   type LocalEvent,
 } from "./localEvents.js";
 import { summarizeLegacySttBenchmarkResultsByCandidate, summarizeSttBenchmarkRun } from "./benchmarkSummary.js";
-import { calculateCharacterErrorRate } from "./sttScoring.js";
+import { calculateAcousticCharacterErrorRate, calculateCharacterErrorRate } from "./sttScoring.js";
 
 /**
  * Coverage for benchmark run tracking + acoustic snapshots (issue #122): a run
@@ -291,7 +291,34 @@ test("summarizeSttBenchmarkRun: derives CER and WER from the frozen snapshot ref
   );
 
   assert.equal(summary?.candidates[0].meanCer, 0);
+  assert.equal(summary?.candidates[0].meanAcousticCer, 0);
   assert.equal(summary?.candidates[0].meanWer, 0);
+});
+
+test("summarizeSttBenchmarkRun: acoustic CER ignores sentence punctuation while strict CER counts it (issue #134)", () => {
+  const snapshot: BenchmarkRunSnapshotMember[] = [
+    {
+      sessionId: "session_a",
+      segmentId: "seg_0001",
+      audioRef: "audio/session_a/seg_0001.webm",
+      referenceTranscript: "racine carrée de a plus b",
+      correctionCreatedAt: "2026-07-12T09:00:00.000Z",
+    },
+  ];
+  // The candidate heard the words but added a comma the reference lacks.
+  const result = runResult("run_1", "session_a", "seg_0001", 0, "unused", "racine carrée de a, plus b");
+
+  const summary = summarizeSttBenchmarkRun(
+    [runStarted("run_1", snapshot), result, runFinished("run_1", 1, 0, [])],
+    "run_1",
+  );
+
+  assert.ok((summary?.candidates[0].meanCer as number) > 0, "strict CER penalizes the comma");
+  assert.equal(summary?.candidates[0].meanAcousticCer, 0, "acoustic CER ignores the comma");
+  assert.equal(
+    summary?.candidates[0].meanAcousticCer,
+    calculateAcousticCharacterErrorRate("racine carrée de a, plus b", "racine carrée de a plus b"),
+  );
 });
 
 test("summarizeSttBenchmarkRun: two runs of the same split stay separate", () => {
