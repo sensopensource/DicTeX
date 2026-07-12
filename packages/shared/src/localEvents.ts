@@ -189,6 +189,12 @@ export type SttBenchmarkRunCandidateRecord = {
   prompt_variant?: string | null;
 };
 
+export type SttBenchmarkRunPromptDefinitionRecord = {
+  id: string;
+  display_name: string;
+  prompt_text: string;
+};
+
 /**
  * Append-only run-start event (issue #122). Fixes the identity of one STT
  * benchmark batch: its `run_id`, the requested `split`, the explicit
@@ -204,6 +210,10 @@ export type SttBenchmarkRunStartedEvent = {
   dataset_kind: "acoustic";
   split: SttBenchmarkSetSplit;
   candidates: SttBenchmarkRunCandidateRecord[];
+  /** Full prompt definitions used by this run, stored once per prompt so an
+   * external env definition changing later cannot alter a regenerated export.
+   * Optional for runs recorded before issue #123. */
+  prompt_definitions?: SttBenchmarkRunPromptDefinitionRecord[];
   snapshot: SttBenchmarkRunSnapshotMemberRecord[];
 };
 
@@ -340,6 +350,11 @@ export type SttBenchmarkRun = {
   datasetKind: string;
   split: SttBenchmarkSetSplit;
   candidates: BenchmarkRunCandidate[];
+  promptDefinitions: {
+    id: string;
+    displayName: string;
+    promptText: string;
+  }[];
   snapshot: BenchmarkRunSnapshotMember[];
   finished: {
     createdAt: string | null;
@@ -786,6 +801,7 @@ export function getSttBenchmarkRuns(events: LocalEvent[]): SttBenchmarkRun[] {
           datasetKind: event.dataset_kind,
           split: event.split,
           candidates: event.candidates.map(toRunCandidate),
+          promptDefinitions: toRunPromptDefinitions(event.prompt_definitions),
           snapshot: event.snapshot.map(toRunSnapshotMember),
           finished: null,
         },
@@ -841,6 +857,29 @@ function toRunCandidate(record: SttBenchmarkRunCandidateRecord): BenchmarkRunCan
     variant: getString(record.variant),
     promptVariant: getString(record.prompt_variant),
   };
+}
+
+function toRunPromptDefinitions(value: unknown): SttBenchmarkRun["promptDefinitions"] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(
+      (definition): definition is SttBenchmarkRunPromptDefinitionRecord =>
+        isRecord(definition) &&
+        typeof definition.id === "string" &&
+        definition.id.length > 0 &&
+        typeof definition.display_name === "string" &&
+        definition.display_name.length > 0 &&
+        typeof definition.prompt_text === "string" &&
+        definition.prompt_text.length > 0,
+    )
+    .map((definition) => ({
+      id: definition.id,
+      displayName: definition.display_name,
+      promptText: definition.prompt_text,
+    }));
 }
 
 function getBenchmarkCandidateIdentity(event: SttBenchmarkResultEvent): BenchmarkCandidateIdentity | null {
