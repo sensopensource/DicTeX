@@ -8,6 +8,8 @@ import type {
   SttBenchmarkResponse,
   SttBenchmarkSetRunResponse,
   SttBenchmarkSetProgress,
+  SttBenchmarkRunListEntry,
+  SttBenchmarkRunSummaryResponse,
   SttBenchmarkCandidateSummaryResponse,
   SttCandidateSelectionRequest,
   SttCandidateSelectionResponse,
@@ -63,8 +65,14 @@ contextBridge.exposeInMainWorld("dictexLab", {
     ipcRenderer.invoke("benchmark:run-segment-stt", audioSegment) as Promise<SttBenchmarkResponse>,
   runSetSttBenchmark: (split: SttBenchmarkSetSplit, candidates?: BenchmarkCandidateIdentity[]) =>
     ipcRenderer.invoke("benchmark:run-set-stt", { split, candidates }) as Promise<SttBenchmarkSetRunResponse>,
-  summarizeSttBenchmarkSet: (split: SttBenchmarkSetSplit) =>
-    ipcRenderer.invoke("benchmark-set:summarize-stt", { split }) as Promise<SttBenchmarkCandidateSummaryResponse>,
+  // Per-run summary + run listing (issue #122): two runs of the same split stay
+  // separate. The legacy summary reads only pre-#122 results (no run_id).
+  summarizeSttBenchmarkRun: (runId: string) =>
+    ipcRenderer.invoke("benchmark-set:summarize-run", { runId }) as Promise<SttBenchmarkRunSummaryResponse | null>,
+  listSttBenchmarkRuns: (split: SttBenchmarkSetSplit) =>
+    ipcRenderer.invoke("benchmark-set:list-runs", { split }) as Promise<SttBenchmarkRunListEntry[]>,
+  summarizeLegacySttBenchmarkSet: (split: SttBenchmarkSetSplit) =>
+    ipcRenderer.invoke("benchmark-set:summarize-legacy-stt", { split }) as Promise<SttBenchmarkCandidateSummaryResponse>,
 
   // Candidate selection (own store).
   selectSttCandidate: (request: SttCandidateSelectionRequest) =>

@@ -633,3 +633,72 @@ Layer 2 *target* is canonicalized at export. The input is produced by the shared
 normalizer and must stay byte-equal to what `apps/dictex` serves (the #100
 train/serve invariant); once #107 makes the rules emit LaTeX, canonicalization of
 the input belongs with that pipeline change, applied identically on both sides.
+
+---
+
+## 9. Runs de benchmark et snapshot acoustique (issue #122)
+
+> **Statut : implémenté** (issue #122). Les événements `stt_benchmark_run_started`
+> / `stt_benchmark_run_finished` et le champ `run_id` de `stt_benchmark_result`
+> vivent dans `packages/shared/src/localEvents.ts` ; les dérivations par run dans
+> `packages/shared/src/benchmarkSummary.ts` ; l'orchestration dans
+> `apps/lab/src/main/index.ts`.
+
+Un `stt_benchmark_result` décrit correctement un candidat appliqué à un segment,
+mais seul il ne dit ni **quand** ni **sur quel ensemble d'entrée** la mesure a été
+faite. Or `validation` évolue : deux résultats portant le même nom de split ont
+pu être mesurés sur des membres ou des corrections différents. La provenance du
+run doit être figée avant tout export ou choix de prompt.
+
+### Le contrat canonique
+
+```text
+définition de prompt immuable (#121)
+  -> run identifié + snapshot d'entrée figé   (stt_benchmark_run_started)
+     -> résultats atomiques candidat × segment  (stt_benchmark_result, run_id)
+        -> événement terminal terminé/échoué     (stt_benchmark_run_finished)
+```
+
+Chaque lancement de lot STT est une **expérience à ajout uniquement** :
+
+1. **`run_id` stable et unique.** Un identifiant par lancement, jamais réutilisé.
+2. **Événement de début `stt_benchmark_run_started`.** Écrit une seule fois, avant
+   tout résultat. Il porte la date, le `stage` (`stt`), le `split` demandé, le
+   `dataset_kind` **toujours `acoustic`**, la liste complète des candidats
+   lancés (identité `{stage, provider, model, variant}` + `prompt_variant`,
+   référence à la définition immuable de #121), et le **snapshot** : la liste
+   ordonnée des membres réellement évaluables.
+3. **Snapshot acoustique.** Chaque membre porte `session_id`, `segment_id`,
+   `audio_ref`, la transcription de référence et `correction_created_at`
+   effectivement utilisés au démarrage. Seuls les segments à **audio réel** en
+   font partie : une entrée `math_transform` sans audio (source « paste »,
+   `audio_ref` vide) est exclue, donc un run STT ne mesure jamais un
+   enregistrement sans audio (§1, séparation acoustic / math_transform).
+4. **`run_id` sur chaque résultat.** Tout nouveau `stt_benchmark_result` porte le
+   `run_id` de son run. Les anciens résultats sans `run_id` restent lisibles et
+   sont signalés comme **hérités** (`getLegacySttBenchmarkResultsForSplit`),
+   jamais rattachés arbitrairement à un run moderne.
+5. **Événement terminal `stt_benchmark_run_finished`.** Porte les nombres
+   `done` / `failed` et la liste des `failures` observés. Un segment du snapshot
+   sans résultat **et** sans entrée de failure n'a **pas** été exécuté (arrêt
+   partiel) ; un segment listé dans `failures` a échoué. Les deux sont ainsi
+   distinguables d'un segment simplement absent.
+
+### Ce que le contrat garantit
+
+- **Immuabilité historique.** Le résumé d'un run est dérivé de son snapshot figé
+  et de ses résultats portant son `run_id`, jamais de l'appartenance courante au
+  split. Ajouter, retirer ou **recorriger** un segment après le run ne change ni
+  son snapshot ni ses scores : la référence est copiée dans le snapshot au
+  démarrage et dans chaque résultat, et n'est jamais relue depuis les corrections
+  actuelles.
+- **Deux runs restent séparés.** Deux lancements du même split à des dates
+  différentes ont deux `run_id` et deux snapshots ; leurs dérivations et leur
+  affichage ne se mélangent pas.
+- **Append-only strict.** Le premier `stt_benchmark_run_started` d'un `run_id`
+  fait foi ; un doublon est ignoré. Aucun événement historique n'est réécrit
+  pour recevoir un `run_id`.
+
+`test_frozen` garde sa discipline (`docs/roadmap.md`) : on ne le lit qu'une fois,
+après toutes les décisions. Le suivi des runs ne change pas cette règle ; il rend
+seulement chaque lecture reproductible et traçable.

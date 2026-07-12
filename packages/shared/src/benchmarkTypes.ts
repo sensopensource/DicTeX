@@ -120,10 +120,28 @@ export type SttBenchmarkSetSegmentOutcome = {
 
 export type SttBenchmarkSetRunResponse = {
   split: SttBenchmarkSetSplit;
+  /** Identity of the tracked run this batch created (issue #122). The renderer
+   * uses it to summarize exactly this run rather than the whole split. */
+  runId: string;
   total: number;
   done: number;
   failed: number;
   outcomes: SttBenchmarkSetSegmentOutcome[];
+};
+
+/** One tracked run in the run selector (issue #122), newest first. Lightweight:
+ * the frozen snapshot/candidate arrays stay in the run-start event and are only
+ * materialized when a run is actually summarized. */
+export type SttBenchmarkRunListEntry = {
+  runId: string;
+  createdAt: string | null;
+  split: SttBenchmarkSetSplit;
+  datasetKind: string;
+  snapshotSize: number;
+  candidateCount: number;
+  done: number | null;
+  failed: number | null;
+  finished: boolean;
 };
 
 export type SttBenchmarkSetProgress = {

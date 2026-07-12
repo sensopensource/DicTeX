@@ -7,9 +7,12 @@ import type {
   BenchmarkCandidateIdentity,
   CorrectionKind,
   ReconstructedSegment,
+  SttBenchmarkCandidateSummary,
   SttBenchmarkCandidateSummaryResponse,
   SttBenchmarkResponse,
   SttBenchmarkResult,
+  SttBenchmarkRunListEntry,
+  SttBenchmarkRunSummaryResponse,
   SttBenchmarkSetMembershipRequest,
   SttBenchmarkSetMembershipResponse,
   SttBenchmarkSetProgress,
@@ -88,7 +91,9 @@ type LabApi = {
     split: SttBenchmarkSetSplit,
     candidates?: BenchmarkCandidateIdentity[],
   ) => Promise<SttBenchmarkSetRunResponse>;
-  summarizeSttBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkCandidateSummaryResponse>;
+  summarizeSttBenchmarkRun: (runId: string) => Promise<SttBenchmarkRunSummaryResponse | null>;
+  listSttBenchmarkRuns: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkRunListEntry[]>;
+  summarizeLegacySttBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkCandidateSummaryResponse>;
   selectSttCandidate: (request: SttCandidateSelectionRequest) => Promise<SttCandidateSelectionResponse>;
   getLatestSttCandidateSelection: () => Promise<SttCandidateSelectionResponse | null>;
   saveDatasetBuilderEntry: (request: DatasetBuilderSaveRequest) => Promise<DatasetBuilderSaveResponse>;
@@ -111,6 +116,34 @@ declare global {
 }
 
 type View = "segments" | "benchmark" | "dataset";
+
+/**
+ * Sentinel selector value for the legacy (pre-#122, no run_id) summary, kept
+ * distinct from any tracked run id (which is always `run_…`).
+ */
+const LEGACY_RUN_KEY = "legacy";
+
+/**
+ * Normalized summary the panel renders (issue #122): a tracked run's per-run
+ * summary or the legacy no-run-id summary, both flattened to one shape so two
+ * runs of the same split stay separate and legacy results are clearly flagged.
+ */
+type BenchmarkSummaryView = {
+  kind: "run" | "legacy";
+  runId: string | null;
+  split: SttBenchmarkSetSplit;
+  createdAt: string | null;
+  totalSegments: number;
+  candidates: SttBenchmarkCandidateSummary[];
+  done: number | null;
+  failed: number | null;
+};
+
+function formatRunOption(run: SttBenchmarkRunListEntry): string {
+  const when = run.createdAt ? formatTimestamp(run.createdAt) : run.runId;
+  const status = run.finished ? `${run.done ?? 0} done / ${run.failed ?? 0} failed` : "unfinished";
+  return `${when} · ${run.snapshotSize} seg · ${status}`;
+}
 
 type HistoryCorrectionTarget = {
   sessionId: string;
@@ -166,9 +199,13 @@ function App(): React.ReactElement {
   const [batchOutcomes, setBatchOutcomes] = useState<SttBenchmarkSetSegmentOutcome[]>([]);
   const [batchError, setBatchError] = useState("");
   const [isRunningBatch, setIsRunningBatch] = useState(false);
-  const [candidateSummary, setCandidateSummary] = useState<SttBenchmarkCandidateSummaryResponse | null>(null);
+  const [candidateSummary, setCandidateSummary] = useState<BenchmarkSummaryView | null>(null);
   const [summaryError, setSummaryError] = useState("");
   const [isSummarizing, setIsSummarizing] = useState(false);
+  // Tracked benchmark runs of the current split (issue #122), newest first,
+  // plus which run (or the legacy bucket) the summary panel is showing.
+  const [runList, setRunList] = useState<SttBenchmarkRunListEntry[]>([]);
+  const [selectedRunKey, setSelectedRunKey] = useState<string | null>(null);
   const [currentSelection, setCurrentSelection] = useState<SttCandidateSelectionResponse | null>(null);
   const [selectionReasonDraft, setSelectionReasonDraft] = useState("");
   const [selectionError, setSelectionError] = useState("");
@@ -231,6 +268,31 @@ function App(): React.ReactElement {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Tracked benchmark runs are per-split (issue #122): when the split changes,
+  // reload its run list and drop the summary/selection so a stale run's numbers
+  // never show under a different split.
+  useEffect(() => {
+    let cancelled = false;
+    setCandidateSummary(null);
+    setSelectedRunKey(null);
+    setSummaryError("");
+    window.dictexLab
+      .listSttBenchmarkRuns(batchSplit)
+      .then((runs) => {
+        if (!cancelled) {
+          setRunList(runs);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRunList([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [batchSplit]);
 
   // Layer 2 prefill (#101): debounced so it fires once Layer 1 settles rather
   // than on every keystroke. Reads the SOURCE folder's dictionary/rules
@@ -528,10 +590,21 @@ function App(): React.ReactElement {
     }
   }
 
-  async function runSetSttBenchmark(): Promise<void> {
+  async function refreshRunList(): Promise<SttBenchmarkRunListEntry[]> {
+    try {
+      const runs = await window.dictexLab.listSttBenchmarkRuns(batchSplit);
+      setRunList(runs);
+      return runs;
+    } catch {
+      setRunList([]);
+      return [];
+    }
+  }
+
+  async function runSetSttBenchmark(): Promise<string | null> {
     if (selectedCandidates.length < 1) {
       setBatchError("Check at least one STT candidate to run");
-      return;
+      return null;
     }
 
     setBatchError("");
@@ -544,22 +617,52 @@ function App(): React.ReactElement {
       setNotice(
         `Benchmarked ${formatBenchmarkSetSplit(response.split)}: ${response.done} done, ${response.failed} failed of ${response.total}`,
       );
+      return response.runId;
     } catch (runError) {
       setBatchError(runError instanceof Error ? runError.message : "Benchmark set run failed");
+      return null;
     } finally {
       setIsRunningBatch(false);
     }
   }
 
-  async function summarizeCandidates(): Promise<void> {
+  // Summarizes exactly one tracked run (or the legacy no-run-id bucket, issue
+  // #122), so two runs of the same split never blur together.
+  async function summarizeRun(target: string): Promise<void> {
     setSummaryError("");
+    setSelectedRunKey(target);
     setIsSummarizing(true);
     try {
-      const response = await window.dictexLab.summarizeSttBenchmarkSet(batchSplit);
-      const selectedKeys = new Set(selectedCandidates.map((candidate) => formatCandidateIdentityKey(candidate)));
+      if (target === LEGACY_RUN_KEY) {
+        const response = await window.dictexLab.summarizeLegacySttBenchmarkSet(batchSplit);
+        setCandidateSummary({
+          kind: "legacy",
+          runId: null,
+          split: response.split,
+          createdAt: null,
+          totalSegments: response.totalSegments,
+          candidates: response.candidates,
+          done: null,
+          failed: null,
+        });
+        return;
+      }
+
+      const response = await window.dictexLab.summarizeSttBenchmarkRun(target);
+      if (!response) {
+        setCandidateSummary(null);
+        setSummaryError("This run no longer exists in the Lab event log.");
+        return;
+      }
       setCandidateSummary({
-        ...response,
-        candidates: response.candidates.filter((summary) => selectedKeys.has(formatCandidateIdentityKey(summary.candidate))),
+        kind: "run",
+        runId: response.runId,
+        split: response.split,
+        createdAt: response.createdAt,
+        totalSegments: response.totalSegments,
+        candidates: response.candidates,
+        done: response.done,
+        failed: response.failed,
       });
     } catch (summaryRunError) {
       setSummaryError(summaryRunError instanceof Error ? summaryRunError.message : "Benchmark summary failed");
@@ -568,9 +671,20 @@ function App(): React.ReactElement {
     }
   }
 
+  // "Summarize by candidate" button: (re)summarize the currently selected run,
+  // else the newest run, else the legacy bucket.
+  async function summarizeCandidates(): Promise<void> {
+    const runs = await refreshRunList();
+    const target = selectedRunKey ?? (runs.length > 0 ? runs[0].runId : LEGACY_RUN_KEY);
+    await summarizeRun(target);
+  }
+
   async function runAnalysis(): Promise<void> {
-    await runSetSttBenchmark();
-    await summarizeCandidates();
+    const runId = await runSetSttBenchmark();
+    await refreshRunList();
+    if (runId) {
+      await summarizeRun(runId);
+    }
   }
 
   async function selectCandidate(candidate: BenchmarkCandidateIdentity): Promise<void> {
@@ -758,6 +872,9 @@ function App(): React.ReactElement {
           summaryError={summaryError}
           isSummarizing={isSummarizing}
           summarizeCandidates={() => void summarizeCandidates()}
+          runList={runList}
+          selectedRunKey={selectedRunKey}
+          summarizeRun={(target) => void summarizeRun(target)}
           currentSelection={currentSelection}
           selectionReasonDraft={selectionReasonDraft}
           setSelectionReasonDraft={(value) => {
@@ -1203,10 +1320,13 @@ type BenchmarkViewProps = {
   selectedCandidates: BenchmarkCandidateIdentity[];
   setSelectedCandidates: React.Dispatch<React.SetStateAction<BenchmarkCandidateIdentity[]>>;
   runAnalysis: () => void;
-  candidateSummary: SttBenchmarkCandidateSummaryResponse | null;
+  candidateSummary: BenchmarkSummaryView | null;
   summaryError: string;
   isSummarizing: boolean;
   summarizeCandidates: () => void;
+  runList: SttBenchmarkRunListEntry[];
+  selectedRunKey: string | null;
+  summarizeRun: (target: string) => void;
   currentSelection: SttCandidateSelectionResponse | null;
   selectionReasonDraft: string;
   setSelectionReasonDraft: (value: string) => void;
@@ -1694,6 +1814,9 @@ function BenchmarkView({
   summaryError,
   isSummarizing,
   summarizeCandidates,
+  runList,
+  selectedRunKey,
+  summarizeRun,
   currentSelection,
   selectionReasonDraft,
   setSelectionReasonDraft,
@@ -1897,17 +2020,37 @@ function BenchmarkView({
           <div>
             <h2>Candidate summary</h2>
             <p>
-              Compare{" "}
-              {selectedCandidates.length > 0
-                ? selectedCandidates.map((candidate) => formatCandidateIdentity(candidate)).join(", ")
-                : "checked candidates"}{" "}
-              over{" "}
-              {formatBenchmarkSetSplit(batchSplit)}. CER/WER: lower is better.
+              One benchmark run over {formatBenchmarkSetSplit(batchSplit)}, scored against its frozen acoustic
+              snapshot. CER/WER: lower is better.
             </p>
           </div>
-          <button className="secondary-button" disabled={isSummarizing} onClick={summarizeCandidates}>
-            {isSummarizing ? "Summarizing" : "Summarize by candidate"}
-          </button>
+          <div className="batch-controls">
+            <select
+              aria-label="Benchmark run to summarize"
+              className="secondary-select"
+              disabled={isSummarizing}
+              value={selectedRunKey ?? ""}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                if (value) {
+                  summarizeRun(value);
+                }
+              }}
+            >
+              <option value="" disabled>
+                {runList.length > 0 ? "Select a run…" : "No tracked run yet"}
+              </option>
+              {runList.map((run) => (
+                <option key={run.runId} value={run.runId}>
+                  {formatRunOption(run)}
+                </option>
+              ))}
+              <option value={LEGACY_RUN_KEY}>Legacy (pre-run results)</option>
+            </select>
+            <button className="secondary-button" disabled={isSummarizing} onClick={summarizeCandidates}>
+              {isSummarizing ? "Summarizing" : "Summarize by candidate"}
+            </button>
+          </div>
         </div>
 
         {summaryError && <pre className="error">{summaryError}</pre>}
@@ -1920,22 +2063,47 @@ function BenchmarkView({
             : "No base STT candidate selected yet. The highest-quality candidate is not always best if latency is poor — compare mean latency before selecting."}
         </p>
 
+        {candidateSummary && candidateSummary.kind === "run" && (
+          <p className="empty-state">
+            Run {candidateSummary.createdAt ? formatTimestamp(candidateSummary.createdAt) : candidateSummary.runId} ·{" "}
+            {candidateSummary.totalSegments} acoustic segment{candidateSummary.totalSegments === 1 ? "" : "s"}
+            {candidateSummary.done !== null && candidateSummary.failed !== null
+              ? ` · ${candidateSummary.done} done, ${candidateSummary.failed} failed`
+              : " · run not finished"}
+            . This run's snapshot is frozen — later re-corrections or split changes never alter its numbers.
+          </p>
+        )}
+
+        {candidateSummary && candidateSummary.kind === "legacy" && (
+          <p className="empty-state">
+            Legacy results recorded before run tracking (no run id). Shown for reference; never attached to a run.
+          </p>
+        )}
+
         {!candidateSummary && (
-          <p className="empty-state">Run analysis above, or summarize by candidate, to see per-candidate scores.</p>
+          <p className="empty-state">Run analysis above, or pick a run to summarize, to see per-candidate scores.</p>
         )}
 
         {candidateSummary && candidateSummary.split !== batchSplit && (
           <p className="empty-state">
-            Showing {formatBenchmarkSetSplit(candidateSummary.split)}; select the split again and re-run to refresh.
+            Showing {formatBenchmarkSetSplit(candidateSummary.split)}; switch the split back to see its runs.
           </p>
         )}
 
         {candidateSummary && candidateSummary.totalSegments === 0 && (
-          <p className="empty-state">No corrected segments in {formatBenchmarkSetSplit(candidateSummary.split)} yet.</p>
+          <p className="empty-state">
+            {candidateSummary.kind === "run"
+              ? "This run had no acoustic segments in its snapshot."
+              : `No legacy results in ${formatBenchmarkSetSplit(candidateSummary.split)}.`}
+          </p>
         )}
 
         {candidateSummary && candidateSummary.totalSegments > 0 && candidateSummary.candidates.length === 0 && (
-          <p className="empty-state">No candidate results match the checked candidates above yet.</p>
+          <p className="empty-state">
+            {candidateSummary.kind === "run"
+              ? "No candidate produced a result in this run yet."
+              : "No legacy candidate results in this split."}
+          </p>
         )}
 
         {candidateSummary && candidateSummary.candidates.length > 0 && (
