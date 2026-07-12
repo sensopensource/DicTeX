@@ -1020,17 +1020,17 @@ horodaté sous `data/exports/`. Une collision de timestamp ajoute un suffixe au
 nouveau dossier ; aucun export antérieur n'est écrasé. Le dossier contient
 exactement trois fichiers :
 
-- `manifest.json` : version du schéma, dates, `run_id`, stage, split, statut,
-  référence au snapshot, limites du CER/WER strict, identités complètes des
-  candidats et définitions des prompts (`id`, nom affiché, texte complet) une
-  seule fois ;
+- `manifest.json` : version du schéma (`2` depuis #134), dates, `run_id`, stage,
+  split, statut, référence au snapshot, description distincte des deux CER et du
+  WER, identités complètes des candidats et définitions des prompts (`id`, nom
+  affiché, texte complet) une seule fois ;
 - `dataset.acoustic.jsonl` : une ligne par membre du snapshot figé, avec
   `session_id`, `segment_id`, `audio_ref`, `audio_path`, transcription de
   référence et date de correction utilisées au démarrage du run ;
 - `outputs.jsonl` : une ligne par même couple `session_id + segment_id`, avec
   tous les candidats du run. Chaque sortie porte `done`, `failed` ou `missing`,
-  le transcript et la latence lorsqu'ils existent, ainsi que CER/WER lorsque le
-  snapshot possède une référence.
+  le transcript et la latence lorsqu'ils existent, ainsi que `strict_cer`,
+  `acoustic_cer` (#134) et `wer` lorsque le snapshot possède une référence.
 
 Les noms de fichiers du manifeste sont relatifs : le paquet peut donc être
 déplacé avec son dossier. `audio_path` reste une provenance absolue de la source
@@ -1046,11 +1046,28 @@ fois par identifiant. Cela fige aussi une variante provenant de
 Lab ou l'environnement ; il refuse explicitement l'export si cette définition
 n'est plus disponible plutôt que d'inventer un texte.
 
-Le CER/WER reste un score textuel strict : casse et espaces de bord sont
-normalisés, le WER découpe sur les espaces et le sous-ensemble LaTeX connu est
-canonicalisé. Il n'établit aucune équivalence sémantique entre chiffres et mots,
-noms de lettres grecques et symboles, ni variantes de ponctuation. Ces limites
-sont recopiées dans chaque manifeste.
+Depuis #134, l'export porte **deux** projections CER de la même paire
+transcript/référence figée, plus le WER :
+
+- `strict_cer` : le score textuel strict historique. Casse et espaces de bord
+  sont normalisés, le sous-ensemble LaTeX connu est canonicalisé, mais la
+  ponctuation de phrase est comptée : il mesure la fidélité exacte de la sortie.
+- `acoustic_cer` : la **même** normalisation stricte, puis les seuls signes de
+  ponctuation de phrase `.` `,` `;` `:` `!` `?` `…` remplacés par un séparateur
+  et les espaces réduits, avant le même calcul. Il ignore uniquement la
+  ponctuation de phrase, jamais les apostrophes, traits d'union, chiffres,
+  lettres grecques, symboles mathématiques, parenthèses ou délimiteurs `$`.
+  C'est la métrique mise en avant pour comparer baseline et variantes de
+  `initial_prompt`, car un candidat qui entend les mots sans reproduire les
+  virgules ne doit pas être artificiellement classé moins bon.
+
+Aucun des deux CER n'établit d'équivalence sémantique entre chiffres et mots,
+noms de lettres grecques et symboles, ou expressions mathématiques ; seul
+`acoustic_cer` ignore en plus la ponctuation de phrase. Le WER découpe sur les
+espaces avec la même normalisation stricte. Ces limites sont recopiées dans
+chaque manifeste. Les deux CER sont dérivés à la lecture depuis le transcript et
+la référence figée : aucun événement historique n'est réécrit, et un run
+antérieur reste lisible tant que son snapshot porte une référence.
 
 STT corrections are append-only events linked to the original segment:
 
@@ -1080,11 +1097,17 @@ Per candidate it reports:
 
 - **segments**: how many of the run's snapshot segments have a logged result for
   that candidate;
-- **mean/median CER**: Character Error Rate, the edit distance between the
+- **mean/median acoustic CER** (highlighted, issue #134): the Character Error
+  Rate with sentence punctuation (`. , ; : ! ? …`) neutralized before scoring,
+  so a candidate that heard the words but not the commas is not penalized. This
+  is the primary metric for comparing candidates and `initial_prompt` variants;
+- **mean/median strict CER**: Character Error Rate, the edit distance between the
   candidate transcript and the corrected transcript divided by the corrected
-  transcript's length. `0%` is a perfect match; higher is worse. CER is
+  transcript's length. `0%` is a perfect match; higher is worse. Strict CER is
   case-insensitive and ignores leading/trailing whitespace, but is otherwise
-  literal, so it does not know that two spellings mean the same thing;
+  literal — it counts sentence punctuation and does not know that two spellings
+  mean the same thing. Both CERs are derived from the frozen snapshot reference,
+  so historical runs get the acoustic value without any event rewrite;
 - **mean/median WER**: Word Error Rate, the same edit-distance idea but over
   whitespace-separated words instead of characters. WER is coarser than CER
   (one wrong letter in a word counts as a whole wrong word) and is more in

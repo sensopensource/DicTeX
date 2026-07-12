@@ -2074,7 +2074,8 @@ function BenchmarkView({
             <h2>Candidate summary</h2>
             <p>
               One benchmark run over {formatBenchmarkSetSplit(batchSplit)}, scored against its frozen acoustic
-              snapshot. CER/WER: lower is better.
+              snapshot. Acoustic CER (the highlighted metric) ignores sentence punctuation; strict CER counts it.
+              CER/WER: lower is better.
             </p>
           </div>
           <div className="batch-controls">
@@ -2204,8 +2205,10 @@ function BenchmarkView({
                 <tr>
                   <th>Candidate</th>
                   <th>Segments</th>
-                  <th>Mean CER</th>
-                  <th>Median CER</th>
+                  <th className="metric-primary">Mean acoustic CER</th>
+                  <th className="metric-primary">Median acoustic CER</th>
+                  <th>Mean strict CER</th>
+                  <th>Median strict CER</th>
                   <th>Mean WER</th>
                   <th>Median WER</th>
                   <th>Mean latency</th>
@@ -2226,6 +2229,8 @@ function BenchmarkView({
                         {isSelected && <span className="selected-badge">Selected</span>}
                       </td>
                       <td>{summary.resultCount}</td>
+                      <td className="metric-primary">{formatRatePercent(summary.meanAcousticCer)}</td>
+                      <td className="metric-primary">{formatRatePercent(summary.medianAcousticCer)}</td>
                       <td>{formatRatePercent(summary.meanCer)}</td>
                       <td>{formatRatePercent(summary.medianCer)}</td>
                       <td>{formatRatePercent(summary.meanWer)}</td>

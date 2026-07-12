@@ -119,9 +119,16 @@ test("buildSttBenchmarkRunExport: joins every frozen segment to every candidate 
 
   const successful = exported.outputs[0].outputs;
   assert.deepEqual(successful.map((output) => output.status), ["done", "done"]);
-  assert.equal(successful[1].cer, 0);
+  assert.equal(successful[1].strict_cer, 0);
+  assert.equal(successful[1].acoustic_cer, 0);
   assert.equal(successful[1].wer, 0);
   assert.equal(successful[1].latency_ms, 1350);
+
+  // seg_1's first candidate output "x au carre" vs reference "x au carré": a real
+  // lexical difference, so both CERs stay non-zero (issue #134 neutralizes only
+  // sentence punctuation, never letters).
+  assert.ok((successful[0].strict_cer as number) > 0);
+  assert.ok((successful[0].acoustic_cer as number) > 0);
 
   const failed = exported.outputs[1].outputs;
   assert.deepEqual(failed.map((output) => output.status), ["failed", "failed"]);
@@ -143,6 +150,26 @@ test("buildSttBenchmarkRunExport: includes each full prompt once and only relati
   assert.equal(exported.manifest.snapshot.dataset_file, STT_BENCHMARK_RUN_EXPORT_FILES.dataset);
   assert.equal(exported.manifest.files.dataset.includes(":"), false);
   assert.equal(exported.manifest.files.outputs.includes("\\"), false);
+});
+
+test("buildSttBenchmarkRunExport: acoustic CER ignores only sentence punctuation, strict CER does not (schema v2)", () => {
+  const events = baseEvents();
+  const started = events[0] as Extract<LocalEvent, { event_type: "stt_benchmark_run_started" }>;
+  // A candidate that heard the words but added a comma the reference lacks.
+  started.snapshot[0].reference_transcript = "x au carré plus b";
+  const result = events[1] as Extract<LocalEvent, { event_type: "stt_benchmark_result" }>;
+  result.transcript = "x au carré, plus b";
+
+  const exported = build(events);
+  assert.equal(exported.manifest.schema_version, 2);
+
+  const output = exported.outputs[0].outputs[0];
+  assert.ok((output.strict_cer as number) > 0, "strict CER penalizes the extra comma");
+  assert.equal(output.acoustic_cer, 0, "acoustic CER ignores the extra comma");
+
+  // The manifest documents both metrics distinctly.
+  assert.match(exported.manifest.scoring.strict_cer, /Strict CER/);
+  assert.match(exported.manifest.scoring.acoustic_cer, /sentence-punctuation/);
 });
 
 test("buildSttBenchmarkRunExport: keeps the run snapshot after current validation and corrections change", () => {

@@ -588,6 +588,16 @@
   color: var(--text-strong);
 }
 
+/* Acoustic CER is the highlighted comparison metric (issue #134). */
+.summary-table th.metric-primary,
+.summary-table td.metric-primary {
+  background: var(--surface-raised);
+}
+
+.summary-table th.metric-primary {
+  color: var(--text-strong);
+}
+
 /* ---- Error analysis ------------------------------------------------------ */
 
 .error-analysis-candidates {

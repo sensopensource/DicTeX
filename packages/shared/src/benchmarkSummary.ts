@@ -8,15 +8,29 @@ import {
   type SttBenchmarkSetSplit,
   type SttScoredBenchmarkResult,
 } from "./localEvents.js";
-import { calculateCharacterErrorRate, calculateWordErrorRate } from "./sttScoring.js";
+import {
+  calculateAcousticCharacterErrorRate,
+  calculateCharacterErrorRate,
+  calculateWordErrorRate,
+} from "./sttScoring.js";
 
 export type SttBenchmarkCandidateSummary = {
   candidate: BenchmarkCandidateIdentity;
   resultCount: number;
   missingCount: number;
   scoredCount: number;
+  /** Strict CER: exact fidelity, sentence punctuation still counted. */
   meanCer: number | null;
   medianCer: number | null;
+  /**
+   * Acoustic CER (issue #134): the same texts scored with sentence punctuation
+   * neutralized, so it measures the words heard rather than a punctuation
+   * convention. Derived here from the transcript + frozen reference, never a
+   * stored event field, so it applies to historical runs without rewriting
+   * history.
+   */
+  meanAcousticCer: number | null;
+  medianAcousticCer: number | null;
   meanWer: number | null;
   medianWer: number | null;
   meanLatencyMs: number | null;
@@ -78,6 +92,10 @@ function aggregateByCandidate(
         .filter((result) => result.scoreMetric === "cer" && result.scoreValue !== null)
         .map((result) => result.scoreValue as number);
 
+      const acousticCerValues = candidateResults
+        .filter((result) => result.referenceTranscript !== null)
+        .map((result) => calculateAcousticCharacterErrorRate(result.transcript, result.referenceTranscript as string));
+
       const werValues = candidateResults
         .filter((result) => result.referenceTranscript !== null)
         .map((result) => calculateWordErrorRate(result.transcript, result.referenceTranscript as string));
@@ -93,6 +111,8 @@ function aggregateByCandidate(
         scoredCount: cerValues.length,
         meanCer: mean(cerValues),
         medianCer: median(cerValues),
+        meanAcousticCer: mean(acousticCerValues),
+        medianAcousticCer: median(acousticCerValues),
         meanWer: mean(werValues),
         medianWer: median(werValues),
         meanLatencyMs: mean(latencyValues),
