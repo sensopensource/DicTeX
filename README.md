@@ -130,7 +130,7 @@ avant fusion. Les skills versionnés sont compatibles avec Codex
 - [Décisions produit](docs/product-decisions.md)
 - [Architecture](docs/architecture.md)
 - [Conception des données et du normaliseur](docs/dataset-and-normalization-design.md)
-- [Questions de conventions ouvertes](docs/questions-de-conventions.md)
+- [Registre des conventions](docs/questions-de-conventions.md)
 - [Boucle de correction](docs/correction-loop.md)
 - [Périmètre MVP](docs/mvp.md)
 - [Développement](docs/development.md)

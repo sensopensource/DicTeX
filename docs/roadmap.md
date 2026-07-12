@@ -51,6 +51,15 @@ intégrés séquentiellement pour éviter un conflit mou. Le maintien du modèle
 mémoire et #94 n'ont pas de dépendance technique stricte ; leur ordre ci-dessus
 correspond au flux d'usage quotidien souhaité.
 
+**Observation du 13 juillet 2026 pour l'étape 4.** Sur un snapshot de 27
+segments de `validation`, les prompts à phrases exemplaires littérales ont
+réduit le CER acoustique moyen face au lexique simple : 9,03 % pour
+`conventions-litterales-v1`, 8,57 % pour `conventions-litterales-v2`, contre
+12,01 % pour `prompt-lexique-v1`, sans différence de latence dans le run. V2 est
+le gagnant provisoire, pas encore le choix quotidien : la baseline sans prompt
+doit être relancée dans le même run, les conventions peu représentées doivent
+être enrichies et la porte de sortie de #94 reste ouverte.
+
 ## Schéma dézoomé
 
 ```mermaid

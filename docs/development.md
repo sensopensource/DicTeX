@@ -733,6 +733,49 @@ name can never be mistaken for "prompt applied".
 Le Benchmark du Lab compare directement la baseline sans prompt et les
 variantes de `initial_prompt` configurées, sur les mêmes segments audio.
 
+#### Expérience de validation du 12–13 juillet 2026
+
+Deux runs terminés, sans échec, ont utilisé le même snapshot de 27 segments de
+`validation` avec `large-v3-turbo` sur `cuda:float16` :
+
+- `run_20260712224742095_9rg1sv0m` : baseline sans prompt, `prompt-lexique-v1`
+  et une référence CPU ;
+- `run_20260712232416876_p804k6qh` : `prompt-lexique-v1`,
+  `conventions-litterales-v1` et `conventions-litterales-v2`.
+
+Les deux variantes littérales illustrent la cible de `DEC-COUCHE1-001` par de
+petites phrases complètes plutôt que par une simple liste de termes :
+
+```text
+conventions-litterales-v1
+Dictée mathématique en français, transcrite littéralement en mots. theta plus trois. Le sinus de theta est égal à trois. x au carré plus trois. Le sinus de x au carré. Les nombres restent écrits en lettres et les expressions mathématiques restent verbalisées.
+
+conventions-litterales-v2
+Dictée mathématique en français. Le sinus de theta est égal à trois. Calculons x au carré plus trois. Le sinus de x au carré est positif. Theta est compris entre zéro et trois.
+```
+
+Résultats du second run :
+
+| Variante | CER acoustique moyen | médiane | CER strict moyen | WER moyen | latence moyenne |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `prompt-lexique-v1` | 12,01 % | 8,00 % | 14,78 % | 26,56 % | 3,99 s |
+| `conventions-litterales-v1` | 9,03 % | 3,33 % | 12,74 % | 27,23 % | 3,98 s |
+| `conventions-litterales-v2` | **8,57 %** | **2,90 %** | **12,16 %** | **26,26 %** | 3,99 s |
+
+`conventions-litterales-v2` est le gagnant **provisoire** : face au lexique sur
+le même run, il améliore 13 segments, en laisse 13 à égalité et en dégrade un.
+Les exemples montrent surtout un meilleur maintien des nombres en lettres. Le
+snapshot ne contient encore qu'un cas ciblé pour `theta` et peu de cas capables
+de départager `sinus` ou `au carré` ; ces sous-conventions exigent donc une
+collecte ciblée avant de fixer un seuil de conformité.
+
+La porte de sortie de #94 n'est pas encore franchie. La baseline sans prompt
+n'était pas incluse dans le second run, v1 et v2 restent trop proches pour être
+départagées solidement, et le prompt gagnant n'est pas encore appliqué à la
+dictée quotidienne. Le prochain run de décision doit réunir dans **un même
+run** la baseline, `conventions-litterales-v2` et au plus une variante courte
+ajoutant les cas encore faibles (`rho`, `angle`), sur un snapshot enrichi.
+
 Le catalogue de candidats est construit dans le processus principal du Lab
 (`apps/lab/src/main/candidateCatalog.ts`, jamais codé en dur dans le
 renderer) : pour chaque modèle faster-whisper de

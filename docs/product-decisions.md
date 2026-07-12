@@ -33,6 +33,36 @@ This document captures the product and implementation context that future agents
   documents en français ; code, commentaires techniques, tests, journaux et
   interface en anglais pour l'instant.
 
+## DEC-COUCHE1-001 — Transcription lexicale littérale — 13 juillet 2026
+
+**Statut : active.** La cible humaine d'une correction `acoustic`, donc la
+couche 1 utilisée par les benchmarks et un futur entraînement STT, conserve les
+mots effectivement prononcés en français. Elle ne remplace pas ces mots par une
+notation mathématique compacte choisie par le décodeur.
+
+Premières formes fixées :
+
+| Formulation prononcée | Couche 1 canonique | Formes non canoniques en couche 1 |
+| --- | --- | --- |
+| « theta » | `theta` | `θ` |
+| « trois » | `trois` | `3` |
+| « x au carré » | `x au carré` | `x²`, `x^2` |
+| « sinus » | `sinus` | `sin` |
+
+La couche 2 reste chargée de la notation mathématique. Les cibles LaTeX exactes
+restent régies par leurs propres décisions : cette entrée ne tranche notamment
+pas encore `e^x` contre `\exp(x)` ni `\sin x` contre `\sin(x)`.
+
+Cette décision ne transforme pas `initial_prompt` en garantie : le prompt ne
+fait que biaiser le décodage. La correction humaine `acoustic`, contrôlée contre
+l'audio, reste la source de vérité, et le Lab doit mesurer les violations de
+convention en plus du CER général. Le `stt_result` brut n'est jamais réécrit.
+Une vue dérivée peut canonicaliser un cas démontré sans ambiguïté, mais `x²` ne
+permet déjà plus de savoir si la personne a dit « x au carré » ou « x puissance
+deux », et un nombre compact perd souvent sa formulation orale exacte.
+L'orthographe des nombres composés, la ponctuation et les disfluences restent
+ouvertes dans `docs/questions-de-conventions.md`.
+
 ## DicTeX / Lab split (monorepo)
 
 DicTeX est séparé en deux applications Electron dans un même monorepo npm

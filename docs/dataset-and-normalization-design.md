@@ -62,6 +62,22 @@ including `euh`, false starts, and repetitions. The acoustic model's job is to
 transcribe, not to clean. Training it on a cleaned target teaches it to delete
 words it heard, and it will generalise that deletion to real words.
 
+### Convention lexicale de la couche 1
+
+Depuis `DEC-COUCHE1-001` (13 juillet 2026), « littérale » signifie aussi que la
+référence acoustique conserve la **verbalisation** prononcée au lieu d'accepter
+une notation compacte produite par le décodeur : `theta`, pas `θ` ; `trois`, pas
+`3` ; `x au carré`, pas `x²` ou `x^2` ; `sinus`, pas `sin`. La couche 2 porte la
+transformation vers les symboles et le LaTeX.
+
+La couche 1 reste une transcription orthographique française, pas une écriture
+phonétique. Les choix encore ambigus — orthographe des nombres composés,
+ponctuation éditoriale, hésitations et autocorrections — restent identifiés dans
+`docs/questions-de-conventions.md`. Une sortie STT compacte est corrigée contre
+l'audio dans le Lab ; elle n'est pas rendue vraie par un post-traitement qui ne
+peut plus reconstruire les mots prononcés, en particulier pour un nombre ou un
+décimal.
+
 **Layer 2 is the clean, formal notation.** The `math_transform` pair therefore
 learns two things at once: remove disfluencies, and write notation. Both are the
 same underlying task ("spoken → written"), so they are not separated. The
