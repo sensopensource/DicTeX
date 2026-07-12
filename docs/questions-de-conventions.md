@@ -44,6 +44,14 @@ ni un benchmark. Lorsqu'une décision est prise, elle est déplacée vers
 
 - [ ] Quelle forme orale canonique utiliser pour « retour à la ligne », nouveau
   paragraphe et les commandes de bloc mathématique ?
+- [ ] Quel contrat donner aux sauts de ligne ?
+  - La sortie STT brute est-elle un bloc unique par segment, les retours émis
+    par le moteur étant traités comme des espaces ?
+  - Le texte inséré ne crée-t-il une nouvelle ligne que sur une commande orale
+    explicite comme « retour à la ligne » ?
+  - Faut-il éviter toute consigne de saut de ligne dans l'`initial_prompt` ?
+  - Les retours de ligne de formatage du moteur comptent-ils comme des espaces,
+    et non comme de la ponctuation, pour le scoring acoustique ?
 - [ ] Comment demander explicitement une ponctuation lorsque celle-ci compte
   réellement pour le texte inséré ?
 
