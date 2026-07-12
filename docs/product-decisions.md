@@ -299,6 +299,20 @@ Current implemented candidates are STT candidates, for example:
 {"stage":"stt","provider":"faster-whisper","model":"base","variant":"cpu-int8-fr"}
 ```
 
+For faster-whisper, the `variant` encodes the runtime (`device-computeType-language`).
+Depuis #131, plusieurs runtimes peuvent être comparés pour un même modèle dans
+un seul run via `DICTEX_STT_BENCHMARK_RUNTIMES` (par ex.
+`cpu:int8,cuda:float16,cuda:int8_float16`) : le catalogue est le produit
+cartésien `modèle × runtime × (baseline + variantes de prompt)`, et chaque
+candidat porte un runtime structuré qui configure réellement le sidecar — son
+identité ne peut donc pas mentir sur le type de calcul exécuté. Variable absente
+= runtime unique historique inchangé. Le Lab ne détecte pas le matériel :
+`auto`/`default` sont refusés et un runtime non exécutable échoue au lancement
+de faster-whisper, fait échouer le segment entier du run et peut laisser les
+résultats partiels des candidats déjà exécutés. Chaque runtime doit donc être
+vérifié sur la machine avant le run (voir `docs/development.md`, « Plusieurs
+runtimes par modèle dans le benchmark »).
+
 Future candidates may belong to other stages, such as normalization, segment classification, math transform, or correction suggestion. They can include local STT engines, local LLMs, remote LLMs, or rule-based transforms, but candidates should only be compared within the same stage for the same segment.
 
 Do not treat a Whisper STT transcript and a Claude or Qwen math-transform output as the same kind of benchmark artifact. They may share benchmark metadata, but their stage defines what output is being evaluated.

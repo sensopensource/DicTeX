@@ -63,9 +63,10 @@ import {
 } from "./datasetBuilder.js";
 import {
   buildSttBenchmarkCandidateCatalog,
+  buildSttConfigForCandidate,
+  getSttBenchmarkRuntimes,
   toCandidateOption,
   validateRequestedCandidates,
-  FASTER_WHISPER_PROVIDER,
   type SttBenchmarkCandidateConfig,
   type SttBenchmarkCandidateOption,
 } from "./candidateCatalog.js";
@@ -252,18 +253,6 @@ function isSttBenchmarkSetSplit(value: unknown): value is SttBenchmarkSetSplit {
   return value === "train_candidate_pool" || value === "validation" || value === "test_frozen";
 }
 
-function getBaseSttConfig(): SttConfig {
-  return {
-    engine: FASTER_WHISPER_PROVIDER,
-    // Overwritten per-candidate below; only device/language/computeType from
-    // this base config end up in the built variant string.
-    model: process.env.DICTEX_STT_MODEL || "base",
-    language: process.env.DICTEX_STT_LANGUAGE || "fr",
-    device: process.env.DICTEX_STT_DEVICE || "cpu",
-    computeType: process.env.DICTEX_STT_COMPUTE_TYPE || "int8",
-  };
-}
-
 /**
  * Runs every STT benchmark candidate over one DicTeX-recorded segment. Reads
  * the audio from the SOURCE data root (read-only); appends each result to the
@@ -282,21 +271,19 @@ async function runSttBenchmarkForAudioSegment(
     throw new Error(`Audio segment file not found in the DicTeX data folder: ${audioSegment.audioRef}`);
   }
 
-  const baseConfig = getBaseSttConfig();
   const results: SttBenchmarkResult[] = [];
   const diagnostics: string[] = [];
   const loadedEvents = events ?? (await readAllEvents());
   const candidates =
-    candidateFilter ?? buildSttBenchmarkCandidateCatalog(baseConfig, getSttPromptVariantDefinitions(loadedEvents));
+    candidateFilter ??
+    buildSttBenchmarkCandidateCatalog(getSttBenchmarkRuntimes(), getSttPromptVariantDefinitions(loadedEvents));
 
   for (const candidate of candidates) {
-    const config: SttConfig = {
-      ...baseConfig,
-      engine: candidate.provider,
-      model: candidate.model,
-      promptVariant: candidate.promptVariant,
-      promptText: candidate.promptText,
-    };
+    // Build the sidecar config from the candidate's OWN structured runtime
+    // (issue #131): never from a global runtime, and never by re-parsing the
+    // `variant` string. Each transcribeWithPython call gets exactly this
+    // candidate's device, compute type, language and prompt.
+    const config: SttConfig = buildSttConfigForCandidate(candidate);
     const identity: BenchmarkCandidate = {
       stage: candidate.stage,
       provider: candidate.provider,
@@ -754,7 +741,7 @@ ipcMain.handle(
     // The candidates actually launched: the validated checkbox selection, or
     // the full catalog for the (unfiltered) legacy path. Both feed the run
     // manifest so the run records exactly which candidates it ran.
-    const catalog = buildSttBenchmarkCandidateCatalog(getBaseSttConfig(), getSttPromptVariantDefinitions(events));
+    const catalog = buildSttBenchmarkCandidateCatalog(getSttBenchmarkRuntimes(), getSttPromptVariantDefinitions(events));
     let candidateFilter: SttBenchmarkCandidateConfig[] | undefined;
     const runCandidates =
       request.candidates !== undefined
@@ -1067,7 +1054,6 @@ ipcMain.handle(
     // decides which layer(s) to write (see ./datasetBuilder.ts docblock for
     // the two-layer separability rule).
     const plan = planDatasetBuilderSave(request);
-    const baseConfig = getBaseSttConfig();
 
     if (plan.saveAcoustic) {
       await appendOwnEvent({
@@ -1226,7 +1212,7 @@ ipcMain.handle("diagnostics:open-lab-events-log", async (): Promise<boolean> => 
 
 ipcMain.handle("diagnostics:get-stt-benchmark-candidates", async (): Promise<SttBenchmarkCandidateOption[]> => {
   const events = await readAllEvents();
-  return buildSttBenchmarkCandidateCatalog(getBaseSttConfig(), getSttPromptVariantDefinitions(events)).map(
+  return buildSttBenchmarkCandidateCatalog(getSttBenchmarkRuntimes(), getSttPromptVariantDefinitions(events)).map(
     toCandidateOption,
   );
 });
