@@ -308,8 +308,10 @@ candidat porte un runtime structuré qui configure réellement le sidecar — so
 identité ne peut donc pas mentir sur le type de calcul exécuté. Variable absente
 = runtime unique historique inchangé. Le Lab ne détecte pas le matériel :
 `auto`/`default` sont refusés et un runtime non exécutable échoue au lancement
-de ce seul candidat (voir `docs/development.md`, « Plusieurs runtimes par modèle
-dans le benchmark »).
+de faster-whisper, fait échouer le segment entier du run et peut laisser les
+résultats partiels des candidats déjà exécutés. Chaque runtime doit donc être
+vérifié sur la machine avant le run (voir `docs/development.md`, « Plusieurs
+runtimes par modèle dans le benchmark »).
 
 Future candidates may belong to other stages, such as normalization, segment classification, math transform, or correction suggestion. They can include local STT engines, local LLMs, remote LLMs, or rule-based transforms, but candidates should only be compared within the same stage for the same segment.
 

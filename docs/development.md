@@ -816,7 +816,10 @@ CTranslate2 peut **convertir implicitement** un type de calcul non supporté ver
 un autre (par ex. `cuda:int16` ou `cpu:float16`), ce qui rendrait l'identité du
 candidat trompeuse ; c'est pourquoi ces valeurs ne sont pas recommandées et
 pourquoi `auto`/`default` sont refusés. Un couple demandé mais non exécutable
-sur la machine échoue au lancement de ce candidat, sans invalider les autres.
+sur la machine provoque une erreur dure de faster-whisper : le segment entier
+du run est marqué en échec, et des résultats partiels peuvent subsister pour
+les candidats déjà exécutés avant la panne. Vérifier chaque runtime sur la
+machine avant de l'inclure dans un run.
 
 Variables pertinentes :
 
