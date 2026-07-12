@@ -144,6 +144,17 @@ export type SttBenchmarkRunListEntry = {
   finished: boolean;
 };
 
+export type SttBenchmarkRunExportSummary = {
+  runId: string;
+  createdAt: string;
+  exportDir: string;
+  segmentCount: number;
+  candidateCount: number;
+  done: number;
+  failed: number;
+  missingOutputs: number;
+};
+
 export type SttBenchmarkSetProgress = {
   split: SttBenchmarkSetSplit;
   total: number;

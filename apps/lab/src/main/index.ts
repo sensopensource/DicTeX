@@ -16,6 +16,7 @@ import {
   getSttBenchmarkRuns,
   summarizeLegacySttBenchmarkResultsByCandidate,
   summarizeSttBenchmarkRun,
+  buildSttBenchmarkRunExport,
   buildSttDatasetExport,
   normalizeTranscript,
   restoreCommandWords,
@@ -45,10 +46,12 @@ import {
   type SttBenchmarkSetProgress,
   type SttBenchmarkRunListEntry,
   type SttBenchmarkRunSummaryResponse,
+  type SttBenchmarkRunExportSummary,
   type SttDatasetExportFileSummary,
   type SttDatasetExportSplitSummary,
   type SttDatasetExportSummary,
 } from "@dictex/shared";
+import { writeSttBenchmarkRunExport } from "./benchmarkRunExportWriter.js";
 import { readLabSettings, writeLabSettings } from "./settings.js";
 import {
   planDatasetBuilderSave,
@@ -211,8 +214,9 @@ async function loadPersistedSettings(): Promise<void> {
 /**
  * Reads DicTeX's `audio_segment` / `stt_result` / `normalization_result`
  * events (read-only) concatenated with the Lab's OWN `stt_correction` /
- * `stt_benchmark_set_membership` / `stt_benchmark_result` /
- * `stt_candidate_selection` events, source first. Every shared derivation in
+ * `stt_benchmark_set_membership` / benchmark run + result /
+ * `stt_candidate_selection` / prompt-definition events, source first. Every
+ * shared derivation in
  * `@dictex/shared` keys off array order for latest-event-wins, and a Lab
  * action on a segment always logically happens after DicTeX recorded it, so
  * this concatenation reconstructs correct combined state without either app
@@ -763,6 +767,25 @@ ipcMain.handle(
     const total = snapshot.length;
     const runId = mintBenchmarkRunId();
     const startedAt = new Date().toISOString();
+    const runPromptDefinitions = Array.from(
+      new Map(
+        runCandidates
+          .filter(
+            (
+              candidate,
+            ): candidate is SttBenchmarkCandidateConfig & { promptVariant: string; displayPromptText: string } =>
+              typeof candidate.promptVariant === "string" && typeof candidate.displayPromptText === "string",
+          )
+          .map((candidate) => [
+            candidate.promptVariant,
+            {
+              id: candidate.promptVariant,
+              display_name: candidate.promptDisplayName ?? candidate.promptVariant,
+              prompt_text: candidate.displayPromptText,
+            },
+          ]),
+      ).values(),
+    );
 
     await appendOwnEvent({
       event_type: "stt_benchmark_run_started",
@@ -780,6 +803,7 @@ ipcMain.handle(
         variant: candidate.variant ?? null,
         prompt_variant: candidate.promptVariant ?? null,
       })),
+      prompt_definitions: runPromptDefinitions,
       snapshot: snapshot.map((member) => ({
         session_id: member.sessionId,
         segment_id: member.segmentId,
@@ -927,6 +951,30 @@ ipcMain.handle(
         finished: run.finished !== null,
       }))
       .reverse();
+  },
+);
+
+ipcMain.handle(
+  "benchmark-run:export-llm",
+  async (_event, request: { runId?: unknown }): Promise<SttBenchmarkRunExportSummary> => {
+    if (!request || typeof request.runId !== "string" || request.runId.length === 0) {
+      throw new Error("A run id is required");
+    }
+
+    const events = await readAllEvents();
+    const promptDefinitions = listPromptVariants(events)
+      .filter((definition) => definition.source === "external" || !definition.shadowedByExternal)
+      .map((definition) => ({
+        id: definition.name,
+        displayName: definition.displayName,
+        promptText: definition.promptText,
+      }));
+    const runExport = buildSttBenchmarkRunExport(events, request.runId, {
+      exportedAt: new Date().toISOString(),
+      promptDefinitions,
+      resolveAudioPath: (audioRef) => resolveSourceAudioRef(audioRef),
+    });
+    return writeSttBenchmarkRunExport(getOwnExportsRoot(), runExport);
   },
 );
 

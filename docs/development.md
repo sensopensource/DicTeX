@@ -404,6 +404,18 @@ whatever is left in the field, same as before this issue.
    the per-candidate `stt_benchmark_result` events carrying that `run_id`, and a
    terminal `stt_benchmark_run_finished`. Finally select `Legacy (pre-run
    results)` and confirm it only ever shows results with no `run_id`.
+4septies. Export LLM d'un run (issue #123). Sélectionner un run terminé dans
+   `Candidate summary`, cliquer sur `Export for LLM`, puis vérifier que le
+   résumé affiche le nombre de segments, de candidats et de sorties manquantes.
+   Ouvrir le dossier avec `Open export folder` et confirmer qu'il contient
+   exactement `manifest.json`, `dataset.acoustic.jsonl` et `outputs.jsonl`.
+   Vérifier dans le manifeste le `run_id`, le snapshot, les identités complètes
+   des candidats et le texte complet de chaque prompt, puis rapprocher une
+   ligne du dataset et une ligne de sorties par `session_id + segment_id`.
+   Re-corriger ensuite le segment ou le déplacer hors de `validation`, réexporter
+   le même run et confirmer que sa référence et ses scores ne changent pas.
+   Enfin, exporter deux fois rapidement et confirmer que deux dossiers distincts
+   sont conservés, sans fichier audio copié et sans modification des journaux.
 5. In `Dataset`, use **Build a dataset entry**: paste a transcription (no
    segment) and type a Layer 1 literal transcript containing a rule the
    shipped default regex recognizes plus a word it does not (e.g.
@@ -871,6 +883,10 @@ data/
     stt-dataset-<timestamp>/
       manifest.json
       <split>.<correction_kind>.jsonl
+    stt-benchmark-run-<timestamp>/
+      manifest.json
+      dataset.acoustic.jsonl
+      outputs.jsonl
 ```
 
 The `exports/` folder holds generated dataset snapshots (see "Corrected Dataset
@@ -913,6 +929,47 @@ The `dataset_kind` is always `acoustic`: the snapshot excludes any no-audio
 legacy `stt_benchmark_result` recorded before #122 carries no `run_id`; it stays
 readable and is reported as legacy, never attached to a modern run. See
 `docs/dataset-and-normalization-design.md` §9.
+
+### Export local d'un run pour analyse par un LLM
+
+Un run STT **terminé** peut être exporté depuis `Candidate summary` avec
+`Export for LLM`. Cette action n'appelle aucun service distant : elle lit le
+run et ses résultats dans le journal propre au Lab, puis crée un nouveau dossier
+horodaté sous `data/exports/`. Une collision de timestamp ajoute un suffixe au
+nouveau dossier ; aucun export antérieur n'est écrasé. Le dossier contient
+exactement trois fichiers :
+
+- `manifest.json` : version du schéma, dates, `run_id`, stage, split, statut,
+  référence au snapshot, limites du CER/WER strict, identités complètes des
+  candidats et définitions des prompts (`id`, nom affiché, texte complet) une
+  seule fois ;
+- `dataset.acoustic.jsonl` : une ligne par membre du snapshot figé, avec
+  `session_id`, `segment_id`, `audio_ref`, `audio_path`, transcription de
+  référence et date de correction utilisées au démarrage du run ;
+- `outputs.jsonl` : une ligne par même couple `session_id + segment_id`, avec
+  tous les candidats du run. Chaque sortie porte `done`, `failed` ou `missing`,
+  le transcript et la latence lorsqu'ils existent, ainsi que CER/WER lorsque le
+  snapshot possède une référence.
+
+Les noms de fichiers du manifeste sont relatifs : le paquet peut donc être
+déplacé avec son dossier. `audio_path` reste une provenance absolue de la source
+locale ; aucun audio n'est recopié. L'export ne relit jamais l'appartenance ou la
+correction courante de `validation` : il utilise exclusivement le snapshot du
+`stt_benchmark_run_started` et les résultats portant son `run_id`.
+
+Depuis #123, le run-start conserve aussi une liste `prompt_definitions` avec le
+nom affiché et le texte complet de chaque prompt effectivement lancé, une seule
+fois par identifiant. Cela fige aussi une variante provenant de
+`DICTEX_STT_PROMPT_VARIANTS` si l'environnement change après le run. Pour un run
+#122 plus ancien, l'export résout encore la référence immuable disponible dans le
+Lab ou l'environnement ; il refuse explicitement l'export si cette définition
+n'est plus disponible plutôt que d'inventer un texte.
+
+Le CER/WER reste un score textuel strict : casse et espaces de bord sont
+normalisés, le WER découpe sur les espaces et le sous-ensemble LaTeX connu est
+canonicalisé. Il n'établit aucune équivalence sémantique entre chiffres et mots,
+noms de lettres grecques et symboles, ni variantes de ponctuation. Ces limites
+sont recopiées dans chaque manifeste.
 
 STT corrections are append-only events linked to the original segment:
 

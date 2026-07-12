@@ -702,3 +702,33 @@ Chaque lancement de lot STT est une **expérience à ajout uniquement** :
 `test_frozen` garde sa discipline (`docs/roadmap.md`) : on ne le lit qu'une fois,
 après toutes les décisions. Le suivi des runs ne change pas cette règle ; il rend
 seulement chaque lecture reproductible et traçable.
+
+### Vue dérivée pour analyse LLM (issue #123)
+
+Un export LLM n'est ni un nouvel événement canonique ni une nouvelle source de
+vérité. C'est une vue locale, supprimable et régénérable d'un run terminé :
+
+```text
+run-start + snapshot figé + résultats du même run_id + run-finished
+  -> manifest.json
+  -> dataset.acoustic.jsonl
+  -> outputs.jsonl
+```
+
+La clé de jointure reste `session_id + segment_id`. Le dataset reprend chaque
+membre acoustique du snapshot exactement dans son ordre, y ajoute seulement le
+chemin audio résolu comme provenance, et ne consulte jamais les corrections ou
+l'appartenance courantes au split. `outputs.jsonl` groupe tous les candidats
+pour cette même clé ; une sortie absente est distinguée d'un échec terminal au
+lieu d'être supprimée. Aucun enregistrement `math_transform`, segment sans audio
+ou fichier audio ne peut entrer dans le paquet.
+
+Le manifeste référence ses deux fichiers JSONL par des chemins relatifs et
+porte les limites du scoring textuel strict. Les prompts ne sont pas répétés
+par candidat : une table unique contient leur identifiant, leur nom affiché et
+leur texte complet, tandis que chaque candidat référence l'identifiant. Pour
+que les variantes externes soient aussi reproductibles que celles créées dans
+le Lab, tout nouveau `stt_benchmark_run_started` fige cette table dans son champ
+optionnel `prompt_definitions`. L'absence de ce champ reste lisible pour les
+runs #122 antérieurs ; leur export exige que la définition référencée soit
+encore disponible et échoue explicitement sinon.

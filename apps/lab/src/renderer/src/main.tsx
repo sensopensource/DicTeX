@@ -13,6 +13,7 @@ import type {
   SttBenchmarkResult,
   SttBenchmarkRunListEntry,
   SttBenchmarkRunSummaryResponse,
+  SttBenchmarkRunExportSummary,
   SttBenchmarkSetMembershipRequest,
   SttBenchmarkSetMembershipResponse,
   SttBenchmarkSetProgress,
@@ -93,6 +94,7 @@ type LabApi = {
   ) => Promise<SttBenchmarkSetRunResponse>;
   summarizeSttBenchmarkRun: (runId: string) => Promise<SttBenchmarkRunSummaryResponse | null>;
   listSttBenchmarkRuns: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkRunListEntry[]>;
+  exportSttBenchmarkRun: (runId: string) => Promise<SttBenchmarkRunExportSummary>;
   summarizeLegacySttBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkCandidateSummaryResponse>;
   selectSttCandidate: (request: SttCandidateSelectionRequest) => Promise<SttCandidateSelectionResponse>;
   getLatestSttCandidateSelection: () => Promise<SttCandidateSelectionResponse | null>;
@@ -206,6 +208,9 @@ function App(): React.ReactElement {
   // plus which run (or the legacy bucket) the summary panel is showing.
   const [runList, setRunList] = useState<SttBenchmarkRunListEntry[]>([]);
   const [selectedRunKey, setSelectedRunKey] = useState<string | null>(null);
+  const [runExportSummary, setRunExportSummary] = useState<SttBenchmarkRunExportSummary | null>(null);
+  const [runExportError, setRunExportError] = useState("");
+  const [isExportingRun, setIsExportingRun] = useState(false);
   const [currentSelection, setCurrentSelection] = useState<SttCandidateSelectionResponse | null>(null);
   const [selectionReasonDraft, setSelectionReasonDraft] = useState("");
   const [selectionError, setSelectionError] = useState("");
@@ -277,6 +282,8 @@ function App(): React.ReactElement {
     setCandidateSummary(null);
     setSelectedRunKey(null);
     setSummaryError("");
+    setRunExportSummary(null);
+    setRunExportError("");
     window.dictexLab
       .listSttBenchmarkRuns(batchSplit)
       .then((runs) => {
@@ -679,6 +686,35 @@ function App(): React.ReactElement {
     await summarizeRun(target);
   }
 
+  async function exportSelectedRun(): Promise<void> {
+    if (!selectedRunKey || selectedRunKey === LEGACY_RUN_KEY) {
+      setRunExportError("Select a completed tracked run before exporting.");
+      return;
+    }
+
+    setRunExportError("");
+    setIsExportingRun(true);
+    try {
+      setRunExportSummary(await window.dictexLab.exportSttBenchmarkRun(selectedRunKey));
+    } catch (exportError) {
+      setRunExportSummary(null);
+      setRunExportError(exportError instanceof Error ? exportError.message : "Benchmark run export failed");
+    } finally {
+      setIsExportingRun(false);
+    }
+  }
+
+  async function openRunExportFolder(): Promise<void> {
+    if (!runExportSummary) {
+      return;
+    }
+    try {
+      await window.dictexLab.openExportFolder(runExportSummary.exportDir);
+    } catch {
+      // Non-fatal convenience.
+    }
+  }
+
   async function runAnalysis(): Promise<void> {
     const runId = await runSetSttBenchmark();
     await refreshRunList();
@@ -875,6 +911,11 @@ function App(): React.ReactElement {
           runList={runList}
           selectedRunKey={selectedRunKey}
           summarizeRun={(target) => void summarizeRun(target)}
+          runExportSummary={runExportSummary}
+          runExportError={runExportError}
+          isExportingRun={isExportingRun}
+          exportSelectedRun={() => void exportSelectedRun()}
+          openRunExportFolder={() => void openRunExportFolder()}
           currentSelection={currentSelection}
           selectionReasonDraft={selectionReasonDraft}
           setSelectionReasonDraft={(value) => {
@@ -1327,6 +1368,11 @@ type BenchmarkViewProps = {
   runList: SttBenchmarkRunListEntry[];
   selectedRunKey: string | null;
   summarizeRun: (target: string) => void;
+  runExportSummary: SttBenchmarkRunExportSummary | null;
+  runExportError: string;
+  isExportingRun: boolean;
+  exportSelectedRun: () => void;
+  openRunExportFolder: () => void;
   currentSelection: SttCandidateSelectionResponse | null;
   selectionReasonDraft: string;
   setSelectionReasonDraft: (value: string) => void;
@@ -1817,6 +1863,11 @@ function BenchmarkView({
   runList,
   selectedRunKey,
   summarizeRun,
+  runExportSummary,
+  runExportError,
+  isExportingRun,
+  exportSelectedRun,
+  openRunExportFolder,
   currentSelection,
   selectionReasonDraft,
   setSelectionReasonDraft,
@@ -1835,6 +1886,8 @@ function BenchmarkView({
   createPromptVariant,
   onBack,
 }: BenchmarkViewProps): React.ReactElement {
+  const selectedTrackedRun = runList.find((run) => run.runId === selectedRunKey) ?? null;
+
   return (
     <>
       <header className="titlebar">
@@ -2050,10 +2103,35 @@ function BenchmarkView({
             <button className="secondary-button" disabled={isSummarizing} onClick={summarizeCandidates}>
               {isSummarizing ? "Summarizing" : "Summarize by candidate"}
             </button>
+            <button
+              className="secondary-button"
+              disabled={!selectedTrackedRun?.finished || isExportingRun}
+              onClick={exportSelectedRun}
+            >
+              {isExportingRun ? "Exporting" : "Export for LLM"}
+            </button>
           </div>
         </div>
 
         {summaryError && <pre className="error">{summaryError}</pre>}
+        {runExportError && <pre className="error">{runExportError}</pre>}
+
+        {runExportSummary && (
+          <div className="dataset-export-summary">
+            <p>
+              Exported {runExportSummary.segmentCount} acoustic segment
+              {runExportSummary.segmentCount === 1 ? "" : "s"} and {runExportSummary.candidateCount} candidate
+              {runExportSummary.candidateCount === 1 ? "" : "s"} for run {runExportSummary.runId}. Missing outputs: {" "}
+              {runExportSummary.missingOutputs}.
+            </p>
+            <p className="dataset-export-path" title={runExportSummary.exportDir}>
+              {runExportSummary.exportDir}
+            </p>
+            <button className="secondary-button" onClick={openRunExportFolder}>
+              Open export folder
+            </button>
+          </div>
+        )}
 
         <p className="empty-state">
           {currentSelection
