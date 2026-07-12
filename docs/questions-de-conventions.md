@@ -29,6 +29,14 @@ ni un benchmark. Lorsqu'une décision est prise, elle est déplacée vers
 - [ ] Comment désambiguïser les chaînes comme « a inférieur à b inférieur à c » ?
 - [ ] Quelle portée donner à « moins », « sur », « racine de », « puissance de »
   et « indice » ? Quand les parenthèses orales deviennent-elles obligatoires ?
+- [ ] Pour les limites, faut-il standardiser
+  `\lim_{x \to a} f(x)` comme « la limite de f de x quand x tend vers a » ?
+  - Exemple : « la limite de un sur x quand x tend vers plus l'infini est
+    égale à zéro ».
+  - Alternative plus soutenue : « la limite, quand x tend vers plus l'infini,
+    de un sur x est égale à zéro ».
+  - À trancher : « quand » ou « lorsque », et la règle qui borne proprement
+    l'expression dont la limite est prise.
 - [ ] Quelles formes orales canoniques choisir pour les lettres grecques :
   `theta`, `rho`, `alpha`, etc. ?
 
