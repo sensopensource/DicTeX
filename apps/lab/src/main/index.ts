@@ -11,7 +11,6 @@ import {
   isCorrectionKind,
   readLocalEvents,
   reconstructRecentSegments,
-  calculateCharacterErrorRate,
   buildSttBenchmarkRunSnapshot,
   getSttBenchmarkRuns,
   summarizeLegacySttBenchmarkResultsByCandidate,
@@ -52,6 +51,10 @@ import {
   type SttDatasetExportSummary,
 } from "@dictex/shared";
 import { writeSttBenchmarkRunExport } from "./benchmarkRunExportWriter.js";
+import {
+  scoreSttBenchmarkTranscript,
+  type SttBenchmarkReference,
+} from "./benchmarkScoring.js";
 import { readLabSettings, writeLabSettings } from "./settings.js";
 import {
   planDatasetBuilderSave,
@@ -272,6 +275,7 @@ async function runSttBenchmarkForAudioSegment(
   events?: LocalEvent[],
   candidateFilter?: SttBenchmarkCandidateConfig[],
   runId?: string,
+  frozenReference?: SttBenchmarkReference,
 ): Promise<SttBenchmarkResponse> {
   const audioPath = resolveSourceAudioRef(audioSegment.audioRef);
   if (!existsSync(audioPath)) {
@@ -282,7 +286,6 @@ async function runSttBenchmarkForAudioSegment(
   const results: SttBenchmarkResult[] = [];
   const diagnostics: string[] = [];
   const loadedEvents = events ?? (await readAllEvents());
-  const correction = getLatestSttCorrection(loadedEvents, audioSegment.sessionId, audioSegment.segmentId);
   const candidates =
     candidateFilter ?? buildSttBenchmarkCandidateCatalog(baseConfig, getSttPromptVariantDefinitions(loadedEvents));
 
@@ -332,15 +335,13 @@ async function runSttBenchmarkForAudioSegment(
       transcript: sttResult.transcript,
       audioDurationSeconds: sttResult.audioDurationSeconds,
       transcriptionDurationMs,
-      score: correction
-        ? {
-            stage: "stt",
-            metric: "cer",
-            value: calculateCharacterErrorRate(sttResult.transcript, correction.correctedTranscript),
-            referenceTranscript: correction.correctedTranscript,
-            correctionCreatedAt: correction.correctionCreatedAt,
-          }
-        : null,
+      score: scoreSttBenchmarkTranscript(
+        sttResult.transcript,
+        loadedEvents,
+        audioSegment.sessionId,
+        audioSegment.segmentId,
+        frozenReference,
+      ),
     };
 
     // Appended to the Lab's OWN event log — never DicTeX's events.jsonl.
@@ -842,6 +843,10 @@ ipcMain.handle(
           events,
           candidateFilter,
           runId,
+          {
+            referenceTranscript: member.referenceTranscript,
+            correctionCreatedAt: member.correctionCreatedAt,
+          },
         );
         running = 0;
         done += 1;

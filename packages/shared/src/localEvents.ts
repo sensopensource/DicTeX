@@ -73,7 +73,9 @@ export type SttBenchmarkResultEvent = {
   transcription_duration_ms?: number;
   score_metric?: string | null;
   score_value?: number | null;
+  score_reference_type?: "stt_correction" | null;
   score_reference_transcript?: string | null;
+  score_reference_created_at?: string | null;
 };
 
 export type NormalizationLayerRecord = {
@@ -452,6 +454,38 @@ export function getLatestSttCorrection(
   return latestCorrection;
 }
 
+/**
+ * Returns the latest correction of exactly one kind for a segment. STT
+ * benchmarks use this derivation with `acoustic`: a later math_transform (or
+ * any other layer) must never become the transcription reference.
+ */
+export function getLatestSttCorrectionByKind(
+  events: LocalEvent[],
+  sessionId: string,
+  segmentId: string,
+  correctionKind: CorrectionKind,
+): SegmentSttCorrection | null {
+  let latestCorrection: SegmentSttCorrection | null = null;
+
+  for (const event of events) {
+    if (
+      isSttCorrectionEvent(event) &&
+      event.session_id === sessionId &&
+      event.segment_id === segmentId &&
+      getCorrectionKind(event.correction_kind) === correctionKind
+    ) {
+      latestCorrection = {
+        correctedTranscript: event.corrected_transcript,
+        correctionCreatedAt: getString(event.created_at),
+        correctionMethod: getString(event.correction_method),
+        correctionKind,
+      };
+    }
+  }
+
+  return latestCorrection;
+}
+
 export type SegmentCorrectionByKind = {
   correctionKind: CorrectionKind;
   rawTranscript: string;
@@ -753,8 +787,8 @@ function getSplitSegmentKeys(events: LocalEvent[], split: SttBenchmarkSetSplit):
  * datasetBuilder.ts NO_AUDIO_REF) is excluded, so an STT run's snapshot never
  * contains a math_transform record without audio. Ordering mirrors
  * getSttBenchmarkSetSegments (session id then segment id) so the snapshot is
- * deterministic. The reference is the segment's latest correction — exactly
- * what runSttBenchmarkForAudioSegment scores against — captured here so a later
+ * deterministic. The reference is the segment's latest ACOUSTIC correction —
+ * never a later math_transform or another layer — captured here so a later
  * re-correction or membership change cannot alter this run's snapshot.
  */
 export function buildSttBenchmarkRunSnapshot(
@@ -764,7 +798,7 @@ export function buildSttBenchmarkRunSnapshot(
   return getSttBenchmarkSetSegments(events, split)
     .filter((segment) => segment.audioRef.length > 0)
     .map((segment) => {
-      const correction = getLatestSttCorrection(events, segment.sessionId, segment.segmentId);
+      const correction = getLatestSttCorrectionByKind(events, segment.sessionId, segment.segmentId, "acoustic");
       return {
         sessionId: segment.sessionId,
         segmentId: segment.segmentId,

@@ -8,7 +8,7 @@ import {
   type SttBenchmarkSetSplit,
   type SttScoredBenchmarkResult,
 } from "./localEvents.js";
-import { calculateWordErrorRate } from "./sttScoring.js";
+import { calculateCharacterErrorRate, calculateWordErrorRate } from "./sttScoring.js";
 
 export type SttBenchmarkCandidateSummary = {
   candidate: BenchmarkCandidateIdentity;
@@ -127,7 +127,24 @@ export function summarizeSttBenchmarkRun(
     return null;
   }
 
-  const results = getSttBenchmarkResultsForRun(events, runId, run.snapshot);
+  // A tracked run's snapshot is the reference source of truth. Recompute both
+  // metrics from it instead of trusting result metadata, so the summary and
+  // the LLM export cannot diverge from the frozen acoustic reference.
+  const referenceBySegment = new Map(
+    run.snapshot.map((member) => [`${member.sessionId}/${member.segmentId}`, member.referenceTranscript]),
+  );
+  const results = getSttBenchmarkResultsForRun(events, runId, run.snapshot).map((result) => {
+    const referenceTranscript = referenceBySegment.get(`${result.sessionId}/${result.segmentId}`) ?? null;
+    return {
+      ...result,
+      scoreMetric: referenceTranscript === null ? null : "cer",
+      scoreValue:
+        referenceTranscript === null
+          ? null
+          : calculateCharacterErrorRate(result.transcript, referenceTranscript),
+      referenceTranscript,
+    };
+  });
 
   return {
     runId: run.runId,

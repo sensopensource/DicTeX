@@ -670,10 +670,14 @@ Chaque lancement de lot STT est une **expérience à ajout uniquement** :
    ordonnée des membres réellement évaluables.
 3. **Snapshot acoustique.** Chaque membre porte `session_id`, `segment_id`,
    `audio_ref`, la transcription de référence et `correction_created_at`
-   effectivement utilisés au démarrage. Seuls les segments à **audio réel** en
-   font partie : une entrée `math_transform` sans audio (source « paste »,
-   `audio_ref` vide) est exclue, donc un run STT ne mesure jamais un
-   enregistrement sans audio (§1, séparation acoustic / math_transform).
+   effectivement utilisés au démarrage. Cette référence est exclusivement la
+   dernière correction `acoustic` du segment ; une correction plus récente d'un
+   autre type, notamment `math_transform`, n'est jamais utilisée comme repli.
+   Sans correction acoustique, le texte, la date et les scores restent `null`.
+   Seuls les segments à **audio réel** en font partie : une entrée
+   `math_transform` sans audio (source « paste », `audio_ref` vide) est exclue,
+   donc un run STT ne mesure jamais un enregistrement sans audio (§1,
+   séparation acoustic / math_transform).
 4. **`run_id` sur chaque résultat.** Tout nouveau `stt_benchmark_result` porte le
    `run_id` de son run. Les anciens résultats sans `run_id` restent lisibles et
    sont signalés comme **hérités** (`getLegacySttBenchmarkResultsForSplit`),
@@ -698,6 +702,13 @@ Chaque lancement de lot STT est une **expérience à ajout uniquement** :
 - **Append-only strict.** Le premier `stt_benchmark_run_started` d'un `run_id`
   fait foi ; un doublon est ignoré. Aucun événement historique n'est réécrit
   pour recevoir un `run_id`.
+
+**Compatibilité des runs antérieurs à #130.** Un ancien run a pu figer la
+dernière correction tous types confondus et recevoir ainsi une référence LaTeX
+`math_transform`. Son snapshot reste la vérité historique de ce run : aucune
+réécriture ni réparation rétroactive n'est effectuée. Il faut relancer le
+benchmark pour produire un nouveau snapshot acoustique avant d'utiliser ses
+scores, son résumé ou son export LLM.
 
 `test_frozen` garde sa discipline (`docs/roadmap.md`) : on ne le lit qu'une fois,
 après toutes les décisions. Le suivi des runs ne change pas cette règle ; il rend
