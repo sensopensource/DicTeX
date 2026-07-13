@@ -4,13 +4,14 @@ import "@dictex/shared/styles.css";
 import "./styles.css";
 import type {
   AudioSegmentRecord,
+  BenchmarkMathTransformRunProjection,
+  BenchmarkRunListEntry,
   BenchmarkCandidateIdentity,
   CorrectionKind,
   ReconstructedSegment,
   SttBenchmarkCandidateSummary,
   SttBenchmarkCandidateSummaryResponse,
   SttBenchmarkRunDetail,
-  SttBenchmarkRunListEntry,
   SttBenchmarkRunExportSummary,
   SttBenchmarkSetMembershipRequest,
   SttBenchmarkSetMembershipResponse,
@@ -47,6 +48,11 @@ import {
   type SttErrorCategory,
 } from "@dictex/shared/errorAnalysis";
 import { diffWords, type DiffSegment } from "@dictex/shared/textDiff";
+import {
+  NORMALIZER_BENCHMARK_DISPLAY_NAME,
+  parseNormalizerBenchmarkVariant,
+  summarizeNormalizerBenchmarkRun,
+} from "@dictex/shared/normalizerBenchmark";
 import { planCorpusCorrection, type CorpusCorrectionLayer } from "./corpusCorrection.js";
 import {
   EXPERIMENT_STAGES,
@@ -74,6 +80,10 @@ import type {
 } from "../../main/datasetBuilder.js";
 import type { SttBenchmarkCandidateOption } from "../../main/candidateCatalog.js";
 import type { SttPromptVariantCreateRequest, SttPromptVariantListEntry } from "../../main/promptVariants.js";
+import type {
+  NormalizerBenchmarkRunResponse,
+  NormalizerBenchmarkSetPreview,
+} from "../../main/normalizerBenchmark.js";
 
 type AudioSegmentPlayback = {
   audioBytes: Uint8Array;
@@ -90,6 +100,10 @@ type SourceFolderCheck = {
   eventsFound: boolean;
 };
 
+type ExperimentPreview =
+  | ({ stage: "stt" } & SttBenchmarkSetPreview)
+  | NormalizerBenchmarkSetPreview;
+
 type LabApi = {
   getDataFolder: () => Promise<DataFolderStatus>;
   setDataFolder: (folder: string) => Promise<DataFolderStatus>;
@@ -103,12 +117,19 @@ type LabApi = {
     membership: SttBenchmarkSetMembershipRequest,
   ) => Promise<SttBenchmarkSetMembershipResponse>;
   previewSttBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkSetPreview>;
+  previewNormalizerBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<NormalizerBenchmarkSetPreview>;
   runSetSttBenchmark: (
     split: SttBenchmarkSetSplit,
     candidates: BenchmarkCandidateIdentity[],
   ) => Promise<SttBenchmarkSetRunResponse>;
-  getSttBenchmarkRunDetail: (runId: string) => Promise<SttBenchmarkRunDetail | null>;
-  listSttBenchmarkRuns: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkRunListEntry[]>;
+  runSetNormalizerBenchmark: (
+    split: SttBenchmarkSetSplit,
+    candidate: BenchmarkCandidateIdentity,
+  ) => Promise<NormalizerBenchmarkRunResponse>;
+  getBenchmarkRunDetail: (
+    runId: string,
+  ) => Promise<SttBenchmarkRunDetail | BenchmarkMathTransformRunProjection | null>;
+  listBenchmarkRuns: (split: SttBenchmarkSetSplit) => Promise<BenchmarkRunListEntry[]>;
   exportSttBenchmarkRun: (runId: string) => Promise<SttBenchmarkRunExportSummary>;
   summarizeLegacySttBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkCandidateSummaryResponse>;
   selectSttCandidate: (request: SttCandidateSelectionRequest) => Promise<SttCandidateSelectionResponse>;
@@ -134,10 +155,11 @@ declare global {
 
 type View = "corpus" | "experiments" | "results";
 
-function formatRunOption(run: SttBenchmarkRunListEntry): string {
+function formatRunOption(run: BenchmarkRunListEntry): string {
   const when = run.createdAt ? formatTimestamp(run.createdAt) : run.runId;
   const status = run.finished ? `${run.done ?? 0} done / ${run.failed ?? 0} failed` : "unfinished";
-  return `${when} · ${run.snapshotSize} seg · ${status}`;
+  const stage = run.stage === "math_transform" ? "Normalizer" : "STT";
+  return `${when} · ${stage} · ${run.snapshotSize} member${run.snapshotSize === 1 ? "" : "s"} · ${status}`;
 }
 
 /**
@@ -214,7 +236,7 @@ function App(): React.ReactElement {
   // What a run over the experiment's split would freeze right now: read from the
   // same snapshot builder the launch uses, so the announced member count is the
   // one that will actually run.
-  const [setPreview, setSetPreview] = useState<SttBenchmarkSetPreview | null>(null);
+  const [setPreview, setSetPreview] = useState<ExperimentPreview | null>(null);
   const [previewError, setPreviewError] = useState("");
   // STT prompt variant creation (issue #121): a valid new variant becomes a new
   // faster-whisper benchmark candidate. The candidate selector (issue #126)
@@ -235,7 +257,7 @@ function App(): React.ReactElement {
   // browse filter over the run list — it never drives a launch, so changing it
   // cannot change what a pending experiment would run.
   const [resultsSplit, setResultsSplit] = useState<SttBenchmarkSetSplit>("validation");
-  const [runList, setRunList] = useState<SttBenchmarkRunListEntry[]>([]);
+  const [runList, setRunList] = useState<BenchmarkRunListEntry[]>([]);
   const [results, setResults] = useState<ResultsState>(emptyResultsState);
   const [runExportSummary, setRunExportSummary] = useState<SttBenchmarkRunExportSummary | null>(null);
   const [runExportError, setRunExportError] = useState("");
@@ -279,19 +301,31 @@ function App(): React.ReactElement {
   // outputs — not from the in-memory outcomes of the last launch, which would
   // show the newest run's errors under an older run's header.
   const errorAnalysis = useMemo(
-    () => (results.detail ? analyzeBatchErrors(toSttBenchmarkRunOutcomes(results.detail)) : []),
+    () =>
+      results.detail?.stage === "stt"
+        ? analyzeBatchErrors(toSttBenchmarkRunOutcomes(results.detail))
+        : [],
     [results.detail],
   );
   const experimentStage = getExperimentStage(experimentStageId);
   // Never render or launch from a count fetched for a previous split. The
   // handler below clears it eagerly; this check also protects the small window
   // before React has run the next effect's cleanup.
-  const experimentPreview = setPreview?.split === experimentSplit ? setPreview : null;
+  const experimentPreview =
+    setPreview?.split === experimentSplit && setPreview.stage === experimentStage.benchmarkStage
+      ? setPreview
+      : null;
+  const experimentCandidates =
+    experimentStage.id === "normalizer"
+      ? experimentPreview?.stage === "math_transform"
+        ? [experimentPreview.candidate.candidate]
+        : []
+      : selectedCandidates;
   const launchPlan = planExperimentLaunch({
     stage: experimentStage,
     split: experimentSplit,
     preview: experimentPreview,
-    candidates: selectedCandidates,
+    candidates: experimentCandidates,
     isRunning: isRunningExperiment,
   });
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -328,7 +362,7 @@ function App(): React.ReactElement {
   useEffect(() => {
     let cancelled = false;
     window.dictexLab
-      .listSttBenchmarkRuns(resultsSplit)
+      .listBenchmarkRuns(resultsSplit)
       .then((runs) => {
         if (!cancelled) {
           setRunList(runs);
@@ -355,8 +389,13 @@ function App(): React.ReactElement {
     setSetPreview(null);
     setPreviewError("");
     let cancelled = false;
-    window.dictexLab
-      .previewSttBenchmarkSet(experimentSplit)
+    const previewPromise: Promise<ExperimentPreview> =
+      experimentStage.benchmarkStage === "math_transform"
+        ? window.dictexLab.previewNormalizerBenchmarkSet(experimentSplit)
+        : window.dictexLab
+            .previewSttBenchmarkSet(experimentSplit)
+            .then((preview) => ({ ...preview, stage: "stt" as const }));
+    previewPromise
       .then((preview) => {
         if (!cancelled) {
           setSetPreview(preview);
@@ -372,7 +411,18 @@ function App(): React.ReactElement {
     return () => {
       cancelled = true;
     };
-  }, [view, experimentSplit]);
+  }, [view, experimentSplit, experimentStage.benchmarkStage]);
+
+  function selectExperimentStage(stageId: ExperimentStageId): void {
+    if (stageId === experimentStageId) {
+      return;
+    }
+    setExperimentStageId(stageId);
+    setSetPreview(null);
+    setPreviewError("");
+    setLaunchError("");
+    setLaunchProgress(null);
+  }
 
   function selectExperimentSplit(split: SttBenchmarkSetSplit): void {
     if (split === experimentSplit) {
@@ -647,7 +697,7 @@ function App(): React.ReactElement {
 
   async function refreshRunList(split: SttBenchmarkSetSplit): Promise<void> {
     try {
-      setRunList(await window.dictexLab.listSttBenchmarkRuns(split));
+      setRunList(await window.dictexLab.listBenchmarkRuns(split));
     } catch {
       setRunList([]);
     }
@@ -672,7 +722,7 @@ function App(): React.ReactElement {
         return;
       }
 
-      const detail = await window.dictexLab.getSttBenchmarkRunDetail(key);
+      const detail = await window.dictexLab.getBenchmarkRunDetail(key);
       setResults((current) => applyRunDetail(current, key, detail));
     } catch (detailError) {
       const message = detailError instanceof Error ? detailError.message : "Could not read this run";
@@ -705,9 +755,19 @@ function App(): React.ReactElement {
     setLaunchProgress(null);
     setIsRunningExperiment(true);
 
-    let response: SttBenchmarkSetRunResponse | null = null;
+    let response: SttBenchmarkSetRunResponse | NormalizerBenchmarkRunResponse | null = null;
     try {
-      response = await window.dictexLab.runSetSttBenchmark(split, selectedCandidates);
+      if (experimentStage.id === "normalizer") {
+        const candidate = experimentPreview?.stage === "math_transform"
+          ? experimentPreview.candidate.candidate
+          : null;
+        if (!candidate) {
+          throw new Error("Read the current deterministic pipeline before launching");
+        }
+        response = await window.dictexLab.runSetNormalizerBenchmark(split, candidate);
+      } else {
+        response = await window.dictexLab.runSetSttBenchmark(split, selectedCandidates);
+      }
     } catch (runError) {
       setLaunchError(runError instanceof Error ? runError.message : "The experiment failed to run");
     } finally {
@@ -922,13 +982,13 @@ function App(): React.ReactElement {
         <ExperimentsView
           candidateCatalog={candidateCatalog}
           stageId={experimentStageId}
-          setStageId={setExperimentStageId}
+          setStageId={selectExperimentStage}
           stage={experimentStage}
           split={experimentSplit}
           setSplit={selectExperimentSplit}
           preview={experimentPreview}
           previewError={previewError}
-          selectedCandidates={selectedCandidates}
+          selectedCandidates={experimentCandidates}
           setSelectedCandidates={setSelectedCandidates}
           launchPlan={launchPlan}
           isRunning={isRunningExperiment}
@@ -1859,7 +1919,7 @@ type ExperimentsViewProps = {
   stage: ExperimentStage;
   split: SttBenchmarkSetSplit;
   setSplit: (split: SttBenchmarkSetSplit) => void;
-  preview: SttBenchmarkSetPreview | null;
+  preview: ExperimentPreview | null;
   previewError: string;
   selectedCandidates: BenchmarkCandidateIdentity[];
   setSelectedCandidates: React.Dispatch<React.SetStateAction<BenchmarkCandidateIdentity[]>>;
@@ -1915,6 +1975,7 @@ function ExperimentsView({
   createPromptVariant,
   onNavigate,
 }: ExperimentsViewProps): React.ReactElement {
+  const normalizerPreview = preview?.stage === "math_transform" ? preview : null;
   const optionByKey = useMemo(() => {
     const map = new Map<string, SttBenchmarkCandidateOption>();
     for (const option of candidateCatalog) {
@@ -1966,7 +2027,7 @@ function ExperimentsView({
               ))}
             </div>
             <p className="experiment-step-note">
-              Only the STT stage runs today. The others are announced, never offered as a control that would do nothing.
+              STT and Normalizer are runnable. End to end stays announced until its own input and metric contract exists.
             </p>
           </li>
 
@@ -1993,14 +2054,18 @@ function ExperimentsView({
               </select>
               <span className="experiment-step-note">
                 {preview
-                  ? `${preview.evaluableSegments} evaluable member${preview.evaluableSegments === 1 ? "" : "s"} · ${preview.scorableSegments} with a Layer 1 reference`
+                  ? stage.id === "normalizer"
+                    ? `${preview.evaluableSegments} evaluable math_transform pair${preview.evaluableSegments === 1 ? "" : "s"}`
+                    : `${preview.evaluableSegments} evaluable member${preview.evaluableSegments === 1 ? "" : "s"} · ${preview.scorableSegments} with a Layer 1 reference`
                   : "Reading the corpus…"}
               </span>
             </div>
             {previewError && <pre className="error">{previewError}</pre>}
             <p className="experiment-step-note">
-              A member is a corpus segment of this split with real audio. Validation is what a decision is made on; test frozen
-              is read once, after every decision.
+              {stage.id === "normalizer"
+                ? "A member is the latest Layer 1 -> Layer 2 pair from one math_transform correction; audio is not required."
+                : "A member is a corpus segment of this split with real audio."} Validation is what a decision is made on;
+              test frozen is read once, after every decision.
             </p>
           </li>
 
@@ -2009,21 +2074,43 @@ function ExperimentsView({
               <span className="experiment-step-index">3</span>
               <h3>Candidates</h3>
             </div>
-            <CandidateSelector
-              catalog={candidateCatalog}
-              selectedCandidates={selectedCandidates}
-              setSelectedCandidates={setSelectedCandidates}
-              disabled={isRunning}
-              newPromptVariantName={newPromptVariantName}
-              setNewPromptVariantName={setNewPromptVariantName}
-              newPromptVariantDisplayName={newPromptVariantDisplayName}
-              setNewPromptVariantDisplayName={setNewPromptVariantDisplayName}
-              newPromptVariantText={newPromptVariantText}
-              setNewPromptVariantText={setNewPromptVariantText}
-              isCreatingPromptVariant={isCreatingPromptVariant}
-              createPromptVariantError={createPromptVariantError}
-              createPromptVariant={createPromptVariant}
-            />
+            {stage.id === "normalizer" ? (
+              normalizerPreview ? (
+                <article className="normalizer-candidate-card">
+                  <strong>{normalizerPreview.candidate.displayName}</strong>
+                  <span>dictex · deterministic-pipeline</span>
+                  <code>{formatCandidateIdentity(normalizerPreview.candidate.candidate)}</code>
+                  <dl className="normalizer-version">
+                    <div>
+                      <dt>Dictionary SHA-256</dt>
+                      <dd><code>{normalizerPreview.candidate.version.dictionaryHash}</code></dd>
+                    </div>
+                    <div>
+                      <dt>Rules SHA-256</dt>
+                      <dd><code>{normalizerPreview.candidate.version.rulesHash}</code></dd>
+                    </div>
+                  </dl>
+                </article>
+              ) : (
+                <p className="empty-state">Reading the current deterministic pipeline…</p>
+              )
+            ) : (
+              <CandidateSelector
+                catalog={candidateCatalog}
+                selectedCandidates={selectedCandidates}
+                setSelectedCandidates={setSelectedCandidates}
+                disabled={isRunning}
+                newPromptVariantName={newPromptVariantName}
+                setNewPromptVariantName={setNewPromptVariantName}
+                newPromptVariantDisplayName={newPromptVariantDisplayName}
+                setNewPromptVariantDisplayName={setNewPromptVariantDisplayName}
+                newPromptVariantText={newPromptVariantText}
+                setNewPromptVariantText={setNewPromptVariantText}
+                isCreatingPromptVariant={isCreatingPromptVariant}
+                createPromptVariantError={createPromptVariantError}
+                createPromptVariant={createPromptVariant}
+              />
+            )}
           </li>
 
           <li className="experiment-step">
@@ -2056,15 +2143,19 @@ function ExperimentsView({
                 <dt>Evaluable members</dt>
                 <dd>
                   {preview
-                    ? `${preview.evaluableSegments} (${preview.scorableSegments} scorable)`
+                    ? stage.id === "normalizer"
+                      ? `${preview.evaluableSegments} Layer 1 -> Layer 2 pairs`
+                      : `${preview.evaluableSegments} (${preview.scorableSegments} scorable)`
                     : "reading the corpus…"}
                 </dd>
               </div>
               <div className="protocol-summary-wide">
                 <dt>Snapshot</dt>
                 <dd>
-                  Frozen automatically when the run starts: its members and their Layer 1 references are copied into the run,
-                  so a later correction never moves its numbers. There is nothing to create by hand.
+                  Frozen automatically when the run starts: its members and their {stage.id === "normalizer"
+                    ? "Layer 1 inputs, Layer 2 targets and correction dates"
+                    : "Layer 1 references"} are copied into the run, so a later correction never moves its numbers. There is
+                  nothing to create by hand.
                 </dd>
               </div>
               <div className="protocol-summary-wide">
@@ -2078,7 +2169,13 @@ function ExperimentsView({
                         const option = optionByKey.get(formatCandidateIdentityKey(candidate));
                         return (
                           <li className="protocol-candidate" key={formatCandidateIdentityKey(candidate)}>
-                            <strong>{option ? option.modelLabel : candidate.model}</strong>
+                            <strong>
+                              {candidate.stage === "math_transform"
+                                ? NORMALIZER_BENCHMARK_DISPLAY_NAME
+                                : option
+                                  ? option.modelLabel
+                                  : candidate.model}
+                            </strong>
                             {option && (
                               <span className="protocol-candidate-meta">
                                 {option.runtimeLabel} · {option.variantLabel}
@@ -2317,10 +2414,183 @@ function RunSegmentOutputs({ segments }: { segments: SttBenchmarkRunDetail["segm
   );
 }
 
+function NormalizerRunResults({ detail }: { detail: BenchmarkMathTransformRunProjection }): React.ReactElement {
+  const summaries = summarizeNormalizerBenchmarkRun(detail);
+  const version = parseNormalizerBenchmarkVariant(detail.candidates[0]?.variant ?? null);
+
+  return (
+    <>
+      <section className="panel run-panel">
+        <div className="panel-header">
+          <div>
+            <h2>Run {formatTimestamp(detail.createdAt)}</h2>
+            <p className="benchmark-models" title={detail.runId ?? undefined}>{detail.runId}</p>
+          </div>
+          <em className={`run-status ${detail.terminal ? (detail.outcomeCounts.failed > 0 ? "run-status-failed" : "run-status-done") : "run-status-unfinished"}`}>
+            {detail.terminal
+              ? `${detail.outcomeCounts.done} done · ${detail.outcomeCounts.failed} failed · ${detail.outcomeCounts.missing} missing`
+              : "unfinished"}
+          </em>
+        </div>
+
+        <dl className="run-provenance">
+          <div>
+            <dt>Stage</dt>
+            <dd>Normalizer · math_transform</dd>
+          </div>
+          <div>
+            <dt>Transform</dt>
+            <dd>Layer 1 -&gt; Normalizer -&gt; Layer 2</dd>
+          </div>
+          <div>
+            <dt>Dataset</dt>
+            <dd>{formatBenchmarkSetSplit(detail.split)}</dd>
+          </div>
+          <div>
+            <dt>Snapshot</dt>
+            <dd>{detail.members.length} frozen pair{detail.members.length === 1 ? "" : "s"}</dd>
+          </div>
+        </dl>
+
+        <section className="run-candidates">
+          <h3>Candidate launched</h3>
+          <div className="normalizer-candidate-card">
+            <strong>{NORMALIZER_BENCHMARK_DISPLAY_NAME}</strong>
+            <code>{detail.candidates[0] ? formatCandidateIdentity(detail.candidates[0]) : "-"}</code>
+            {version && (
+              <dl className="normalizer-version">
+                <div>
+                  <dt>Dictionary SHA-256</dt>
+                  <dd><code>{version.dictionaryHash}</code></dd>
+                </div>
+                <div>
+                  <dt>Rules SHA-256</dt>
+                  <dd><code>{version.rulesHash}</code></dd>
+                </div>
+              </dl>
+            )}
+          </div>
+        </section>
+      </section>
+
+      <section className="panel summary-panel">
+        <div className="panel-header">
+          <div>
+            <h2>Exact match summary</h2>
+            <p>Output and Layer 2 target are canonicalized with the shared LaTeX convention before comparison.</p>
+          </div>
+        </div>
+        <div className="summary-table-scroll">
+          <table className="summary-table">
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th>Exact matches</th>
+                <th>Exact match</th>
+                <th>Done</th>
+                <th>Failed</th>
+                <th>Missing</th>
+                <th>Mean latency</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summaries.map((summary) => (
+                <tr key={formatCandidateIdentityKey(summary.candidate)}>
+                  <td>{NORMALIZER_BENCHMARK_DISPLAY_NAME}</td>
+                  <td>{summary.exactMatches} / {summary.total}</td>
+                  <td>{formatRatePercent(summary.total === 0 ? null : summary.exactMatches / summary.total)}</td>
+                  <td>{summary.done}</td>
+                  <td>{summary.failed}</td>
+                  <td>{summary.missing}</td>
+                  <td>{formatLatency(summary.meanTransformationDurationMs === null ? null : Math.round(summary.meanTransformationDurationMs))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel benchmark-panel">
+        <div className="panel-header">
+          <div>
+            <h2>Layer 1 -&gt; Normalizer -&gt; Layer 2</h2>
+            <p>Frozen inputs and targets, canonical exact match, text diff and deterministic layer traces</p>
+          </div>
+        </div>
+        <div className="batch-outcomes">
+          {detail.members.map((member) => {
+            const outcome = member.outcomes[0];
+            const result = outcome?.result;
+            const score = result?.score;
+            const diff = score ? diffWords(score.canonicalOutput, score.canonicalTarget) : [];
+            const failed = outcome?.status === "failed";
+            return (
+              <article
+                className={failed ? "batch-outcome batch-outcome-failed" : "batch-outcome"}
+                key={`${member.sessionId}/${member.segmentId}`}
+              >
+                <div className="batch-outcome-heading">
+                  <strong title={`${member.sessionId} / ${member.segmentId}`}>
+                    {member.sessionId} / {member.segmentId}
+                  </strong>
+                  <em className={`batch-outcome-state ${failed ? "batch-outcome-state-failed" : outcome?.status === "missing" ? "batch-outcome-state-missing" : ""}`}>
+                    {score ? (score.value ? "exact" : "different") : outcome?.status ?? "missing"}
+                  </em>
+                </div>
+                <p className="run-reference"><strong>Layer 1:</strong> {member.layer1Input}</p>
+                <p className="run-reference"><strong>Layer 2 target:</strong> {member.layer2Target}</p>
+                <p className="batch-outcome-meta">
+                  Correction frozen {member.mathTransformCorrectionCreatedAt
+                    ? formatTimestamp(member.mathTransformCorrectionCreatedAt)
+                    : "without a date"}
+                </p>
+                {outcome?.error && <p className="batch-outcome-error">{outcome.error}</p>}
+                {result && score && (
+                  <>
+                    <p className="run-output-transcript"><strong>Output:</strong> {result.outputTranscript}</p>
+                    <p className="batch-outcome-meta">Canonical output vs target · {formatLatency(result.transformationDurationMs)}</p>
+                    <p className="prefill-diff normalizer-output-diff" aria-label="Canonical output compared with Layer 2 target">
+                      {diff.map((segment, index) =>
+                        segment.kind === "equal" ? (
+                          <React.Fragment key={index}>{segment.text}</React.Fragment>
+                        ) : (
+                          <mark
+                            className={segment.kind === "added" ? "prefill-diff-added" : "prefill-diff-removed"}
+                            key={index}
+                          >
+                            {segment.text}
+                          </mark>
+                        ),
+                      )}
+                    </p>
+                    <details className="normalizer-layer-traces">
+                      <summary>Layer traces ({result.layers.length})</summary>
+                      <ol>
+                        {result.layers.map((layer, index) => (
+                          <li key={`${layer.layer}/${index}`}>
+                            <strong>{layer.layer}</strong> · {layer.applied ? "changed" : "unchanged"}
+                            <span>{layer.input}</span>
+                            <span>{layer.output}</span>
+                            {(layer.diagnostics ?? []).length > 0 && <small>{(layer.diagnostics ?? []).join("; ")}</small>}
+                          </li>
+                        ))}
+                      </ol>
+                    </details>
+                  </>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      </section>
+    </>
+  );
+}
+
 type ResultsViewProps = {
   split: SttBenchmarkSetSplit;
   setSplit: (split: SttBenchmarkSetSplit) => void;
-  runList: SttBenchmarkRunListEntry[];
+  runList: BenchmarkRunListEntry[];
   results: ResultsState;
   selectResult: (key: string) => void;
   errorAnalysis: CandidateErrorAnalysis[];
@@ -2382,9 +2652,9 @@ function ResultsView({
       <section className="panel results-panel" aria-busy={results.isLoading}>
         <div className="panel-header">
           <div>
-            <h2>STT runs</h2>
+            <h2>Benchmark runs</h2>
             <p>
-              Every tracked run over {formatBenchmarkSetSplit(split)}. A run keeps the snapshot it measured — reopening one
+              Every tracked STT or Normalizer run over {formatBenchmarkSetSplit(split)}. A run keeps the snapshot it measured — reopening one
               shows exactly what it saw.
             </p>
           </div>
@@ -2440,7 +2710,7 @@ function ResultsView({
         )}
       </section>
 
-      {detail && (
+      {detail?.stage === "stt" && (
         <>
           <section className="panel run-panel">
             <div className="panel-header">
@@ -2624,6 +2894,8 @@ function ResultsView({
           </section>
         </>
       )}
+
+      {detail?.stage === "math_transform" && <NormalizerRunResults detail={detail} />}
 
       {legacySummary && (
         <section className="panel summary-panel">

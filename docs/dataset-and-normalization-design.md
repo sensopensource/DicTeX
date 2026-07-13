@@ -938,3 +938,47 @@ Les lecteurs STT existants ne passent pas automatiquement par cette projection :
 actuel. Ainsi #139 rend les stages comparables dans une future vue `Results`
 sans modifier les événements historiques, le schéma 3 de l'export ou les octets
 produits à état égal.
+
+---
+
+## 11. Référence déterministe du normaliseur (issue #140)
+
+> **Statut : implémenté.** Le Lab lance le premier writer de la famille
+> stage-aware pour `math_transform` et l'affiche dans `Results` sans modifier le
+> writer, les lecteurs ou l'export LLM STT.
+
+Cette référence isole volontairement la transformation textuelle :
+
+```text
+couche 1 figée -> dictionnaire -> extraction des commandes -> regex
+-> restauration des mots de commande -> canonicalizeLatex -> couche 2 figée
+```
+
+Le snapshot est celui défini au §10 : les deux textes et la date proviennent du
+même dernier événement `stt_correction(math_transform)` de chaque membre. Une
+nouvelle correction après le lancement n'est jamais relue. Les entrées sans
+audio restent évaluables, car l'audio n'appartient pas à ce stage.
+
+Le candidat initial est unique : `math_transform / dictex /
+deterministic-pipeline`. Sa variante concatène les SHA-256 complets de la source
+du dictionnaire et de la source des règles chargées dans l'instance du run. Les
+valeurs par défaut réellement appliquées sont elles aussi hachées lorsqu'un
+fichier manque. Une identité annoncée dans `Experiments` doit correspondre à
+l'instance chargée au lancement ; sinon aucun start n'est écrit.
+
+Les commandes suivent toujours la règle de stockage du §4. Le normaliseur les
+extrait pour donner aux regex exactement leur entrée de production, puis le
+writer restaure les phrases canoniques dans la sortie et toutes les traces avant
+`benchmark_result`. Une paire déjà corrompue par un PUA est refusée avant le
+start. La comparaison voit donc les mêmes mots que la cible humaine et le
+journal reste sans sentinelle.
+
+La métrique est fermée : exact match de
+`canonicalizeLatex(sortie)` contre `canonicalizeLatex(cible)`. Elle autorise les
+seules convergences orthographiques définies au §8 et aucune équivalence
+mathématique. Le résumé compte les réussites exactes sur tous les membres du
+snapshot ; un échec d'exécution ou un résultat manquant reste dans le
+dénominateur. Le détail conserve la sortie brute restaurée, les deux formes
+canoniques, le diff textuel et les traces ordonnées, de sorte qu'une règle de
+portée insuffisante reste un échec visible plutôt qu'un score artificiellement
+amélioré.

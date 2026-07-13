@@ -80,6 +80,9 @@ Déjà disponible :
 - convention LaTeX canonique et canonicalisation avant mesure ou export ;
 - historique de dictées avec copie et réécoute ;
 - Lab séparé pour les corrections, les comparaisons et les exports ;
+- référence du normaliseur déterministe sur les paires `math_transform`, avec
+  snapshot figé, version complète du pipeline, exact match canonique et traces
+  par couche dans `Results` ;
 - passage d'un `initial_prompt` nommé à faster-whisper pour les expériences.
 
 Prochaines étapes :

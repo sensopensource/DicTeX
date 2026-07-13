@@ -75,7 +75,10 @@ test("a response for a run that is no longer selected is ignored", () => {
 
   const runB = applyRunDetail(lateRunA, "run_b", detail("run_b", "seg_0002"));
   assert.equal(runB.detail?.runId, "run_b");
-  assert.equal(runB.detail?.segments[0].segmentId, "seg_0002");
+  assert.equal(runB.detail?.stage, "stt");
+  if (runB.detail?.stage === "stt") {
+    assert.equal(runB.detail.segments[0].segmentId, "seg_0002");
+  }
   assert.equal(runB.isLoading, false);
 });
 

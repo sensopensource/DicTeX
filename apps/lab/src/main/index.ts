@@ -12,10 +12,12 @@ import {
   reconstructRecentSegments,
   buildSttBenchmarkRunDetail,
   buildSttBenchmarkRunSnapshot,
-  getSttBenchmarkRuns,
+  getBenchmarkRunProjection,
+  getBenchmarkRunProjections,
   summarizeLegacySttBenchmarkResultsByCandidate,
   buildSttBenchmarkRunExport,
   buildSttDatasetExport,
+  createTranscriptNormalizer,
   normalizeTranscript,
   restoreCommandWords,
   transcribeWithPython,
@@ -45,7 +47,8 @@ import {
   type SttBenchmarkSetRunResponse,
   type SttBenchmarkSetProgress,
   type SttBenchmarkRunDetail,
-  type SttBenchmarkRunListEntry,
+  type BenchmarkMathTransformRunProjection,
+  type BenchmarkRunListEntry,
   type SttBenchmarkRunExportSummary,
   type SttDatasetExportFileSummary,
   type SttDatasetExportSplitSummary,
@@ -53,6 +56,13 @@ import {
 } from "@dictex/shared";
 import { writeSttBenchmarkRunExport } from "./benchmarkRunExportWriter.js";
 import { requireNonEmptySttBenchmarkSnapshot, requireSttBenchmarkOutput } from "./benchmarkExecution.js";
+import {
+  buildNormalizerBenchmarkSetPreview,
+  runNormalizerBenchmark,
+  type NormalizerBenchmarkRunRequest,
+  type NormalizerBenchmarkRunResponse,
+  type NormalizerBenchmarkSetPreview,
+} from "./normalizerBenchmark.js";
 import {
   scoreSttBenchmarkTranscript,
   type SttBenchmarkReference,
@@ -81,9 +91,11 @@ import {
 } from "./promptVariants.js";
 
 /**
- * DicTeX Lab main process (pivot Phase 2, issue #76). No microphone, no
- * hotkey, no clipboard/paste, no normalizer: the Lab only benchmarks,
- * corrects, splits, selects candidates, and exports datasets, reading
+ * DicTeX Lab main process (pivot Phase 2, issue #76). No microphone, hotkey or
+ * clipboard/paste. It never normalizes dictation for insertion, but it replays
+ * the shared deterministic pipeline for dataset export and the tracked
+ * normalizer benchmark. The Lab benchmarks, corrects, splits, selects
+ * candidates, and exports datasets, reading
  * DicTeX's data folder READ-ONLY and keeping its OWN store for everything it
  * writes. See pivot_dictex_lab_split.md and AGENTS.md "Current Direction".
  *
@@ -138,8 +150,9 @@ function getSourceEventsPath(): string {
 
 // The SOURCE (DicTeX) normalizer config, resolved exactly as apps/dictex lays it
 // out under its data root (`<data>/normalizer/{dictionary,rules}.json`). Read
-// READ-ONLY when the export replays the pipeline to build the `math_transform`
-// training input (issue #100); the Lab never writes into DicTeX's folder. A
+// READ-ONLY when export or the normalizer benchmark replays the pipeline to
+// build a `math_transform` artifact (issues #100/#140); the Lab never writes
+// into DicTeX's folder. A
 // missing file degrades gracefully inside the normalizer (empty dictionary /
 // built-in DEFAULT_RULES), so no existence check is needed here.
 function getSourceNormalizerDir(): string {
@@ -729,6 +742,24 @@ ipcMain.handle(
 );
 
 ipcMain.handle(
+  "benchmark-set:preview-normalizer",
+  async (_event, request: SttBenchmarkSetSplitRequest): Promise<NormalizerBenchmarkSetPreview> => {
+    if (!request || !isSttBenchmarkSetSplit(request.split)) {
+      throw new Error("Invalid normalizer benchmark split");
+    }
+
+    const [events, normalizer] = await Promise.all([
+      readAllEvents(),
+      createTranscriptNormalizer({
+        dictionaryPath: getSourceDictionaryPath(),
+        rulesPath: getSourceRulesPath(),
+      }),
+    ]);
+    return buildNormalizerBenchmarkSetPreview(events, request.split, normalizer);
+  },
+);
+
+ipcMain.handle(
   "benchmark:run-set-stt",
   async (_event, request: SttBenchmarkSetRunRequest): Promise<SttBenchmarkSetRunResponse> => {
     if (!request || !isSttBenchmarkSetSplit(request.split)) {
@@ -913,6 +944,41 @@ ipcMain.handle(
   },
 );
 
+ipcMain.handle(
+  "benchmark:run-set-normalizer",
+  async (_event, request: NormalizerBenchmarkRunRequest): Promise<NormalizerBenchmarkRunResponse> => {
+    const candidate = request?.candidate;
+    if (
+      !request ||
+      !isSttBenchmarkSetSplit(request.split) ||
+      !candidate ||
+      candidate.stage !== "math_transform" ||
+      candidate.provider !== "dictex" ||
+      candidate.model !== "deterministic-pipeline" ||
+      typeof candidate.variant !== "string"
+    ) {
+      throw new Error("Invalid normalizer benchmark protocol");
+    }
+
+    const [events, normalizer] = await Promise.all([
+      readAllEvents(),
+      createTranscriptNormalizer({
+        dictionaryPath: getSourceDictionaryPath(),
+        rulesPath: getSourceRulesPath(),
+      }),
+    ]);
+    return runNormalizerBenchmark({
+      events,
+      split: request.split,
+      requestedCandidate: candidate,
+      normalizer,
+      runId: mintBenchmarkRunId(),
+      appendEvent: (event) => appendOwnEvent(event as unknown as Record<string, JsonValue>),
+      onProgress: sendBatchBenchmarkProgress,
+    });
+  },
+);
+
 /**
  * Everything the Results view shows about ONE run (issue #138): its status, its
  * frozen snapshot, the candidates it launched, their outputs, its failures and
@@ -921,37 +987,48 @@ ipcMain.handle(
  */
 ipcMain.handle(
   "benchmark-run:detail",
-  async (_event, request: { runId?: unknown }): Promise<SttBenchmarkRunDetail | null> => {
+  async (
+    _event,
+    request: { runId?: unknown },
+  ): Promise<SttBenchmarkRunDetail | BenchmarkMathTransformRunProjection | null> => {
     if (!request || typeof request.runId !== "string" || request.runId.length === 0) {
       throw new Error("A run id is required");
     }
 
-    return buildSttBenchmarkRunDetail(await readAllEvents(), request.runId);
+    const events = await readAllEvents();
+    const projection = getBenchmarkRunProjection(events, request.runId);
+    return projection?.stage === "math_transform"
+      ? projection
+      : buildSttBenchmarkRunDetail(events, request.runId);
   },
 );
 
 ipcMain.handle(
   "benchmark-set:list-runs",
-  async (_event, request: SttBenchmarkSetSplitRequest): Promise<SttBenchmarkRunListEntry[]> => {
+  async (_event, request: SttBenchmarkSetSplitRequest): Promise<BenchmarkRunListEntry[]> => {
     if (!request || !isSttBenchmarkSetSplit(request.split)) {
       throw new Error("Invalid STT benchmark set split");
     }
 
     const events = await readAllEvents();
-    return getSttBenchmarkRuns(events)
-      .filter((run) => run.split === request.split)
-      .map((run) => ({
-        runId: run.runId,
-        createdAt: run.createdAt,
-        split: run.split,
-        datasetKind: run.datasetKind,
-        snapshotSize: run.snapshot.length,
-        candidateCount: run.candidates.length,
-        done: run.finished ? run.finished.done : null,
-        failed: run.finished ? run.finished.failed : null,
-        finished: run.finished !== null,
-      }))
-      .reverse();
+    return getBenchmarkRunProjections(events, request.split).flatMap((run) =>
+      run.runId === null
+        ? []
+        : [
+            {
+              runId: run.runId,
+              createdAt: run.createdAt,
+              stage: run.stage,
+              datasetKind: run.datasetKind,
+              split: run.split,
+              snapshotSize: run.members.length,
+              candidateCount: run.candidates.length,
+              done: run.terminal?.done ?? null,
+              failed: run.terminal?.failed ?? null,
+              finished: run.terminal !== null,
+            },
+          ],
+    );
   },
 );
 

@@ -53,8 +53,8 @@ export type SttBenchmarkRunDetail = {
   runId: string;
   createdAt: string | null;
   finishedAt: string | null;
-  stage: string;
-  datasetKind: string;
+  stage: "stt";
+  datasetKind: "acoustic";
   split: SttBenchmarkSetSplit;
   finished: boolean;
   done: number | null;
@@ -206,8 +206,8 @@ export function buildSttBenchmarkRunDetail(events: LocalEvent[], runId: string):
     runId: run.runId,
     createdAt: run.createdAt,
     finishedAt: run.finished ? run.finished.createdAt : null,
-    stage: run.stage,
-    datasetKind: run.datasetKind,
+    stage: "stt",
+    datasetKind: "acoustic",
     split: run.split,
     finished: run.finished !== null,
     done: run.finished ? run.finished.done : null,

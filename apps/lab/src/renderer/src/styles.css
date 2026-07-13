@@ -1124,9 +1124,92 @@
   font-size: var(--text-sm);
 }
 
+/* ---- Deterministic normalizer benchmark -------------------------------- */
+
+.normalizer-candidate-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+
+.normalizer-candidate-card > span {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.normalizer-candidate-card > code,
+.normalizer-version code {
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+.normalizer-version {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.normalizer-version > div {
+  min-width: 0;
+}
+
+.normalizer-version dt {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.normalizer-version dd {
+  margin: 0.2rem 0 0;
+}
+
+.normalizer-output-diff {
+  margin-top: var(--space-2);
+}
+
+.normalizer-layer-traces {
+  margin-top: var(--space-3);
+}
+
+.normalizer-layer-traces summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.normalizer-layer-traces ol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: 1.3rem;
+}
+
+.normalizer-layer-traces li {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+.normalizer-layer-traces span,
+.normalizer-layer-traces small {
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
 /* ---- Responsive ---------------------------------------------------------- */
 
 @media (max-width: 680px) {
+  .normalizer-version {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .corpus-master-detail {
     grid-template-columns: minmax(0, 1fr);
   }

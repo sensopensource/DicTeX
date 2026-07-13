@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extractCommands } from "./commands.js";
+import type { NormalizerPipelineVersion } from "./normalizerBenchmark.js";
 
 /**
  * Text-to-text normalization pipeline (strategic pivot, Phase 2).
@@ -104,6 +106,8 @@ export type NormalizeOptions = {
  * for a given dictionary/rules pair (issue #100).
  */
 export type TranscriptNormalizer = {
+  /** Full SHA-256 fingerprints of the dictionary and rules loaded into this instance. */
+  version: NormalizerPipelineVersion;
   normalize: (input: string) => Promise<NormalizationResult>;
 };
 
@@ -116,8 +120,11 @@ export type TranscriptNormalizer = {
 export async function createTranscriptNormalizer(
   options: NormalizeOptions,
 ): Promise<TranscriptNormalizer> {
-  const layers = await buildPipeline(options);
-  return { normalize: (input: string) => runPipeline(input, layers) };
+  const pipeline = await buildPipeline(options);
+  return {
+    version: pipeline.version,
+    normalize: (input: string) => runPipeline(input, pipeline.layers),
+  };
 }
 
 /**
@@ -139,17 +146,25 @@ export async function normalizeTranscript(
   return normalizer.normalize(input);
 }
 
-async function buildPipeline(options: NormalizeOptions): Promise<NormalizationLayer[]> {
+async function buildPipeline(
+  options: NormalizeOptions,
+): Promise<{ layers: NormalizationLayer[]; version: NormalizerPipelineVersion }> {
   // Load the dictionary and rules once per run so layer application is synchronous
   // and deterministic. Layer 3 will be appended to this array in a later issue.
   const dictionary = await loadDictionary(options.dictionaryPath);
   const rules = await loadRules(options.rulesPath);
 
-  return [
-    createPersonalDictionaryLayer(dictionary.entries, dictionary.diagnostics),
-    createCommandExtractionLayer(),
-    createRegexRulesLayer(rules.entries, rules.diagnostics),
-  ];
+  return {
+    layers: [
+      createPersonalDictionaryLayer(dictionary.entries, dictionary.diagnostics),
+      createCommandExtractionLayer(),
+      createRegexRulesLayer(rules.entries, rules.diagnostics),
+    ],
+    version: {
+      dictionaryHash: dictionary.sourceHash,
+      rulesHash: rules.sourceHash,
+    },
+  };
 }
 
 /**
@@ -240,9 +255,9 @@ type RawDictionaryEntry = {
  */
 async function loadDictionary(
   dictionaryPath: string,
-): Promise<{ entries: DictionaryEntry[]; diagnostics: string[] }> {
+): Promise<{ entries: DictionaryEntry[]; diagnostics: string[]; sourceHash: string }> {
   if (!existsSync(dictionaryPath)) {
-    return { entries: [], diagnostics: [] };
+    return { entries: [], diagnostics: [], sourceHash: hashNormalizerSource(DEFAULT_DICTIONARY_SOURCE) };
   }
 
   let contents: string;
@@ -250,21 +265,31 @@ async function loadDictionary(
     contents = await readFile(dictionaryPath, { encoding: "utf8" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unreadable";
-    return { entries: [], diagnostics: [`dictionary.json could not be read (${message}); using passthrough`] };
+    return {
+      entries: [],
+      diagnostics: [`dictionary.json could not be read (${message}); using passthrough`],
+      sourceHash: hashNormalizerSource(UNREADABLE_DICTIONARY_SOURCE),
+    };
   }
+  const sourceHash = hashNormalizerSource(contents);
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(contents);
   } catch (error) {
     const message = error instanceof Error ? error.message : "parse error";
-    return { entries: [], diagnostics: [`dictionary.json is not valid JSON (${message}); using passthrough`] };
+    return {
+      entries: [],
+      diagnostics: [`dictionary.json is not valid JSON (${message}); using passthrough`],
+      sourceHash,
+    };
   }
 
   if (!isRecord(parsed) || !Array.isArray(parsed.entries)) {
     return {
       entries: [],
       diagnostics: ['dictionary.json must be an object with an "entries" array; using passthrough'],
+      sourceHash,
     };
   }
 
@@ -291,7 +316,15 @@ async function loadDictionary(
     entries.push({ from, to });
   });
 
-  return { entries, diagnostics };
+  return { entries, diagnostics, sourceHash };
+}
+
+const DEFAULT_DICTIONARY_SOURCE = JSON.stringify({ version: 1, entries: [] });
+const UNREADABLE_DICTIONARY_SOURCE = "dictex:dictionary:unreadable";
+const UNREADABLE_RULES_SOURCE = "dictex:rules:unreadable";
+
+function hashNormalizerSource(contents: string): string {
+  return createHash("sha256").update(contents).digest("hex");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -505,9 +538,15 @@ type RawRuleEntry = {
  * - Individual malformed entries (missing fields, invalid regex): skipped with
  *   a diagnostic; valid entries still apply.
  */
-async function loadRules(rulesPath: string): Promise<{ entries: CompiledRule[]; diagnostics: string[] }> {
+async function loadRules(
+  rulesPath: string,
+): Promise<{ entries: CompiledRule[]; diagnostics: string[]; sourceHash: string }> {
   if (!existsSync(rulesPath)) {
-    return { entries: compileRules(DEFAULT_RULES).entries, diagnostics: [] };
+    return {
+      entries: compileRules(DEFAULT_RULES).entries,
+      diagnostics: [],
+      sourceHash: hashNormalizerSource(JSON.stringify({ version: 1, rules: DEFAULT_RULES })),
+    };
   }
 
   let contents: string;
@@ -515,25 +554,35 @@ async function loadRules(rulesPath: string): Promise<{ entries: CompiledRule[]; 
     contents = await readFile(rulesPath, { encoding: "utf8" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unreadable";
-    return { entries: [], diagnostics: [`rules.json could not be read (${message}); using passthrough`] };
+    return {
+      entries: [],
+      diagnostics: [`rules.json could not be read (${message}); using passthrough`],
+      sourceHash: hashNormalizerSource(UNREADABLE_RULES_SOURCE),
+    };
   }
+  const sourceHash = hashNormalizerSource(contents);
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(contents);
   } catch (error) {
     const message = error instanceof Error ? error.message : "parse error";
-    return { entries: [], diagnostics: [`rules.json is not valid JSON (${message}); using passthrough`] };
+    return {
+      entries: [],
+      diagnostics: [`rules.json is not valid JSON (${message}); using passthrough`],
+      sourceHash,
+    };
   }
 
   if (!isRecord(parsed) || !Array.isArray(parsed.rules)) {
     return {
       entries: [],
       diagnostics: ['rules.json must be an object with a "rules" array; using passthrough'],
+      sourceHash,
     };
   }
 
-  return compileRules(parsed.rules as unknown[]);
+  return { ...compileRules(parsed.rules as unknown[]), sourceHash };
 }
 
 function compileRules(rawRules: unknown[]): { entries: CompiledRule[]; diagnostics: string[] } {

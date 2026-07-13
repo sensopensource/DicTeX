@@ -164,6 +164,20 @@ export type SttBenchmarkRunListEntry = {
   finished: boolean;
 };
 
+/** Lightweight selector entry across tracked STT and stage-aware runs. */
+export type BenchmarkRunListEntry = {
+  runId: string;
+  createdAt: string | null;
+  stage: "stt" | "math_transform";
+  datasetKind: "acoustic" | "math_transform";
+  split: SttBenchmarkSetSplit;
+  snapshotSize: number;
+  candidateCount: number;
+  done: number | null;
+  failed: number | null;
+  finished: boolean;
+};
+
 export type SttBenchmarkRunExportSummary = {
   runId: string;
   createdAt: string;

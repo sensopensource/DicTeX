@@ -192,14 +192,14 @@ The app uses a Python sidecar with faster-whisper for local transcription.
 
 ## DicTeX Lab (tooling app)
 
-`apps/lab` is the separate **DicTeX Lab** app (pivot Phase 2, see
-`pivot_dictex_lab_split.md`). It has **no microphone, no hotkey, no
-clipboard/paste, and no normalizer**: it is where the ML tooling lives —
-STT benchmark (segment/batch, candidate summary, error analysis, candidate
-selection), typed corrections, benchmark-set split membership, and the
-test_frozen-compatible dataset export. It reuses `packages/engine`
-(faster-whisper + Vosk) for STT and `packages/shared` for all derivation /
-scoring / export logic, so DicTeX and the Lab cannot diverge.
+`apps/lab` est l'application séparée **DicTeX Lab** (pivot phase 2, voir
+`pivot_dictex_lab_split.md`). Elle n'a **ni microphone, ni raccourci global, ni
+presse-papiers/collage** : elle héberge les outils de mesure et de données —
+benchmarks STT et Normalizer, corrections typées, appartenance aux splits et
+export compatible avec `test_frozen`. Elle réutilise `packages/engine`
+(faster-whisper + Vosk) pour le STT et le normaliseur déterministe de
+`packages/shared` pour le stage textuel ; les dérivations, scores et exports
+partagés empêchent DicTeX et le Lab de diverger.
 
 Run it (from the repository root):
 
@@ -217,31 +217,30 @@ Le Lab sépare strictement le protocole à lancer du run déjà figé :
 
 - **`Experiments` est un formulaire de lancement.** Cinq étapes ordonnées —
   étape expérimentale, dataset/split, candidats, protocole, lancement — et rien
-  d'autre : aucun résumé, aucun résultat historique. Seule l'étape `STT` est
-  exécutable ; les étapes futures (normaliseur, bout en bout) sont annoncées
-  désactivées avec leur raison plutôt que dotées d'un contrôle sans effet. Le
-  protocole annonce avant tout lancement l'entrée (`audio`), la cible
-  (`Layer 1 (acoustic)`), la transformation `audio -> Layer 1`, le split, le
-  nombre de membres évaluables et l'identité complète de chaque candidat, ainsi
+  d'autre : aucun résumé, aucun résultat historique. `STT` et `Normalizer` sont
+  exécutables ; le bout en bout reste annoncé désactivé avec sa raison plutôt
+  que doté d'un contrôle sans effet. Le protocole annonce avant tout lancement
+  l'entrée, la cible et la transformation propres au stage (`audio -> Layer 1`
+  ou `Layer 1 -> Normalizer -> Layer 2`), le split, le nombre de membres
+  évaluables et l'identité complète de chaque candidat, ainsi
   que le fait que le snapshot est **figé automatiquement au lancement** — il n'y
   a aucune action manuelle de création de snapshot.
 - **`Results` est la lecture d'un run immuable.** La liste des runs du split
   parcouru, puis le détail du run choisi : statut, snapshot figé, candidats
   lancés, résumé par candidat, sorties de chaque candidat pour chaque membre,
-  erreurs, sélection du candidat de base et `Export for LLM`. Aucun contrôle de
-  lancement n'y figure.
+  erreurs et provenance. La sélection du candidat de base et `Export for LLM`
+  restent propres aux runs STT ; un run Normalizer expose l'exact match, les
+  diffs et les traces. Aucun contrôle de lancement n'y figure.
 - **Un lancement réussi devient son résultat** : le run créé est immédiatement
   sélectionné et la vue bascule sur `Results`.
 
-Le nombre de membres évaluables annoncé avant le lancement provient de
-`buildSttBenchmarkRunSnapshot`, la fonction même qui fige le snapshot au
-démarrage du run (canal `benchmark-set:preview`, lecture seule) : ce qui est
-annoncé et ce qui s'exécute ne peuvent pas diverger. Le détail d'un run
-(`benchmark-run:detail`, `buildSttBenchmarkRunDetail`) est dérivé exclusivement
-du `stt_benchmark_run_started` de ce run et des `stt_benchmark_result` portant
-son `run_id` : l'appartenance courante à un split et les corrections actuelles ne
-sont jamais relues, donc rouvrir un ancien run montre exactement ce qu'il a
-mesuré. Le split de `Results` est un filtre de lecture, distinct de celui du
+Le nombre de membres évaluables annoncé avant le lancement provient de la même
+fonction qui fige le snapshot au démarrage : `buildSttBenchmarkRunSnapshot`
+pour STT, `buildMathTransformBenchmarkRunSnapshot` pour Normalizer. Le détail
+d'un run STT reste construit par `buildSttBenchmarkRunDetail`; celui d'un run
+Normalizer vient de la projection stage-aware commune. Dans les deux cas,
+l'appartenance courante à un split et les corrections actuelles ne sont jamais
+relues. Le split de `Results` est un filtre de lecture, distinct de celui du
 protocole.
 
 Depuis #138, **un résultat STT n'existe qu'à l'intérieur d'un run**. Le rejeu
@@ -380,8 +379,8 @@ whatever is left in the field, same as before this issue.
    reste intact.
 4. Lancement et résultat séparés (issue #138). Dans `Experiments`, parcourir le
    flux en cinq étapes : étape, dataset, candidats, protocole, lancement.
-   Confirmer que la seule étape lançable est `STT`, que les étapes futures sont
-   affichées désactivées avec leur raison, et qu'aucun résumé ni résultat
+   Confirmer que `STT` et `Normalizer` sont lançables, que le bout en bout reste
+   affiché désactivé avec sa raison, et qu'aucun résumé ni résultat
    historique n'apparaît dans ce formulaire. Vérifier que le protocole annonce
    `audio -> Layer 1`, l'entrée `audio`, la cible `Layer 1 (acoustic)`, le split
    choisi (`Validation` par défaut), le nombre de membres évaluables et
@@ -1184,9 +1183,67 @@ plus `completed_without_output`, état historique de #138. Les fonctions
 `buildSttBenchmarkRunExport` restent inchangées ; le résumé et l'export LLM STT
 gardent donc leur compatibilité historique et leur schéma 3.
 
-#139 n'ajoute ni lancement Normalizer, ni contrôle renderer, ni nouveau format
-d'export. Le premier writer `math_transform` et son affichage sont le périmètre
-du ticket suivant.
+#139 n'ajoutait ni lancement Normalizer, ni contrôle renderer, ni nouveau format
+d'export. Le premier writer `math_transform` et son affichage sont désormais
+implémentés par #140 selon la procédure ci-dessous.
+
+### Référence du normaliseur déterministe (issue #140)
+
+Dans `Experiments`, l'étape visible `Normalizer` correspond au stage interne
+`math_transform`. Choisir un split affiche le nombre exact de paires évaluables :
+pour chaque membre, `buildMathTransformBenchmarkRunSnapshot` prend la dernière
+correction `math_transform` et copie sa propre couche 1, sa couche 2 et sa date.
+L'audio n'est ni requis ni relu.
+
+La prévisualisation charge une instance du normaliseur partagé depuis le dossier
+source en lecture seule. Elle annonce un seul candidat, affiché sous le nom
+`Current deterministic pipeline`, dont l'identité est :
+
+```text
+stage    = math_transform
+provider = dictex
+model    = deterministic-pipeline
+variant  = dictionary-sha256:<64 hex>;rules-sha256:<64 hex>
+```
+
+Les deux empreintes couvrent les sources complètes effectivement chargées par
+cette instance ; en l'absence de fichier, elles couvrent la configuration par
+défaut réellement appliquée. Le lancement recharge une seule instance, recalcule
+son identité et la compare à celle annoncée. Un changement entre prévisualisation
+et clic provoque un refus avant `benchmark_run_started`, jamais un run dont la
+provenance mentirait.
+
+Le run écrit dans le journal propre au Lab :
+
+1. un `benchmark_run_started` avec le snapshot textuel et le candidat figés ;
+2. un `benchmark_result` par paire, produit par
+   `createTranscriptNormalizer` — dictionnaire → extraction des commandes →
+   règles regex — avec sortie finale, durée et traces ordonnées ;
+3. un `benchmark_run_finished` dont les compteurs portent sur les tentatives
+   candidat × membre.
+
+Avant l'écriture d'un résultat, `restoreCommandWords` est appliqué à la sortie
+et à chaque entrée/sortie de trace. Une paire source contenant déjà une
+sentinelle PUA est refusée : le journal du benchmark ne peut donc en écrire
+aucune. `Results` canonicalise sortie et cible avec `canonicalizeLatex`, affiche
+l'exact match, le nombre exact de réussites sur le total, le diff de chaque
+membre et ses traces. Aucune équivalence sémantique n'est ajoutée : une prose
+inchangée peut réussir, tandis qu'une portée différente reste un échec visible.
+
+Procédure de référence :
+
+1. qualifier plusieurs paires `math_transform` dans `Corpus` et les placer dans
+   `Validation` ; inclure au moins une prose inchangée, une règle couverte et un
+   cas de portée non couvert ;
+2. ouvrir `Experiments`, choisir `Normalizer` puis `Validation`, contrôler le
+   nombre de paires et les deux SHA-256 complets ;
+3. lancer le run et vérifier le basculement vers `Results` ;
+4. contrôler `Layer 1 -> Normalizer -> Layer 2`, le résumé réussites/total, les
+   diffs et les traces de couches ;
+5. recorriger ensuite un membre dans `Corpus`, rouvrir le run précédent et
+   confirmer que son snapshot, son score et son détail n'ont pas changé ;
+6. ouvrir le journal du Lab et confirmer l'absence de caractères PUA dans les
+   trois familles d'événements du run.
 
 Depuis #130, la référence d'un benchmark STT est exclusivement la dernière
 correction `acoustic` disponible au démarrage. Une correction
@@ -1314,9 +1371,9 @@ Per candidate it reports:
   two (a snapshot segment absent from both results and `failures` was not
   executed — e.g. a partial stop). Re-run the set benchmark to fill gaps.
 
-Only the STT stage is scored today; the summary is STT-only by construction
-because it groups by `stage`, so a future `math_transform` or `normalization`
-candidate would summarize separately once that stage starts scoring results.
+Le résumé STT reste STT-only par construction. Le stage `math_transform` possède
+depuis #140 son propre résumé d'exact match canonique dans `Results` ; les deux
+stages ne sont jamais agrégés dans la même table.
 
 ## STT Candidate Selection
 
