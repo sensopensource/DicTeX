@@ -1,5 +1,5 @@
 import type { BenchmarkCandidateIdentity, CorrectionKind, SttBenchmarkSetSplit } from "./localEvents.js";
-import type { SttBenchmarkScore, SttBenchmarkSetSegmentOutcome } from "./benchmarkTypes.js";
+import type { SttBenchmarkScore } from "./benchmarkTypes.js";
 
 /**
  * Small presentation helpers shared by apps/lab's Benchmark/Dataset views.
@@ -69,18 +69,6 @@ export function formatTimestamp(timestamp: string | null): string {
 
 export function formatScore(score: SttBenchmarkScore): string {
   return `${score.metric.toUpperCase()} ${(score.value * 100).toFixed(1)}%`;
-}
-
-export function formatBatchOutcomeScore(outcome: SttBenchmarkSetSegmentOutcome): string {
-  const scores = outcome.results
-    .map((result) => result.score)
-    .filter((score): score is SttBenchmarkScore => score !== null);
-  if (scores.length === 0) {
-    return "";
-  }
-
-  const bestCer = Math.min(...scores.map((score) => score.value));
-  return ` · best CER ${(bestCer * 100).toFixed(1)}%`;
 }
 
 export function formatCandidateIdentity(candidate: BenchmarkCandidateIdentity): string {

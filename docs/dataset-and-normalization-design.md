@@ -747,8 +747,11 @@ membre acoustique du snapshot exactement dans son ordre, y ajoute seulement le
 chemin audio résolu comme provenance, et ne consulte jamais les corrections ou
 l'appartenance courantes au split. `outputs.jsonl` groupe tous les candidats
 pour cette même clé ; une sortie absente est distinguée d'un échec terminal au
-lieu d'être supprimée. Aucun enregistrement `math_transform`, segment sans audio
-ou fichier audio ne peut entrer dans le paquet.
+lieu d'être supprimée. Un ancien terminal qui comptait un segment `done` sans
+aucune sortie est exporté `completed_without_output`, jamais `missing`, sans
+réécrire le journal ; ce statut de compatibilité n'entre pas dans le décompte
+des sorties manquantes. Aucun enregistrement `math_transform`, segment sans
+audio ou fichier audio ne peut entrer dans le paquet.
 
 Le manifeste référence ses deux fichiers JSONL par des chemins relatifs et
 porte les limites des deux CER et du WER (voir « Deux CER » ci-dessous). Les
@@ -767,7 +770,8 @@ disponible et échoue explicitement sinon.
 > `calculateAcousticCharacterErrorRate` vit dans
 > `packages/shared/src/sttScoring.ts`, à côté du CER strict. Les résumés
 > (`benchmarkSummary.ts`), l'interface Benchmark et l'export LLM
-> (`benchmarkRunExport.ts`, schéma d'export porté à `2`) exposent les deux.
+> (`benchmarkRunExport.ts`, schéma d'export porté à `2`, puis à `3` pour l'état
+> de compatibilité `completed_without_output` de #138) exposent les deux.
 
 Le CER strict compare les caractères après canonicalisation LaTeX, normalisation
 de casse et des espaces de bord. Il **compte la ponctuation de phrase**, donc une

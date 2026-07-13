@@ -211,6 +211,46 @@ scripts\npm.cmd run dev:lab
 scripts/npm.sh run dev:lab
 ```
 
+### Lancer une expérience et lire son résultat (issue #138)
+
+Le Lab sépare strictement le protocole à lancer du run déjà figé :
+
+- **`Experiments` est un formulaire de lancement.** Cinq étapes ordonnées —
+  étape expérimentale, dataset/split, candidats, protocole, lancement — et rien
+  d'autre : aucun résumé, aucun résultat historique. Seule l'étape `STT` est
+  exécutable ; les étapes futures (normaliseur, bout en bout) sont annoncées
+  désactivées avec leur raison plutôt que dotées d'un contrôle sans effet. Le
+  protocole annonce avant tout lancement l'entrée (`audio`), la cible
+  (`Layer 1 (acoustic)`), la transformation `audio -> Layer 1`, le split, le
+  nombre de membres évaluables et l'identité complète de chaque candidat, ainsi
+  que le fait que le snapshot est **figé automatiquement au lancement** — il n'y
+  a aucune action manuelle de création de snapshot.
+- **`Results` est la lecture d'un run immuable.** La liste des runs du split
+  parcouru, puis le détail du run choisi : statut, snapshot figé, candidats
+  lancés, résumé par candidat, sorties de chaque candidat pour chaque membre,
+  erreurs, sélection du candidat de base et `Export for LLM`. Aucun contrôle de
+  lancement n'y figure.
+- **Un lancement réussi devient son résultat** : le run créé est immédiatement
+  sélectionné et la vue bascule sur `Results`.
+
+Le nombre de membres évaluables annoncé avant le lancement provient de
+`buildSttBenchmarkRunSnapshot`, la fonction même qui fige le snapshot au
+démarrage du run (canal `benchmark-set:preview`, lecture seule) : ce qui est
+annoncé et ce qui s'exécute ne peuvent pas diverger. Le détail d'un run
+(`benchmark-run:detail`, `buildSttBenchmarkRunDetail`) est dérivé exclusivement
+du `stt_benchmark_run_started` de ce run et des `stt_benchmark_result` portant
+son `run_id` : l'appartenance courante à un split et les corrections actuelles ne
+sont jamais relues, donc rouvrir un ancien run montre exactement ce qu'il a
+mesuré. Le split de `Results` est un filtre de lecture, distinct de celui du
+protocole.
+
+Depuis #138, **un résultat STT n'existe qu'à l'intérieur d'un run**. Le rejeu
+ad hoc (`Benchmark latest` / benchmark d'un segment) est retiré : il écrivait des
+`stt_benchmark_result` sans `run_id`, donc sans snapshot ni référence explicable,
+qui réapparaissaient ensuite comme de faux résultats « legacy ». Les anciens
+résultats sans `run_id` restent lisibles sous `Legacy (pre-run results)` ; aucun
+événement n'est réécrit.
+
 ### DicTeX data folder (read-only source) + the Lab's own store
 
 The Lab reads DicTeX's local data folder — `audio/` + `events.jsonl`
@@ -279,7 +319,7 @@ filled —
 
 The entry is also marked into the chosen benchmark-set split (train pool /
 validation / test frozen) so it is immediately visible to `buildSttDatasetExport`
-and to the Benchmark view's set runner. A **paste**-sourced entry has no real
+and to the run launched from `Experiments`. A **paste**-sourced entry has no real
 audio: internally it is still assigned a string `audioRef` (not `null`) so the
 shared `getSttBenchmarkSetSegments` derivation picks it up, but the Lab's own
 `serializeDatasetRecord` maps that back to `audio_ref: null, audio_path: null`
@@ -338,12 +378,26 @@ whatever is left in the field, same as before this issue.
    ensuite le split `Test frozen` ; confirmer que la correction et le split
    n'atterrissent que dans le journal du Lab et que `events.jsonl` de DicTeX
    reste intact.
-4. In `Benchmark`, click `Benchmark latest` (needs the venv or
-   `DICTEX_PYTHON`); confirm `tiny`/`base`/`small` transcripts + latency
-   appear. Confirm the split selector opens on `Validation` (the default).
-   Switch it to `Test frozen`, run `Run analysis`, `Summarize by candidate`,
-   and `Select` a candidate.
-4bis. Progressive candidate selector (issue #126). In `Benchmark set`, confirm
+4. Lancement et résultat séparés (issue #138). Dans `Experiments`, parcourir le
+   flux en cinq étapes : étape, dataset, candidats, protocole, lancement.
+   Confirmer que la seule étape lançable est `STT`, que les étapes futures sont
+   affichées désactivées avec leur raison, et qu'aucun résumé ni résultat
+   historique n'apparaît dans ce formulaire. Vérifier que le protocole annonce
+   `audio -> Layer 1`, l'entrée `audio`, la cible `Layer 1 (acoustic)`, le split
+   choisi (`Validation` par défaut), le nombre de membres évaluables et
+   l'identité complète de chaque candidat, et qu'il indique que le snapshot est
+   figé automatiquement au lancement — aucune action manuelle de création de
+   snapshot n'existe. Cliquer sur `Run experiment` (nécessite le venv ou
+   `DICTEX_PYTHON`) : la progression s'affiche pendant l'exécution, puis le Lab
+   bascule sur `Results` avec le run tout juste créé déjà sélectionné. Dans
+   `Results`, vérifier le statut, le snapshot, les candidats lancés, le résumé,
+   les sorties par segment, les erreurs et `Export for LLM` — et qu'aucun
+   contrôle de lancement n'y figure. Lancer un second run, puis revenir au
+   premier depuis le sélecteur : confirmer qu'il affiche exclusivement son
+   propre snapshot, ses propres sorties et ses propres scores. Sélectionner
+   enfin `Legacy (pre-run results)` et confirmer qu'il ne montre que les
+   résultats sans `run_id`.
+4bis. Progressive candidate selector (issue #126). In `Candidates`, confirm
    there is a compact list of the 1-3 currently-selected candidates (each with
    its model, runtime variant and prompt), with `Replace` and `Remove`
    actions, and an `Add a candidate` button — no flat grid of checkboxes.
@@ -363,10 +417,10 @@ whatever is left in the field, same as before this issue.
    faster-whisper model now offers a `baseline` prompt plus one prompt per
    variant in the `Prompt` control (labelled by display name, never a hash),
    and that the split selector is back on `Validation` by default. Build three
-   candidates from one model — baseline plus two variants — run `Run analysis`,
-   then `Summarize by candidate`; confirm the summary table shows three
-   distinct rows for that one model (not merged into one) and stays inside its
-   panel (it scrolls horizontally rather than widening the page). For a Vosk
+   candidates from one model — baseline plus two variants — click
+   `Run experiment`; in `Results`, confirm the summary table of that run shows
+   three distinct rows for that one model (not merged into one) and stays inside
+   its panel (it scrolls horizontally rather than widening the page). For a Vosk
    candidate, confirm the `Prompt` control is replaced by "No prompt — this
    provider has no initial_prompt." with no fake baseline text.
 4quater. Secondary prompt creation (issues #121/#126). With a faster-whisper
@@ -382,41 +436,40 @@ whatever is left in the field, same as before this issue.
    unchanged. Try an empty id, an id with a space, an empty display name, and an
    empty prompt text; confirm each is rejected. Confirm there is no edit/delete
    affordance anywhere.
-4quinquies. Overflow validation (issue #126). Resize the Lab window to roughly
-   320 px, 560 px and 760 px wide, with a deliberately long model name, a long
-   candidate identity and a long prompt text present. Confirm at each width the
-   page never gains a horizontal scrollbar: panels, prompt text, ids, controls,
-   batch outcomes and the dense summary table all stay within the `app-shell`,
-   choice lists scroll vertically inside their bounded height, and the summary
-   table scrolls inside its own panel. Check the `Candidate summary` panel in
-   both states: before any run — both empty states (`No base STT candidate
-   selected yet…` and `Run analysis above…`) and the `Summarize by candidate`
-   button — and after a summary, with the dense table present. At each width the
-   button, the empty states and every child stay inside the panel border and do
-   not push the page past the `app-shell` (regression check for B1: the panel
-   grid column is `minmax(0, 1fr)`, so the nowrap table can no longer inflate the
-   column and spill the panel's other children past its border). Confirm the
-   whole selector is usable by keyboard with a visible focus ring and that
-   expanded/collapsed controls are announced (aria-expanded / listbox roles).
-4sexies. Run tracking + acoustic snapshot (issue #122). With at least one
-   corrected `Validation` segment, run `Run analysis`; confirm the
-   `Candidate summary` run selector now lists the run just created
-   (`date · N seg · done/failed`) and is auto-selected. Run `Run analysis`
-   again: confirm a second, distinct run appears and that switching the selector
-   between the two shows each run's own numbers (they are not merged).
-   Then, in the Segments view, re-correct one of the run's segments with a
-   deliberately different transcript; go back to `Benchmark`, re-select the
-   earlier run from the selector, and confirm its CER/WER are unchanged (the
-   snapshot is frozen). Assign a paste-sourced (no-audio) `math_transform`-only
-   entry to `Validation`, run `Run analysis`, and confirm it is NOT counted in
-   the run's segment total (an STT run is acoustic-only) and never appears as a
+4quinquies. Overflow validation (issues #126 et #138). Resize the Lab window to
+   roughly 320 px, 560 px and 760 px wide, with a deliberately long model name, a
+   long candidate identity and a long prompt text present. Confirm at each width
+   the page never gains a horizontal scrollbar, in `Experiments` (the five steps,
+   the stage choices, the protocol summary, the candidate identities, the live
+   progress) as well as in `Results` (the run header, the snapshot members, the
+   per-candidate outputs and the dense summary table): every child stays within
+   the `app-shell`, choice lists scroll vertically inside their bounded height,
+   and the summary table scrolls inside its own panel (regression check for B1 of
+   #126: each content panel's grid column is `minmax(0, 1fr)`, so a nowrap table
+   can no longer inflate the column and spill the panel's other children past its
+   border). Check the empty states too: `Experiments` with no evaluable member in
+   the split, and `Results` with no run yet. Confirm the whole selector is usable
+   by keyboard with a visible focus ring and that expanded/collapsed controls are
+   announced (aria-expanded / listbox roles).
+4sexies. Run tracking + acoustic snapshot (issues #122 et #138). With at least
+   one corrected `Validation` segment, click `Run experiment`; confirm the Lab
+   moves to `Results` with the new run already selected in the run list
+   (`date · N seg · done/failed`). Launch a second run: confirm a second, distinct
+   run appears and that switching the selector between the two shows each run's
+   own snapshot, outputs and numbers (they are never merged).
+   Then, in `Corpus`, re-correct one of the run's segments with a deliberately
+   different Layer 1; go back to `Results`, re-select the earlier run, and confirm
+   its snapshot reference and its CER/WER are unchanged (the snapshot is frozen).
+   Assign a paste-sourced (no-audio) `math_transform`-only entry to `Validation`,
+   launch a run, and confirm it is NOT counted in the evaluable member count
+   announced before the launch, nor in the run's snapshot, and never appears as a
    failed segment. Confirm `Open Lab events log` shows one
    `stt_benchmark_run_started` (with the snapshot + `dataset_kind:"acoustic"`),
    the per-candidate `stt_benchmark_result` events carrying that `run_id`, and a
    terminal `stt_benchmark_run_finished`. Finally select `Legacy (pre-run
    results)` and confirm it only ever shows results with no `run_id`.
 4septies. Export LLM d'un run (issue #123). Sélectionner un run terminé dans
-   `Candidate summary`, cliquer sur `Export for LLM`, puis vérifier que le
+   `Results`, cliquer sur `Export for LLM` dans son détail, puis vérifier que le
    résumé affiche le nombre de segments, de candidats et de sorties manquantes.
    Ouvrir le dossier avec `Open export folder` et confirmer qu'il contient
    exactement `manifest.json`, `dataset.acoustic.jsonl` et `outputs.jsonl`.
@@ -450,10 +503,11 @@ whatever is left in the field, same as before this issue.
    `audio_path` under DicTeX's data folder, and that the math_transform-only
    (pasted) record has `audio_ref: null` and `audio_path: null`. Confirm
    DicTeX's `events.jsonl` is still unchanged.
-7. Back in `Benchmark`, with `Test frozen` selected, click `Run analysis`
-   (needs the venv or `DICTEX_PYTHON`); confirm the segment built in step 5
-   appears in the batch outcomes and candidate summary alongside any other
-   `Test frozen` segments.
+7. Back in `Experiments`, with `Test frozen` selected, confirm the announced
+   evaluable member count now includes the segment built in step 5, then click
+   `Run experiment` (needs the venv or `DICTEX_PYTHON`); in `Results`, confirm
+   that segment appears in the run's snapshot, outputs and candidate summary
+   alongside any other `Test frozen` segment.
 8. Point the data folder at a different directory (or reset it) and confirm
    the segment list refreshes from the new source.
 
@@ -741,7 +795,7 @@ name can never be mistaken for "prompt applied".
 
 ### Comparer les variantes de contexte dans le Lab (issue #94)
 
-Le Benchmark du Lab compare directement la baseline sans prompt et les
+Une expérience du Lab compare directement la baseline sans prompt et les
 variantes de `initial_prompt` configurées, sur les mêmes segments audio.
 
 #### Expérience de validation du 12–13 juillet 2026
@@ -801,19 +855,18 @@ que deux variantes du même modèle puissent être cochées et exécutées
 ensemble. Le processus principal revalide toujours la sélection reçue contre
 son propre catalogue avant de lancer quoi que ce soit.
 
-Dans la vue Benchmark, le panneau « Benchmark set » présente ce catalogue via
-un sélecteur progressif (issue #126, voir « Sélecteur progressif de candidats »
-ci-dessous), et non plus une grille plate de cases à cocher. Chaque libellé
-reste « baseline » ou le nom d'affichage de la variante — jamais la chaîne
-technique de variant (par ex. `cpu-int8-fr+prompt-v3-fr-math`). Le panneau
-« Candidate summary » filtre par identité complète de candidat, donc deux
-variantes du même modèle apparaissent comme deux lignes distinctes au lieu
-d'être fusionnées. Le sélecteur de split de la vue Benchmark — partagé avec le
-flux général hérité de #64, une seule variable d'état pilotant `Run analysis`
-et `Summarize by candidate` pour les deux usages — ouvre désormais par défaut
-sur `validation` ; `test_frozen` demeure sélectionnable explicitement mais
-n'est jamais implicite (voir « Discipline d'évaluation » dans
-`docs/roadmap.md`).
+Dans la vue `Experiments`, l'étape « Candidates » présente ce catalogue via un
+sélecteur progressif (issue #126, voir « Sélecteur progressif de candidats »
+ci-dessous), et non une grille plate de cases à cocher. Chaque libellé reste
+« baseline » ou le nom d'affichage de la variante — jamais la chaîne technique
+de variant (par ex. `cpu-int8-fr+prompt-v3-fr-math`). Le résumé par candidat,
+dans `Results`, filtre par identité complète de candidat : deux variantes du
+même modèle apparaissent comme deux lignes distinctes au lieu d'être fusionnées.
+Le split évalué est choisi à l'étape « Dataset » et ouvre par défaut sur
+`validation` ; `test_frozen` demeure sélectionnable explicitement mais n'est
+jamais implicite (voir « Discipline d'évaluation » dans `docs/roadmap.md`).
+Depuis #138, le split de `Results` est un filtre de lecture distinct : parcourir
+les runs d'un autre split ne modifie jamais le protocole prêt à être lancé.
 
 ### Plusieurs runtimes par modèle dans le benchmark (issue #131)
 
@@ -884,9 +937,9 @@ DICTEX_STT_BENCHMARK_RUNTIMES  liste "device:compute_type" séparée par des vir
 
 ### Sélecteur progressif de candidats (issue #126)
 
-La sélection des candidats dans « Benchmark set » est recomposée pour rester
-compacte et contenue dans la fenêtre (`CandidateSelector`,
-`apps/lab/src/renderer/src/main.tsx`). Le renderer ne fabrique jamais une
+La sélection des candidats — l'étape « Candidates » du flux de lancement
+d'`Experiments` depuis #138 — est recomposée pour rester compacte et contenue
+dans la fenêtre (`CandidateSelector`, `apps/lab/src/renderer/src/main.tsx`). Le renderer ne fabrique jamais une
 combinaison absente du catalogue : il ne fait que grouper et décomposer les
 `SttBenchmarkCandidateOption` réelles reçues de
 `diagnostics:get-stt-benchmark-candidates`.
@@ -920,7 +973,7 @@ les scores et les résumés sont inchangés.
 
 Avant #121, une variante de `initial_prompt` ne pouvait être définie que par la
 variable d'environnement `DICTEX_STT_PROMPT_VARIANTS` au lancement du Lab. La
-vue Benchmark permet désormais de créer une variante directement dans
+vue `Experiments` permet désormais de créer une variante directement dans
 l'interface : un identifiant (`id`), un nom affiché et le texte complet du
 prompt. Depuis #126, ce n'est plus un panneau permanent mais l'action
 secondaire `New prompt`, placée près du choix de prompt du sélecteur de
@@ -956,8 +1009,8 @@ panneau de liste permanent a été retiré par #126.
 Chaque variante créée alimente directement le catalogue de candidats de #94
 (`buildSttBenchmarkCandidateCatalog`) : elle apparaît comme un choix de prompt
 supplémentaire sous chaque modèle faster-whisper configuré, au même titre
-qu'une variante externe, et peut être sélectionnée dans « Benchmark set » comme
-n'importe quel autre candidat. Comme le worker/sidecar ne connaît les
+qu'une variante externe, et peut être sélectionnée à l'étape « Candidates »
+comme n'importe quel autre candidat. Comme le worker/sidecar ne connaît les
 variantes externes que par `DICTEX_STT_PROMPT_VARIANTS`, une variante locale
 n'y figurant pas, son texte de prompt est transmis explicitement pour cet
 appel via `SttConfig.promptText` puis fusionné dans la table
@@ -1051,6 +1104,17 @@ legacy `stt_benchmark_result` recorded before #122 carries no `run_id`; it stays
 readable and is reported as legacy, never attached to a modern run. See
 `docs/dataset-and-normalization-design.md` §9.
 
+Le lancement refuse aussi dans le processus principal un snapshot sans segment
+audio évaluable, avant tout événement `stt_benchmark_run_started` : le preview
+du renderer est asynchrone et ne suffit donc pas comme garde d'intégrité. Un
+segment n'est compté `done` que lorsqu'au moins un candidat a produit une sortie
+enregistrée ; si tous les candidats sont indisponibles, le terminal le consigne
+comme `failed`. Un ancien run terminé qui annonce `done` sans aucune sortie est
+préservé mais affiché « completed without output », distinct de `missing` qui
+signifie bien qu'aucune exécution n'a été enregistrée. L'export LLM conserve la
+même distinction et ne compte pas cet état de compatibilité parmi les sorties
+manquantes.
+
 Depuis #130, la référence d'un benchmark STT est exclusivement la dernière
 correction `acoustic` disponible au démarrage. Une correction
 `math_transform`, `normalization` ou `rephrasing` plus récente n'est jamais un
@@ -1067,14 +1131,15 @@ acoustique valide avant toute comparaison ou sélection de candidat.
 
 ### Export local d'un run pour analyse par un LLM
 
-Un run STT **terminé** peut être exporté depuis `Candidate summary` avec
+Un run STT **terminé** peut être exporté depuis son détail dans `Results` avec
 `Export for LLM`. Cette action n'appelle aucun service distant : elle lit le
 run et ses résultats dans le journal propre au Lab, puis crée un nouveau dossier
 horodaté sous `data/exports/`. Une collision de timestamp ajoute un suffixe au
 nouveau dossier ; aucun export antérieur n'est écrasé. Le dossier contient
 exactement trois fichiers :
 
-- `manifest.json` : version du schéma (`2` depuis #134), dates, `run_id`, stage,
+- `manifest.json` : version du schéma (`3` depuis la correction de revue de
+  #138 ; `2` avait ajouté les deux CER dans #134), dates, `run_id`, stage,
   split, statut, référence au snapshot, description distincte des deux CER et du
   WER, identités complètes des candidats et définitions des prompts (`id`, nom
   affiché, texte complet) une seule fois ;
@@ -1082,8 +1147,9 @@ exactement trois fichiers :
   `session_id`, `segment_id`, `audio_ref`, `audio_path`, transcription de
   référence et date de correction utilisées au démarrage du run ;
 - `outputs.jsonl` : une ligne par même couple `session_id + segment_id`, avec
-  tous les candidats du run. Chaque sortie porte `done`, `failed` ou `missing`,
-  le transcript et la latence lorsqu'ils existent, ainsi que `strict_cer`,
+  tous les candidats du run. Chaque sortie porte `done`, `failed`, `missing` ou
+  `completed_without_output` pour un ancien terminal contradictoire, le
+  transcript et la latence lorsqu'ils existent, ainsi que `strict_cer`,
   `acoustic_cer` (#134) et `wer` lorsque le snapshot possède une référence.
 
 Les noms de fichiers du manifeste sont relatifs : le paquet peut donc être
@@ -1139,9 +1205,9 @@ read-only: it never appends events, it only reads and summarizes what a run
 already logged.
 
 Since issue #122 the summary is scoped to **one tracked run**, not to the whole
-split: the run selector lists each run of the current split (newest first,
-`date · N seg · done/failed`), and `Run analysis` auto-selects the run it just
-created. The numbers come from that run's frozen snapshot and its own
+split: the `Results` run selector lists each run of the browsed split (newest
+first, `date · N seg · done/failed`), and a launch from `Experiments` selects the
+run it just created (issue #138). The numbers come from that run's frozen snapshot and its own
 `run_id`-tagged results, so two runs of the same split stay separate and a later
 re-correction or membership change never moves a historical run's numbers. A
 final `Legacy (pre-run results)` option summarizes any pre-#122 results (no

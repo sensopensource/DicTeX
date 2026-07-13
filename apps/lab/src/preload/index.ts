@@ -5,11 +5,11 @@ import type {
   BenchmarkCandidateIdentity,
   ReconstructedSegment,
   SttBenchmarkSetSplit,
-  SttBenchmarkResponse,
+  SttBenchmarkSetPreview,
   SttBenchmarkSetRunResponse,
   SttBenchmarkSetProgress,
+  SttBenchmarkRunDetail,
   SttBenchmarkRunListEntry,
-  SttBenchmarkRunSummaryResponse,
   SttBenchmarkRunExportSummary,
   SttBenchmarkCandidateSummaryResponse,
   SttCandidateSelectionRequest,
@@ -60,16 +60,17 @@ contextBridge.exposeInMainWorld("dictexLab", {
   markSttBenchmarkSetMembership: (membership: SttBenchmarkSetMembershipRequest) =>
     ipcRenderer.invoke("benchmark-set:mark-stt", membership) as Promise<SttBenchmarkSetMembershipResponse>,
 
-  // Benchmark runs.
-  runLatestSttBenchmark: () => ipcRenderer.invoke("benchmark:run-latest-stt") as Promise<SttBenchmarkResponse>,
-  runSegmentSttBenchmark: (audioSegment: AudioSegmentRecord) =>
-    ipcRenderer.invoke("benchmark:run-segment-stt", audioSegment) as Promise<SttBenchmarkResponse>,
-  runSetSttBenchmark: (split: SttBenchmarkSetSplit, candidates?: BenchmarkCandidateIdentity[]) =>
+  // Experiments: what a run over this split would freeze, then the launch
+  // itself (issue #138). A benchmark result only ever exists inside a run.
+  previewSttBenchmarkSet: (split: SttBenchmarkSetSplit) =>
+    ipcRenderer.invoke("benchmark-set:preview", { split }) as Promise<SttBenchmarkSetPreview>,
+  runSetSttBenchmark: (split: SttBenchmarkSetSplit, candidates: BenchmarkCandidateIdentity[]) =>
     ipcRenderer.invoke("benchmark:run-set-stt", { split, candidates }) as Promise<SttBenchmarkSetRunResponse>,
-  // Per-run summary + run listing (issue #122): two runs of the same split stay
-  // separate. The legacy summary reads only pre-#122 results (no run_id).
-  summarizeSttBenchmarkRun: (runId: string) =>
-    ipcRenderer.invoke("benchmark-set:summarize-run", { runId }) as Promise<SttBenchmarkRunSummaryResponse | null>,
+  // Results: the run list of a split, then one run's own snapshot, outputs,
+  // failures and summary (issues #122/#138). The legacy summary reads only
+  // pre-#122 results (no run_id).
+  getSttBenchmarkRunDetail: (runId: string) =>
+    ipcRenderer.invoke("benchmark-run:detail", { runId }) as Promise<SttBenchmarkRunDetail | null>,
   listSttBenchmarkRuns: (split: SttBenchmarkSetSplit) =>
     ipcRenderer.invoke("benchmark-set:list-runs", { split }) as Promise<SttBenchmarkRunListEntry[]>,
   exportSttBenchmarkRun: (runId: string) =>

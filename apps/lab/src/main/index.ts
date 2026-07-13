@@ -4,17 +4,16 @@ import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  getLatestAudioSegment as getLatestAudioSegmentFromEvents,
   getLatestSttCandidateSelection,
   getLatestSttCorrection,
   getSttPromptVariantDefinitions,
   isCorrectionKind,
   readLocalEvents,
   reconstructRecentSegments,
+  buildSttBenchmarkRunDetail,
   buildSttBenchmarkRunSnapshot,
   getSttBenchmarkRuns,
   summarizeLegacySttBenchmarkResultsByCandidate,
-  summarizeSttBenchmarkRun,
   buildSttBenchmarkRunExport,
   buildSttDatasetExport,
   normalizeTranscript,
@@ -40,17 +39,20 @@ import {
   type SttCandidateSelectionRequest,
   type SttCandidateSelectionResponse,
   type SttBenchmarkSetRunRequest,
+  type SttBenchmarkSetSplitRequest,
+  type SttBenchmarkSetPreview,
   type SttBenchmarkSetSegmentOutcome,
   type SttBenchmarkSetRunResponse,
   type SttBenchmarkSetProgress,
+  type SttBenchmarkRunDetail,
   type SttBenchmarkRunListEntry,
-  type SttBenchmarkRunSummaryResponse,
   type SttBenchmarkRunExportSummary,
   type SttDatasetExportFileSummary,
   type SttDatasetExportSplitSummary,
   type SttDatasetExportSummary,
 } from "@dictex/shared";
 import { writeSttBenchmarkRunExport } from "./benchmarkRunExportWriter.js";
+import { requireNonEmptySttBenchmarkSnapshot, requireSttBenchmarkOutput } from "./benchmarkExecution.js";
 import {
   scoreSttBenchmarkTranscript,
   type SttBenchmarkReference,
@@ -254,17 +256,21 @@ function isSttBenchmarkSetSplit(value: unknown): value is SttBenchmarkSetSplit {
 }
 
 /**
- * Runs every STT benchmark candidate over one DicTeX-recorded segment. Reads
- * the audio from the SOURCE data root (read-only); appends each result to the
- * Lab's OWN event log (never DicTeX's) — matches apps/dictex's
- * `runSttBenchmarkForAudioSegment`, adapted for the two-root split.
+ * Runs the given STT benchmark candidates over one DicTeX-recorded segment of a
+ * tracked run. Reads the audio from the SOURCE data root (read-only); appends
+ * each result to the Lab's OWN event log (never DicTeX's).
+ *
+ * Since issue #138 a benchmark result only ever exists inside a run: there is no
+ * ad-hoc, run-less replay path left, so the run id, the launched candidates and
+ * the run's frozen reference are all required — a result can no longer be
+ * appended without the snapshot that explains it.
  */
 async function runSttBenchmarkForAudioSegment(
   audioSegment: AudioSegmentRecord,
-  events?: LocalEvent[],
-  candidateFilter?: SttBenchmarkCandidateConfig[],
-  runId?: string,
-  frozenReference?: SttBenchmarkReference,
+  loadedEvents: LocalEvent[],
+  candidates: SttBenchmarkCandidateConfig[],
+  runId: string,
+  frozenReference: SttBenchmarkReference,
 ): Promise<SttBenchmarkResponse> {
   const audioPath = resolveSourceAudioRef(audioSegment.audioRef);
   if (!existsSync(audioPath)) {
@@ -273,10 +279,6 @@ async function runSttBenchmarkForAudioSegment(
 
   const results: SttBenchmarkResult[] = [];
   const diagnostics: string[] = [];
-  const loadedEvents = events ?? (await readAllEvents());
-  const candidates =
-    candidateFilter ??
-    buildSttBenchmarkCandidateCatalog(getSttBenchmarkRuntimes(), getSttPromptVariantDefinitions(loadedEvents));
 
   for (const candidate of candidates) {
     // Build the sidecar config from the candidate's OWN structured runtime
@@ -332,14 +334,14 @@ async function runSttBenchmarkForAudioSegment(
     };
 
     // Appended to the Lab's OWN event log — never DicTeX's events.jsonl.
-    // `run_id` binds the result to its tracked run (issue #122); it is only
-    // omitted by the unfiltered single-segment endpoints, which are not runs.
+    // `run_id` binds the result to its tracked run (issue #122); every result
+    // written since #138 carries one.
     await appendOwnEvent({
       event_type: "stt_benchmark_result",
       session_id: result.sessionId,
       segment_id: result.segmentId,
       created_at: new Date().toISOString(),
-      ...(runId ? { run_id: runId } : {}),
+      run_id: runId,
       audio_ref: result.audioRef,
       stage: result.stage,
       provider: result.provider,
@@ -367,6 +369,7 @@ async function runSttBenchmarkForAudioSegment(
     results.push(result);
   }
 
+  requireSttBenchmarkOutput(results, diagnostics);
   return { source: audioSegment, results, diagnostics };
 }
 
@@ -702,28 +705,28 @@ ipcMain.handle(
 
 // ---- benchmark runs ----
 
-ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkResponse> => {
-  const events = await readAllEvents();
-  const latestAudioSegment = getLatestAudioSegmentFromEvents(events);
-  if (!latestAudioSegment) {
-    throw new Error("No stored audio segment found in the DicTeX data folder");
-  }
+/**
+ * What a run over this split would freeze (issue #138), so the Experiments view
+ * can announce the split, the evaluable member count and the scorable count
+ * BEFORE launching. Built from `buildSttBenchmarkRunSnapshot`, the very function
+ * the launch calls, so the announced protocol and the executed run cannot drift
+ * apart. Read-only: no event is written.
+ */
+ipcMain.handle(
+  "benchmark-set:preview",
+  async (_event, request: SttBenchmarkSetSplitRequest): Promise<SttBenchmarkSetPreview> => {
+    if (!request || !isSttBenchmarkSetSplit(request.split)) {
+      throw new Error("Invalid STT benchmark set split");
+    }
 
-  return runSttBenchmarkForAudioSegment(latestAudioSegment, events);
-});
-
-ipcMain.handle("benchmark:run-segment-stt", async (_event, audioSegment: AudioSegmentRecord): Promise<SttBenchmarkResponse> => {
-  if (
-    !audioSegment ||
-    typeof audioSegment.sessionId !== "string" ||
-    typeof audioSegment.segmentId !== "string" ||
-    typeof audioSegment.audioRef !== "string"
-  ) {
-    throw new Error("Invalid benchmark segment");
-  }
-
-  return runSttBenchmarkForAudioSegment(audioSegment);
-});
+    const snapshot = buildSttBenchmarkRunSnapshot(await readAllEvents(), request.split);
+    return {
+      split: request.split,
+      evaluableSegments: snapshot.length,
+      scorableSegments: snapshot.filter((member) => member.referenceTranscript !== null).length,
+    };
+  },
+);
 
 ipcMain.handle(
   "benchmark:run-set-stt",
@@ -738,20 +741,21 @@ ipcMain.handle(
     // later lookups within this run.
     const events = await readAllEvents();
 
-    // The candidates actually launched: the validated checkbox selection, or
-    // the full catalog for the (unfiltered) legacy path. Both feed the run
-    // manifest so the run records exactly which candidates it ran.
+    // The candidates actually launched: the identities the Experiments view
+    // announced, always revalidated against this process's own catalog — never
+    // an implicit "whole catalog" fallback, so a run can only ever execute what
+    // its protocol announced (issue #138). They feed the run manifest, so the
+    // run records exactly which candidates it ran.
     const catalog = buildSttBenchmarkCandidateCatalog(getSttBenchmarkRuntimes(), getSttPromptVariantDefinitions(events));
-    let candidateFilter: SttBenchmarkCandidateConfig[] | undefined;
-    const runCandidates =
-      request.candidates !== undefined
-        ? (candidateFilter = validateRequestedCandidates(request.candidates, catalog))
-        : catalog;
+    const runCandidates = validateRequestedCandidates(request.candidates, catalog);
 
     // Freeze the acoustic input snapshot at run start (issue #122): only
     // real-audio segments, with the reference and correction timestamp used by
     // this run. A later re-correction or membership change cannot alter it.
     const snapshot = buildSttBenchmarkRunSnapshot(events, split);
+    // The renderer preview is advisory. This authoritative guard runs before a
+    // run id or event exists, so a stale click can never append an empty run.
+    requireNonEmptySttBenchmarkSnapshot(snapshot);
     const total = snapshot.length;
     const runId = mintBenchmarkRunId();
     const startedAt = new Date().toISOString();
@@ -828,7 +832,7 @@ ipcMain.handle(
         const response = await runSttBenchmarkForAudioSegment(
           { sessionId: member.sessionId, segmentId: member.segmentId, audioRef: member.audioRef },
           events,
-          candidateFilter,
+          runCandidates,
           runId,
           {
             referenceTranscript: member.referenceTranscript,
@@ -909,21 +913,26 @@ ipcMain.handle(
   },
 );
 
+/**
+ * Everything the Results view shows about ONE run (issue #138): its status, its
+ * frozen snapshot, the candidates it launched, their outputs, its failures and
+ * its per-candidate summary — derived only from that run's own events, so
+ * reopening an old run can never render it against another run's snapshot.
+ */
 ipcMain.handle(
-  "benchmark-set:summarize-run",
-  async (_event, request: { runId?: unknown }): Promise<SttBenchmarkRunSummaryResponse | null> => {
+  "benchmark-run:detail",
+  async (_event, request: { runId?: unknown }): Promise<SttBenchmarkRunDetail | null> => {
     if (!request || typeof request.runId !== "string" || request.runId.length === 0) {
       throw new Error("A run id is required");
     }
 
-    const events = await readAllEvents();
-    return summarizeSttBenchmarkRun(events, request.runId);
+    return buildSttBenchmarkRunDetail(await readAllEvents(), request.runId);
   },
 );
 
 ipcMain.handle(
   "benchmark-set:list-runs",
-  async (_event, request: SttBenchmarkSetRunRequest): Promise<SttBenchmarkRunListEntry[]> => {
+  async (_event, request: SttBenchmarkSetSplitRequest): Promise<SttBenchmarkRunListEntry[]> => {
     if (!request || !isSttBenchmarkSetSplit(request.split)) {
       throw new Error("Invalid STT benchmark set split");
     }
@@ -972,7 +981,7 @@ ipcMain.handle(
 
 ipcMain.handle(
   "benchmark-set:summarize-legacy-stt",
-  async (_event, request: SttBenchmarkSetRunRequest): Promise<SttBenchmarkCandidateSummaryResponse> => {
+  async (_event, request: SttBenchmarkSetSplitRequest): Promise<SttBenchmarkCandidateSummaryResponse> => {
     if (!request || !isSttBenchmarkSetSplit(request.split)) {
       throw new Error("Invalid STT benchmark set split");
     }

@@ -174,23 +174,7 @@
   -webkit-line-clamp: 2;
 }
 
-/* ---- STT benchmark results ----------------------------------------------- */
-
-.benchmark-results {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.benchmark-result {
-  display: grid;
-  gap: 0.45rem;
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.6rem;
-  background: var(--bg);
-}
-
+/* Dense metadata row of the dataset export summary. */
 .benchmark-meta {
   display: grid;
   grid-template-columns: minmax(4rem, 1fr) repeat(4, minmax(3.75rem, auto));
@@ -200,14 +184,6 @@
   font-size: var(--text-sm);
 }
 
-.benchmark-meta strong {
-  overflow: hidden;
-  color: var(--text-strong);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .benchmark-meta span {
   overflow: hidden;
   text-align: right;
@@ -215,12 +191,268 @@
   white-space: nowrap;
 }
 
-.benchmark-result p {
+/* ---- Experiments: the launch flow (issue #138) ---------------------------- */
+
+/* One panel, five ordered steps: stage, dataset, candidates, protocol, launch.
+   Same minmax(0, 1fr) floor as the other content panels so no child (a long
+   prompt text, a long candidate identity) can push the page past app-shell. */
+.experiment-panel,
+.results-panel,
+.run-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.7rem;
+  padding: var(--space-3);
+}
+
+.experiment-flow {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.experiment-step {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  background: var(--bg);
+}
+
+.experiment-step-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.experiment-step-head h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.experiment-step-index {
+  display: inline-flex;
+  width: 1.35rem;
+  height: 1.35rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+.experiment-step-note {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.stage-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* A stage that cannot run is shown, disabled, with its reason — never hidden,
+   and never a control that would do nothing. */
+.stage-choice {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.6rem;
+  color: var(--text);
+  background: var(--bg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stage-choice-selected {
+  border-color: var(--info);
+  background: var(--surface-raised);
+}
+
+.stage-choice-flow,
+.stage-choice-unavailable {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+.protocol-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.protocol-summary div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  background: var(--surface-raised);
+}
+
+.protocol-summary-wide {
+  grid-column: 1 / -1;
+}
+
+.protocol-summary dt,
+.run-provenance dt {
+  margin: 0 0 0.2rem;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.protocol-summary dd,
+.run-provenance dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.protocol-flow {
+  font-family: var(--font-mono, monospace);
+}
+
+.protocol-candidates {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.protocol-candidate {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.protocol-candidate-meta,
+.protocol-candidate-identity {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Results: one immutable run at a time (issue #138) -------------------- */
+
+.run-provenance {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.run-provenance div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  background: var(--bg);
+}
+
+.run-status {
+  align-self: start;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 0.2rem 0.45rem;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.run-status-done {
+  border-color: var(--good-border);
+  color: var(--good);
+}
+
+.run-status-failed {
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.run-candidates {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.run-candidates h3 {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.run-reference {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.run-outputs {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-output {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 0.35rem;
+}
+
+.run-output-candidate {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-output-transcript {
   margin: 0;
   color: var(--text);
   font-size: var(--text-base);
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.run-output-meta {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+.run-failures {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 /* ---- Progressive candidate selector (issue #126) ------------------------- */
@@ -620,6 +852,13 @@
 .batch-outcome-state-failed {
   border-color: var(--danger-border);
   color: var(--danger);
+}
+
+/* A snapshot member the run never executed: neither a success nor a failure
+   (issue #138). Declared after the base badge so it overrides its green. */
+.batch-outcome-state-missing {
+  border-color: var(--border);
+  color: var(--text-dim);
 }
 
 .batch-outcome-meta {
