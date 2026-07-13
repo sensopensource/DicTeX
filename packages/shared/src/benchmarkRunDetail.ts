@@ -24,7 +24,7 @@ import { calculateCharacterErrorRate } from "./sttScoring.js";
  * result while the Experiments view owns only the launch.
  */
 
-export type SttBenchmarkRunSegmentStatus = "done" | "failed" | "missing";
+export type SttBenchmarkRunSegmentStatus = "done" | "failed" | "missing" | "completed_without_output";
 
 export type SttBenchmarkRunSegmentDetail = {
   sessionId: string;
@@ -39,6 +39,9 @@ export type SttBenchmarkRunSegmentDetail = {
    * exist for the candidates that ran before the failure);
    * `missing` — it is in the snapshot but was never executed (an interrupted
    * run), which the run-finished failures list is what distinguishes.
+   * `completed_without_output` — a legacy terminal event counts the segment as
+   * done but has no output. The append-only log is preserved, while the UI must
+   * not misrepresent this contradiction as a segment that was never executed.
    */
   status: SttBenchmarkRunSegmentStatus;
   error: string | null;
@@ -153,6 +156,10 @@ export function buildSttBenchmarkRunDetail(events: LocalEvent[], runId: string):
   const failuresBySegment = new Map(
     (run.finished?.failures ?? []).map((failure) => [segmentKey(failure.sessionId, failure.segmentId), failure.error]),
   );
+  const terminalAccountsForEveryMember =
+    run.finished !== null &&
+    run.finished.done + run.finished.failed === run.snapshot.length &&
+    run.finished.failures.length === run.finished.failed;
 
   const segments = run.snapshot.map((member) => {
     const key = segmentKey(member.sessionId, member.segmentId);
@@ -177,6 +184,8 @@ export function buildSttBenchmarkRunDetail(events: LocalEvent[], runId: string):
       status = "failed";
     } else if (segmentResults.length > 0) {
       status = "done";
+    } else if (terminalAccountsForEveryMember) {
+      status = "completed_without_output";
     }
 
     return {

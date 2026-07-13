@@ -79,7 +79,7 @@ const FRENCH_MATH_KEYWORDS = [
  */
 export function toSttBenchmarkRunOutcomes(detail: SttBenchmarkRunDetail): SttBenchmarkSetSegmentOutcome[] {
   return detail.segments
-    .filter((segment) => segment.status !== "missing")
+    .filter((segment) => segment.status === "done" || segment.status === "failed")
     .map((segment) => ({
       sessionId: segment.sessionId,
       segmentId: segment.segmentId,

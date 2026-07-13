@@ -1104,6 +1104,15 @@ legacy `stt_benchmark_result` recorded before #122 carries no `run_id`; it stays
 readable and is reported as legacy, never attached to a modern run. See
 `docs/dataset-and-normalization-design.md` §9.
 
+Le lancement refuse aussi dans le processus principal un snapshot sans segment
+audio évaluable, avant tout événement `stt_benchmark_run_started` : le preview
+du renderer est asynchrone et ne suffit donc pas comme garde d'intégrité. Un
+segment n'est compté `done` que lorsqu'au moins un candidat a produit une sortie
+enregistrée ; si tous les candidats sont indisponibles, le terminal le consigne
+comme `failed`. Un ancien run terminé qui annonce `done` sans aucune sortie est
+préservé mais affiché « completed without output », distinct de `missing` qui
+signifie bien qu'aucune exécution n'a été enregistrée.
+
 Depuis #130, la référence d'un benchmark STT est exclusivement la dernière
 correction `acoustic` disponible au démarrage. Une correction
 `math_transform`, `normalization` ou `rephrasing` plus récente n'est jamais un

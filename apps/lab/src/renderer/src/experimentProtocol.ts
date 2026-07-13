@@ -1,4 +1,4 @@
-import type { BenchmarkCandidateIdentity, SttBenchmarkSetPreview } from "@dictex/shared";
+import type { BenchmarkCandidateIdentity, SttBenchmarkSetPreview, SttBenchmarkSetSplit } from "@dictex/shared";
 
 /**
  * The launch side of the Lab (issue #138). An experiment is announced before it
@@ -73,6 +73,8 @@ export type ExperimentLaunchPlan = {
 
 export type ExperimentLaunchInput = {
   stage: ExperimentStage;
+  /** The split the human currently selected in the launch form. */
+  split: SttBenchmarkSetSplit;
   /** Null while the evaluable member count is still being read from the corpus. */
   preview: SttBenchmarkSetPreview | null;
   candidates: BenchmarkCandidateIdentity[];
@@ -87,10 +89,18 @@ export type ExperimentLaunchInput = {
  */
 export function planExperimentLaunch({
   stage,
+  split,
   preview,
   candidates,
   isRunning,
 }: ExperimentLaunchInput): ExperimentLaunchPlan {
+  // A preview is only authoritative for the split that produced it. In
+  // particular, a split change must not leave the previous split launchable
+  // while the new IPC read is still in flight.
+  if (preview !== null && preview.split !== split) {
+    return { canLaunch: false, blockedReason: "Reading the corpus…", warning: null };
+  }
+
   const warning =
     preview !== null && preview.evaluableSegments > 0 && preview.scorableSegments === 0
       ? "No member of this split has a Layer 1 acoustic reference yet: the run will produce transcripts but no CER."

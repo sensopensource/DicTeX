@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import type { BenchmarkCandidateIdentity, SttBenchmarkSetPreview } from "@dictex/shared";
+import type { BenchmarkCandidateIdentity, SttBenchmarkSetPreview, SttBenchmarkSetSplit } from "@dictex/shared";
 import {
   EXPERIMENT_STAGES,
   getExperimentStage,
@@ -16,8 +16,12 @@ function candidate(model: string): BenchmarkCandidateIdentity {
   return { stage: "stt", provider: "faster-whisper", model, variant: "cpu-int8-fr" };
 }
 
-function preview(evaluableSegments: number, scorableSegments = evaluableSegments): SttBenchmarkSetPreview {
-  return { split: "validation", evaluableSegments, scorableSegments };
+function preview(
+  evaluableSegments: number,
+  scorableSegments = evaluableSegments,
+  split: SttBenchmarkSetSplit = "validation",
+): SttBenchmarkSetPreview {
+  return { split, evaluableSegments, scorableSegments };
 }
 
 test("the STT protocol states audio -> Layer 1", () => {
@@ -35,6 +39,7 @@ test("a stage that cannot run announces itself as unavailable instead of offerin
     assert.notEqual(stage.unavailableReason, null, `${stage.id} says why it cannot run`);
     const plan = planExperimentLaunch({
       stage,
+      split: "validation",
       preview: preview(12),
       candidates: [candidate("base")],
       isRunning: false,
@@ -47,6 +52,7 @@ test("a stage that cannot run announces itself as unavailable instead of offerin
 test("a complete STT protocol can be launched", () => {
   const plan = planExperimentLaunch({
     stage: STT,
+    split: "validation",
     preview: preview(12),
     candidates: [candidate("base"), candidate("small")],
     isRunning: false,
@@ -60,6 +66,7 @@ test("a complete STT protocol can be launched", () => {
 test("a split with no evaluable member is refused rather than logged as an empty run", () => {
   const plan = planExperimentLaunch({
     stage: STT,
+    split: "validation",
     preview: preview(0),
     candidates: [candidate("base")],
     isRunning: false,
@@ -72,6 +79,7 @@ test("a split with no evaluable member is refused rather than logged as an empty
 test("members without an acoustic reference warn, but do not block the launch", () => {
   const plan = planExperimentLaunch({
     stage: STT,
+    split: "validation",
     preview: preview(4, 0),
     candidates: [candidate("base")],
     isRunning: false,
@@ -82,12 +90,19 @@ test("members without an acoustic reference warn, but do not block the launch", 
 });
 
 test("the candidate count is bounded on both sides", () => {
-  const none = planExperimentLaunch({ stage: STT, preview: preview(3), candidates: [], isRunning: false });
+  const none = planExperimentLaunch({
+    stage: STT,
+    split: "validation",
+    preview: preview(3),
+    candidates: [],
+    isRunning: false,
+  });
   assert.equal(none.canLaunch, false);
   assert.match(none.blockedReason ?? "", /at least one/);
 
   const tooMany = planExperimentLaunch({
     stage: STT,
+    split: "validation",
     preview: preview(3),
     candidates: [candidate("tiny"), candidate("base"), candidate("small"), candidate("large-v3-turbo")],
     isRunning: false,
@@ -99,12 +114,26 @@ test("the candidate count is bounded on both sides", () => {
 test("a run in flight cannot be launched twice", () => {
   const plan = planExperimentLaunch({
     stage: STT,
+    split: "validation",
     preview: preview(3),
     candidates: [candidate("base")],
     isRunning: true,
   });
 
   assert.equal(plan.canLaunch, false);
+});
+
+test("a stale preview cannot launch immediately after a split change", () => {
+  const plan = planExperimentLaunch({
+    stage: STT,
+    split: "test_frozen",
+    preview: preview(12, 12, "validation"),
+    candidates: [candidate("base")],
+    isRunning: false,
+  });
+
+  assert.equal(plan.canLaunch, false);
+  assert.match(plan.blockedReason ?? "", /Reading the corpus/);
 });
 
 /**

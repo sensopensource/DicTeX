@@ -283,9 +283,14 @@ function App(): React.ReactElement {
     [results.detail],
   );
   const experimentStage = getExperimentStage(experimentStageId);
+  // Never render or launch from a count fetched for a previous split. The
+  // handler below clears it eagerly; this check also protects the small window
+  // before React has run the next effect's cleanup.
+  const experimentPreview = setPreview?.split === experimentSplit ? setPreview : null;
   const launchPlan = planExperimentLaunch({
     stage: experimentStage,
-    preview: setPreview,
+    split: experimentSplit,
+    preview: experimentPreview,
     candidates: selectedCandidates,
     isRunning: isRunningExperiment,
   });
@@ -347,6 +352,8 @@ function App(): React.ReactElement {
       return;
     }
 
+    setSetPreview(null);
+    setPreviewError("");
     let cancelled = false;
     window.dictexLab
       .previewSttBenchmarkSet(experimentSplit)
@@ -366,6 +373,18 @@ function App(): React.ReactElement {
       cancelled = true;
     };
   }, [view, experimentSplit]);
+
+  function selectExperimentSplit(split: SttBenchmarkSetSplit): void {
+    if (split === experimentSplit) {
+      return;
+    }
+
+    // The next preview is asynchronous, so remove the old split's count in
+    // the same event that changes the selection.
+    setExperimentSplit(split);
+    setSetPreview(null);
+    setPreviewError("");
+  }
 
   // Layer 2 prefill (#101): debounced so it fires once Layer 1 settles rather
   // than on every keystroke. Reads the SOURCE folder's dictionary/rules
@@ -906,8 +925,8 @@ function App(): React.ReactElement {
           setStageId={setExperimentStageId}
           stage={experimentStage}
           split={experimentSplit}
-          setSplit={setExperimentSplit}
-          preview={setPreview}
+          setSplit={selectExperimentSplit}
+          preview={experimentPreview}
           previewError={previewError}
           selectedCandidates={selectedCandidates}
           setSelectedCandidates={setSelectedCandidates}
@@ -2253,12 +2272,12 @@ function RunSegmentOutputs({ segments }: { segments: SttBenchmarkRunDetail["segm
               className={`batch-outcome-state ${
                 segment.status === "failed"
                   ? "batch-outcome-state-failed"
-                  : segment.status === "missing"
+                  : segment.status === "missing" || segment.status === "completed_without_output"
                     ? "batch-outcome-state-missing"
                     : ""
               }`}
             >
-              {segment.status}
+              {segment.status === "completed_without_output" ? "completed without output" : segment.status}
             </em>
           </div>
 
@@ -2269,6 +2288,11 @@ function RunSegmentOutputs({ segments }: { segments: SttBenchmarkRunDetail["segm
           {segment.error && <p className="batch-outcome-error">{segment.error}</p>}
           {segment.status === "missing" && (
             <p className="batch-outcome-meta">Never executed in this run — no output was logged for it.</p>
+          )}
+          {segment.status === "completed_without_output" && (
+            <p className="batch-outcome-meta">
+              This historical run finished as done but logged no output — it is not treated as never executed.
+            </p>
           )}
 
           {segment.results.length > 0 && (

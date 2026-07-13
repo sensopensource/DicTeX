@@ -227,6 +227,44 @@ test("buildSttBenchmarkRunDetail: a snapshot member without an acoustic referenc
   assert.equal(detail?.summary[0].meanCer, null);
 });
 
+test("buildSttBenchmarkRunDetail: a historical done terminal without output is not called missing", () => {
+  const events: LocalEvent[] = [
+    runStarted("run_legacy_done_without_output", "2026-07-12T13:30:00.000Z", [
+      { sessionId: "s1", segmentId: "seg_0001", reference: REFERENCE_A },
+    ]),
+    runFinished("run_legacy_done_without_output", 1),
+  ];
+
+  const detail = buildSttBenchmarkRunDetail(events, "run_legacy_done_without_output");
+  assert.equal(detail?.segments[0].status, "completed_without_output");
+  assert.equal(detail?.segments[0].results.length, 0);
+});
+
+test("buildSttBenchmarkRunDetail: an interrupted run without a terminal stays missing", () => {
+  const events: LocalEvent[] = [
+    runStarted("run_interrupted", "2026-07-12T13:35:00.000Z", [
+      { sessionId: "s1", segmentId: "seg_0001", reference: REFERENCE_A },
+    ]),
+  ];
+
+  const detail = buildSttBenchmarkRunDetail(events, "run_interrupted");
+  assert.equal(detail?.segments[0].status, "missing");
+});
+
+test("buildSttBenchmarkRunDetail: a failure with partial outputs remains failed", () => {
+  const events: LocalEvent[] = [
+    runStarted("run_partial_failure", "2026-07-12T13:40:00.000Z", [
+      { sessionId: "s1", segmentId: "seg_0001", reference: REFERENCE_A },
+    ]),
+    result("run_partial_failure", "s1", "seg_0001", "base", "x au carre plus deux"),
+    runFinished("run_partial_failure", 0, [{ sessionId: "s1", segmentId: "seg_0001", error: "second candidate failed" }]),
+  ];
+
+  const detail = buildSttBenchmarkRunDetail(events, "run_partial_failure");
+  assert.equal(detail?.segments[0].status, "failed");
+  assert.equal(detail?.segments[0].results.length, 1);
+});
+
 test("toSttBenchmarkRunOutcomes: only executed segments feed the error analysis", () => {
   const events: LocalEvent[] = [
     runStarted("run_e", "2026-07-12T14:00:00.000Z", [
@@ -251,6 +289,19 @@ test("toSttBenchmarkRunOutcomes: only executed segments feed the error analysis"
     "the never-executed segment is dropped rather than reported as a failure",
   );
   assert.equal(outcomes[1].error, "boom");
+});
+
+test("toSttBenchmarkRunOutcomes: completed_without_output stays out of error analysis", () => {
+  const events: LocalEvent[] = [
+    runStarted("run_legacy_analysis", "2026-07-12T14:30:00.000Z", [
+      { sessionId: "s1", segmentId: "seg_0001", reference: REFERENCE_A },
+    ]),
+    runFinished("run_legacy_analysis", 1),
+  ];
+
+  const detail = buildSttBenchmarkRunDetail(events, "run_legacy_analysis");
+  assert.notEqual(detail, null);
+  assert.deepEqual(toSttBenchmarkRunOutcomes(detail!), []);
 });
 
 test("buildSttBenchmarkRunDetail: an unknown run id resolves to nothing", () => {

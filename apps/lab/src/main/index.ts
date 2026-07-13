@@ -52,6 +52,7 @@ import {
   type SttDatasetExportSummary,
 } from "@dictex/shared";
 import { writeSttBenchmarkRunExport } from "./benchmarkRunExportWriter.js";
+import { requireNonEmptySttBenchmarkSnapshot, requireSttBenchmarkOutput } from "./benchmarkExecution.js";
 import {
   scoreSttBenchmarkTranscript,
   type SttBenchmarkReference,
@@ -368,6 +369,7 @@ async function runSttBenchmarkForAudioSegment(
     results.push(result);
   }
 
+  requireSttBenchmarkOutput(results, diagnostics);
   return { source: audioSegment, results, diagnostics };
 }
 
@@ -751,6 +753,9 @@ ipcMain.handle(
     // real-audio segments, with the reference and correction timestamp used by
     // this run. A later re-correction or membership change cannot alter it.
     const snapshot = buildSttBenchmarkRunSnapshot(events, split);
+    // The renderer preview is advisory. This authoritative guard runs before a
+    // run id or event exists, so a stale click can never append an empty run.
+    requireNonEmptySttBenchmarkSnapshot(snapshot);
     const total = snapshot.length;
     const runId = mintBenchmarkRunId();
     const startedAt = new Date().toISOString();

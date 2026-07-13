@@ -83,6 +83,14 @@ Les résultats sans `run_id` déjà enregistrés restent lisibles sous
 réécrit. Un futur besoin d'essai rapide devra passer par un run explicite — au
 besoin un run à un seul segment — plutôt que par un chemin d'écriture parallèle.
 
+Un run STT ne peut commencer sans segment audio évaluable : cette garde existe
+aussi dans le processus principal, avant tout événement `run_started`, car le
+preview de l'interface reste une lecture asynchrone. Un segment ne compte comme
+`done` que si au moins un candidat a produit une sortie ; si tous les candidats
+sont indisponibles, il est consigné dans `failures`. Les rares runs historiques
+dont le terminal annonce `done` sans sortie sont conservés tels quels et lus
+comme « terminé sans sortie », jamais comme « jamais exécuté ».
+
 ## DicTeX / Lab split (monorepo)
 
 DicTeX est séparé en deux applications Electron dans un même monorepo npm
