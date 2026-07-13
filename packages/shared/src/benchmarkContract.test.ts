@@ -103,6 +103,26 @@ function mathFinished(
   };
 }
 
+function trackedSttStart(runId: string): LocalEvent {
+  return {
+    event_type: "stt_benchmark_run_started",
+    run_id: runId,
+    stage: "stt",
+    dataset_kind: "acoustic",
+    split: "validation",
+    candidates: [{ ...STT_CANDIDATE, prompt_variant: null }],
+    snapshot: [
+      {
+        session_id: "session_a",
+        segment_id: "seg_0001",
+        audio_ref: "audio/session_a/seg_0001.webm",
+        reference_transcript: null,
+        correction_created_at: null,
+      },
+    ],
+  };
+}
+
 function membership(sessionId: string, segmentId: string, audioRef: string | null = ""): LocalEvent {
   return {
     event_type: "stt_benchmark_set_membership",
@@ -355,6 +375,61 @@ test("cross-event validation reports duplicates, orphans and run-stage mismatche
   );
 });
 
+test("terminal validation rejects a failure that overlaps a result even when another slot is missing", () => {
+  const start = mathStart("run_overlap", [mathMember("seg_done"), mathMember("seg_missing")]);
+  const events: LocalEvent[] = [
+    start,
+    mathResult("run_overlap", "seg_done"),
+    {
+      ...mathFinished("run_overlap", [
+        {
+          session_id: "session_a",
+          segment_id: "seg_done",
+          candidate: NORMALIZER_CANDIDATE,
+          error: "contradictory failure",
+        },
+      ]),
+      done: 1,
+    },
+  ];
+
+  const issues = validateStageAwareBenchmarkEvents(events);
+  assert.deepEqual(issues.map((entry) => entry.code), ["invalid_terminal"]);
+  assert.match(issues[0].message, /overlaps an already recorded result/);
+
+  const projection = getBenchmarkRunProjection(events, "run_overlap");
+  assert.equal(projection?.stage, "math_transform");
+  if (projection?.stage === "math_transform") {
+    assert.deepEqual(
+      projection.members.map((member) => member.outcomes[0].status),
+      ["done", "missing"],
+      "the recorded output still proves done while validation reports the contradictory terminal",
+    );
+    assert.equal(projection.terminal?.failed, 1);
+    assert.equal(projection.outcomeCounts.failed, 0, "the contradictory failure cannot override a recorded output");
+  }
+});
+
+test("terminal validation accepts failures that are disjoint from recorded results", () => {
+  const events: LocalEvent[] = [
+    mathStart("run_disjoint", [mathMember("seg_done"), mathMember("seg_failed")]),
+    mathResult("run_disjoint", "seg_done"),
+    {
+      ...mathFinished("run_disjoint", [
+        {
+          session_id: "session_a",
+          segment_id: "seg_failed",
+          candidate: NORMALIZER_CANDIDATE,
+          error: "expected failure",
+        },
+      ]),
+      done: 1,
+    },
+  ];
+
+  assert.deepEqual(validateStageAwareBenchmarkEvents(events), []);
+});
+
 test("modern tracked STT runs are adapted without changing the STT writer family", () => {
   const events: LocalEvent[] = [
     {
@@ -406,28 +481,40 @@ test("modern tracked STT runs are adapted without changing the STT writer family
   assert.equal(events.some((event) => event.event_type === "benchmark_run_started"), false);
 });
 
-test("the first start owns a run id globally across old and stage-aware families", () => {
-  const oldStart = {
-    event_type: "stt_benchmark_run_started",
-    run_id: "run_collision",
-    stage: "stt",
-    dataset_kind: "acoustic",
-    split: "validation",
-    candidates: [{ ...STT_CANDIDATE, prompt_variant: null }],
-    snapshot: [
-      {
-        session_id: "session_a",
-        segment_id: "seg_0001",
-        audio_ref: "audio/session_a/seg_0001.webm",
-        reference_transcript: null,
-        correction_created_at: null,
-      },
+test("validation and projection agree on the first run-id owner across both event families", () => {
+  const oldFirst: LocalEvent[] = [
+    trackedSttStart("run_old_first"),
+    mathStart("run_old_first"),
+    mathResult("run_old_first", "seg_0001"),
+    mathFinished("run_old_first"),
+  ];
+  assert.deepEqual(
+    validateStageAwareBenchmarkEvents(oldFirst).map((entry) => [entry.eventIndex, entry.code]),
+    [
+      [1, "duplicate_start"],
+      [2, "orphan_result"],
+      [3, "orphan_terminal"],
     ],
-  } satisfies LocalEvent;
+  );
+  const oldFirstProjection = getBenchmarkRunProjection(oldFirst, "run_old_first");
+  assert.equal(oldFirstProjection?.source, "stt_tracked");
+  assert.equal(oldFirstProjection?.stage, "stt");
+  assert.equal(oldFirstProjection?.outcomeCounts.done, 0, "the losing stage-aware result is never aggregated");
 
-  const projection = getBenchmarkRunProjection([oldStart, mathStart("run_collision")], "run_collision");
-  assert.equal(projection?.source, "stt_tracked");
-  assert.equal(projection?.stage, "stt");
+  const stageAwareFirst: LocalEvent[] = [
+    mathStart("run_stage_first"),
+    trackedSttStart("run_stage_first"),
+    mathResult("run_stage_first", "seg_0001"),
+    mathFinished("run_stage_first"),
+  ];
+  assert.deepEqual(
+    validateStageAwareBenchmarkEvents(stageAwareFirst).map((entry) => [entry.eventIndex, entry.code]),
+    [[1, "duplicate_start"]],
+  );
+  const stageAwareFirstProjection = getBenchmarkRunProjection(stageAwareFirst, "run_stage_first");
+  assert.equal(stageAwareFirstProjection?.source, "stage_aware");
+  assert.equal(stageAwareFirstProjection?.stage, "math_transform");
+  assert.equal(stageAwareFirstProjection?.outcomeCounts.done, 1);
 });
 
 test("legacy STT results remain readable in an explicitly legacy projection", () => {

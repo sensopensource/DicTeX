@@ -608,6 +608,7 @@ export function isBenchmarkRunFinishedEvent(value: unknown): value is BenchmarkR
  */
 export function validateStageAwareBenchmarkEvents(events: LocalEvent[]): BenchmarkEventLogValidationIssue[] {
   const issues: BenchmarkEventLogValidationIssue[] = [];
+  const globalOwners = new Map(collectRunOwners(events).map((owner) => [owner.event.run_id, owner]));
   const starts = new Map<string, { event: BenchmarkRunStartedEvent; terminalSeen: boolean; results: Set<string> }>();
 
   events.forEach((event, eventIndex) => {
@@ -618,13 +619,22 @@ export function validateStageAwareBenchmarkEvents(events: LocalEvent[]): Benchma
         return;
       }
       const startedEvent = event as BenchmarkRunStartedEvent;
-      if (starts.has(startedEvent.run_id)) {
+      const globalOwner = globalOwners.get(startedEvent.run_id);
+      if (!globalOwner || globalOwner.eventIndex !== eventIndex) {
         issues.push(
           issue(eventIndex, event, "duplicate_start", `first start for ${startedEvent.run_id} already won`),
         );
         return;
       }
       starts.set(startedEvent.run_id, { event: startedEvent, terminalSeen: false, results: new Set<string>() });
+      return;
+    }
+
+    if (isTrackedSttRunStartedEvent(event)) {
+      const globalOwner = globalOwners.get(event.run_id);
+      if (globalOwner?.kind === "stage_aware" && globalOwner.eventIndex !== eventIndex) {
+        issues.push(issue(eventIndex, event, "duplicate_start", `first start for ${event.run_id} already won`));
+      }
       return;
     }
 
@@ -696,13 +706,29 @@ export function validateStageAwareBenchmarkEvents(events: LocalEvent[]): Benchma
         return;
       }
       for (const failure of terminalEvent.failures) {
-        if (!hasCandidate(owner.event, failure.candidate)) {
+        const knownCandidate = hasCandidate(owner.event, failure.candidate);
+        const knownMember = hasMember(owner.event, failure.session_id, failure.segment_id);
+        if (!knownCandidate) {
           issues.push(
             issue(eventIndex, event, "unknown_candidate", "failure candidate was not frozen by the run start"),
           );
         }
-        if (!hasMember(owner.event, failure.session_id, failure.segment_id)) {
+        if (!knownMember) {
           issues.push(issue(eventIndex, event, "unknown_member", "failure member was not frozen by the run start"));
+        }
+        if (
+          knownCandidate &&
+          knownMember &&
+          owner.results.has(candidateMemberKey(failure.session_id, failure.segment_id, failure.candidate))
+        ) {
+          issues.push(
+            issue(
+              eventIndex,
+              event,
+              "invalid_terminal",
+              "failure overlaps an already recorded result for candidate x member",
+            ),
+          );
         }
       }
       const slotCount = owner.event.candidates.length * owner.event.snapshot.length;
