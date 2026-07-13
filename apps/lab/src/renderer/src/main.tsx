@@ -117,7 +117,8 @@ declare global {
   }
 }
 
-type View = "segments" | "benchmark" | "dataset";
+type View = "corpus" | "experiments" | "results";
+type BenchmarkViewMode = "experiments" | "results";
 
 /**
  * Sentinel selector value for the legacy (pre-#122, no run_id) summary, kept
@@ -154,8 +155,38 @@ type HistoryCorrectionTarget = {
   rawTranscript: string;
 };
 
+function LabNavigation({
+  activeView,
+  onNavigate,
+}: {
+  activeView: View;
+  onNavigate: (view: View) => void;
+}): React.ReactElement {
+  const items: { view: View; label: string }[] = [
+    { view: "corpus", label: "Corpus" },
+    { view: "experiments", label: "Experiments" },
+    { view: "results", label: "Results" },
+  ];
+
+  return (
+    <nav className="panel nav-panel" aria-label="Lab sections">
+      {items.map((item) => (
+        <button
+          aria-current={activeView === item.view ? "page" : undefined}
+          className="nav-button"
+          disabled={activeView === item.view}
+          key={item.view}
+          onClick={() => onNavigate(item.view)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 function App(): React.ReactElement {
-  const [view, setView] = useState<View>("segments");
+  const [view, setView] = useState<View>("corpus");
   const [notice, setNotice] = useState("");
 
   // Configurable DicTeX data folder (source, read-only).
@@ -572,7 +603,7 @@ function App(): React.ReactElement {
       });
       setBenchmarkSource(result.source);
       setBenchmarkResults(result.results);
-      setView("benchmark");
+      setView("experiments");
     } catch (benchmarkRunError) {
       setBenchmarkError(benchmarkRunError instanceof Error ? benchmarkRunError.message : "Benchmark failed");
     } finally {
@@ -884,10 +915,11 @@ function App(): React.ReactElement {
     }
   }
 
-  if (view === "benchmark") {
+  if (view === "experiments" || view === "results") {
     return (
       <main className="app-shell">
         <BenchmarkView
+          mode={view}
           benchmarkSource={benchmarkSource}
           benchmarkResults={benchmarkResults}
           benchmarkError={benchmarkError}
@@ -935,48 +967,7 @@ function App(): React.ReactElement {
           isCreatingPromptVariant={isCreatingPromptVariant}
           createPromptVariantError={createPromptVariantError}
           createPromptVariant={createPromptVariant}
-          onBack={() => setView("segments")}
-        />
-      </main>
-    );
-  }
-
-  if (view === "dataset") {
-    return (
-      <main className="app-shell">
-        <DatasetView
-          segments={segments}
-          loadSegments={() => void loadSegments()}
-          isLoadingSegments={isLoadingSegments}
-          playSegmentAudio={(segment) => void playSegmentAudio(segment)}
-          loadingAudioSegmentKey={loadingAudioSegmentKey}
-          playingAudioSegmentKey={playingAudioSegmentKey}
-          audioError={audioError}
-          builderMode={builderMode}
-          setBuilderMode={setBuilderMode}
-          builderSegmentKey={builderSegmentKey}
-          setBuilderSegmentKey={setBuilderSegmentKey}
-          builderRawTranscript={builderRawTranscript}
-          setBuilderRawTranscript={setBuilderRawTranscript}
-          builderLiteral={builderLiteral}
-          setBuilderLiteral={setBuilderLiteral}
-          builderNotation={builderNotation}
-          setBuilderNotation={setBuilderNotation}
-          builderNotationPrefill={builderNotationPrefill}
-          isPrefillingLayer2={isPrefillingLayer2}
-          builderPrefillError={builderPrefillError}
-          builderSplit={builderSplit}
-          setBuilderSplit={setBuilderSplit}
-          isSavingBuilderEntry={isSavingBuilderEntry}
-          builderNotice={builderNotice}
-          builderError={builderError}
-          saveDatasetBuilderEntry={() => void saveDatasetBuilderEntry()}
-          exportSttDataset={() => void exportSttDataset()}
-          openExportFolder={() => void openExportFolder()}
-          isExportingDataset={isExportingDataset}
-          datasetExportSummary={datasetExportSummary}
-          datasetExportError={datasetExportError}
-          onBack={() => setView("segments")}
+          onNavigate={setView}
         />
       </main>
     );
@@ -1028,6 +1019,40 @@ function App(): React.ReactElement {
         openSourceDataFolder={() => void window.dictexLab.openSourceDataFolder()}
         openLabEventsLog={() => void window.dictexLab.openLabEventsLog()}
         onNavigate={setView}
+      />
+      <DatasetView
+        embedded
+        segments={segments}
+        loadSegments={() => void loadSegments()}
+        isLoadingSegments={isLoadingSegments}
+        playSegmentAudio={(segment) => void playSegmentAudio(segment)}
+        loadingAudioSegmentKey={loadingAudioSegmentKey}
+        playingAudioSegmentKey={playingAudioSegmentKey}
+        audioError={audioError}
+        builderMode={builderMode}
+        setBuilderMode={setBuilderMode}
+        builderSegmentKey={builderSegmentKey}
+        setBuilderSegmentKey={setBuilderSegmentKey}
+        builderRawTranscript={builderRawTranscript}
+        setBuilderRawTranscript={setBuilderRawTranscript}
+        builderLiteral={builderLiteral}
+        setBuilderLiteral={setBuilderLiteral}
+        builderNotation={builderNotation}
+        setBuilderNotation={setBuilderNotation}
+        builderNotationPrefill={builderNotationPrefill}
+        isPrefillingLayer2={isPrefillingLayer2}
+        builderPrefillError={builderPrefillError}
+        builderSplit={builderSplit}
+        setBuilderSplit={setBuilderSplit}
+        isSavingBuilderEntry={isSavingBuilderEntry}
+        builderNotice={builderNotice}
+        builderError={builderError}
+        saveDatasetBuilderEntry={() => void saveDatasetBuilderEntry()}
+        exportSttDataset={() => void exportSttDataset()}
+        openExportFolder={() => void openExportFolder()}
+        isExportingDataset={isExportingDataset}
+        datasetExportSummary={datasetExportSummary}
+        datasetExportError={datasetExportError}
       />
     </main>
   );
@@ -1117,21 +1142,14 @@ function SegmentsView({
       <header className="titlebar">
         <div>
           <p className="eyebrow">DicTeX Lab</p>
-          <h1>Segments</h1>
+          <h1>Corpus</h1>
         </div>
         <div className={`status-pill ${sourceCheck?.eventsFound ? "status-copied" : "status-error"}`}>
           {sourceCheck === null ? "checking" : sourceCheck.eventsFound ? "data folder ok" : "no events found"}
         </div>
       </header>
 
-      <section className="panel nav-panel">
-        <button className="nav-button" onClick={() => onNavigate("benchmark")}>
-          Benchmark
-        </button>
-        <button className="nav-button" onClick={() => onNavigate("dataset")}>
-          Dataset
-        </button>
-      </section>
+      <LabNavigation activeView="corpus" onNavigate={onNavigate} />
 
       <section className="panel controls-panel">
         <h2>DicTeX data folder (read-only source)</h2>
@@ -1345,6 +1363,7 @@ function SegmentsView({
 }
 
 type BenchmarkViewProps = {
+  mode: BenchmarkViewMode;
   benchmarkSource: AudioSegmentRecord | null;
   benchmarkResults: SttBenchmarkResult[];
   benchmarkError: string;
@@ -1390,7 +1409,7 @@ type BenchmarkViewProps = {
   createPromptVariantError: string;
   /** Resolves to whether creation succeeded, so the inline form collapses only then. */
   createPromptVariant: () => Promise<boolean>;
-  onBack: () => void;
+  onNavigate: (view: View) => void;
 };
 
 /**
@@ -1840,6 +1859,7 @@ function CandidateSelector({
 }
 
 function BenchmarkView({
+  mode,
   benchmarkSource,
   benchmarkResults,
   benchmarkError,
@@ -1884,7 +1904,7 @@ function BenchmarkView({
   isCreatingPromptVariant,
   createPromptVariantError,
   createPromptVariant,
-  onBack,
+  onNavigate,
 }: BenchmarkViewProps): React.ReactElement {
   const selectedTrackedRun = runList.find((run) => run.runId === selectedRunKey) ?? null;
 
@@ -1893,13 +1913,13 @@ function BenchmarkView({
       <header className="titlebar">
         <div>
           <p className="eyebrow">DicTeX Lab</p>
-          <h1>Benchmark</h1>
+          <h1>{mode === "experiments" ? "Experiments" : "Results"}</h1>
         </div>
-        <button className="secondary-button" onClick={onBack}>
-          Back to segments
-        </button>
       </header>
 
+      <LabNavigation activeView={mode} onNavigate={onNavigate} />
+
+      {mode === "experiments" && <>
       <section className="panel benchmark-panel" aria-busy={isBenchmarking}>
         <div className="panel-header">
           <div>
@@ -2068,6 +2088,9 @@ function BenchmarkView({
         )}
       </section>
 
+      </>}
+
+      {mode === "results" && <>
       <section className="panel summary-panel">
         <div className="panel-header">
           <div>
@@ -2295,11 +2318,13 @@ function BenchmarkView({
           </div>
         )}
       </section>
+      </>}
     </>
   );
 }
 
 type DatasetViewProps = {
+  embedded?: boolean;
   segments: ReconstructedSegment[];
   loadSegments: () => void;
   isLoadingSegments: boolean;
@@ -2333,10 +2358,10 @@ type DatasetViewProps = {
   isExportingDataset: boolean;
   datasetExportSummary: SttDatasetExportSummary | null;
   datasetExportError: string;
-  onBack: () => void;
 };
 
 function DatasetView({
+  embedded = false,
   segments,
   loadSegments,
   isLoadingSegments,
@@ -2368,7 +2393,6 @@ function DatasetView({
   isExportingDataset,
   datasetExportSummary,
   datasetExportError,
-  onBack,
 }: DatasetViewProps): React.ReactElement {
   const summary = datasetExportSummary;
   const selectedBuilderSegment = segments.find((segment) => getSegmentKey(segment) === builderSegmentKey) ?? null;
@@ -2422,15 +2446,12 @@ function DatasetView({
 
   return (
     <>
-      <header className="titlebar">
+      {!embedded && <header className="titlebar">
         <div>
           <p className="eyebrow">DicTeX Lab</p>
-          <h1>Dataset</h1>
+          <h1>Corpus</h1>
         </div>
-        <button className="secondary-button" onClick={onBack}>
-          Back to segments
-        </button>
-      </header>
+      </header>}
 
       <section className="panel" aria-busy={isSavingBuilderEntry}>
         <div className="panel-header">
