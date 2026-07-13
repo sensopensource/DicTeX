@@ -276,6 +276,8 @@ export type ReconstructedSegment = {
   correctionCreatedAt: string | null;
   correctionMethod: string | null;
   correctionKind: CorrectionKind | null;
+  /** Latest correction for each typed layer, in stable correction-kind order. */
+  correctionsByKind: SegmentCorrectionByKind[];
   benchmarkSetSplit: SttBenchmarkSetSplit | null;
   benchmarkSetCreatedAt: string | null;
 };
@@ -1077,6 +1079,7 @@ export function reconstructRecentSegments(events: LocalEvent[], limit = 20): Rec
       correctionCreatedAt: segment.correctionCreatedAt,
       correctionMethod: segment.correctionMethod,
       correctionKind: segment.correctionKind,
+      correctionsByKind: getSttCorrectionsByKind(events, segment.sessionId, segment.segmentId),
       benchmarkSetSplit: segment.benchmarkSetSplit,
       benchmarkSetCreatedAt: segment.benchmarkSetCreatedAt,
     }));

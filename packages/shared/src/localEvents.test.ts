@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { getSttPromptVariantDefinitions, type LocalEvent } from "./localEvents.js";
+import { getSttPromptVariantDefinitions, reconstructRecentSegments, type LocalEvent } from "./localEvents.js";
 
 /**
  * Coverage for the STT prompt variant definition reader (issue #121):
@@ -93,4 +93,65 @@ test("getSttPromptVariantDefinitions: ignores unrelated event types", () => {
   ];
 
   assert.equal(getSttPromptVariantDefinitions(events).length, 1);
+});
+
+test("reconstructRecentSegments: exposes the latest typed corrections without collapsing layers", () => {
+  const events: LocalEvent[] = [
+    {
+      event_type: "stt_result",
+      created_at: "2026-07-13T10:00:00.000Z",
+      session_id: "session-1",
+      segment_id: "segment-1",
+      audio_ref: "audio/segment-1.webm",
+      stt_output: "x au carré",
+    },
+    {
+      event_type: "stt_correction",
+      created_at: "2026-07-13T10:01:00.000Z",
+      session_id: "session-1",
+      segment_id: "segment-1",
+      audio_ref: "audio/segment-1.webm",
+      raw_transcript: "x au carré",
+      corrected_transcript: "x au carré",
+      correction_kind: "acoustic",
+    },
+    {
+      event_type: "stt_correction",
+      created_at: "2026-07-13T10:02:00.000Z",
+      session_id: "session-1",
+      segment_id: "segment-1",
+      audio_ref: "audio/segment-1.webm",
+      raw_transcript: "x au carré",
+      corrected_transcript: "$x^{2}$",
+      correction_kind: "math_transform",
+    },
+    {
+      event_type: "stt_correction",
+      created_at: "2026-07-13T10:03:00.000Z",
+      session_id: "session-1",
+      segment_id: "segment-1",
+      audio_ref: "audio/segment-1.webm",
+      raw_transcript: "x au carré",
+      corrected_transcript: "x au carre",
+      correction_kind: "acoustic",
+    },
+  ];
+
+  const [segment] = reconstructRecentSegments(events);
+  assert.deepEqual(segment.correctionsByKind, [
+    {
+      correctionKind: "acoustic",
+      rawTranscript: "x au carré",
+      correctedTranscript: "x au carre",
+      correctionMethod: null,
+      correctionCreatedAt: "2026-07-13T10:03:00.000Z",
+    },
+    {
+      correctionKind: "math_transform",
+      rawTranscript: "x au carré",
+      correctedTranscript: "$x^{2}$",
+      correctionMethod: null,
+      correctionCreatedAt: "2026-07-13T10:02:00.000Z",
+    },
+  ]);
 });
