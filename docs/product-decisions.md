@@ -92,6 +92,46 @@ dont le terminal annonce `done` sans sortie sont conservés tels quels et lus
 comme « terminé sans sortie », jamais comme « jamais exécuté », aussi bien dans
 `Results` que dans l'export LLM régénérable.
 
+## DEC-RUN-002 — Les nouveaux stages ont leur propre famille de runs — 13 juillet 2026
+
+**Statut : active.** Les événements historiques `stt_benchmark_run_started`,
+`stt_benchmark_result` et `stt_benchmark_run_finished` restent le contrat du
+writer STT actuel. Ils ne sont ni renommés, ni migrés, ni doublés. Les nouveaux
+stages utilisent la famille stage-aware `benchmark_run_started`,
+`benchmark_result` et `benchmark_run_finished`, définie dans
+`packages/shared/src/benchmarkContract.ts`.
+
+Le contrat n'efface pas les différences d'entrée : ses snapshots et ses
+résultats sont des unions discriminées par `stage`.
+
+- `stt` / `acoustic` fige l'audio et la référence humaine de couche 1 ;
+- `math_transform` fige une entrée couche 1 et une cible couche 2 textuelles,
+  sans audio obligatoire ;
+- `end_to_end` est un nom réservé, sans variante d'événement writable tant que
+  son entrée, sa cible et ses métriques n'ont pas fait l'objet d'un ticket.
+
+La paire d'un snapshot `math_transform` provient d'un seul événement de
+correction : `raw_transcript` devient la couche 1 et `corrected_transcript` la
+couche 2 de la dernière correction `math_transform`. Une correction acoustique
+postérieure ne reconstruit jamais cette couche 1. Chaque résultat et chaque
+failure terminale appartiennent à un couple candidat × membre ; l'identité
+candidat commune reste exactement `stage + provider + model + variant`.
+
+Le premier événement de début valide d'un `run_id` fait foi, y compris en cas de
+collision entre l'ancienne et la nouvelle famille. Dans la nouvelle famille, le
+premier résultat valide d'un couple candidat × membre et le premier terminal
+font également foi ; les événements orphelins, hors snapshot, hors candidats ou
+postérieurs au terminal ne réécrivent pas la projection. Les slots sans résultat
+ni failure restent `missing`, distincts de `done` et `failed`.
+
+Une projection commune de lecture adapte trois sources sans les confondre : les
+runs STT suivis existants, le seau virtuel des résultats STT antérieurs aux runs,
+et les nouveaux runs stage-aware. L'état historique
+`completed_without_output` de #138 reste réservé à l'adaptateur STT pour ne pas
+perdre cette contradiction ancienne. Les résumés, l'interface et l'export LLM
+STT existants gardent leurs lecteurs et leurs octets à état égal ; #139 ajoute
+un contrat de lecture, pas un nouveau writer STT.
+
 ## DicTeX / Lab split (monorepo)
 
 DicTeX est séparé en deux applications Electron dans un même monorepo npm

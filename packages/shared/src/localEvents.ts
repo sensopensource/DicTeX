@@ -1,5 +1,10 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import type {
+  BenchmarkResultEvent,
+  BenchmarkRunFinishedEvent,
+  BenchmarkRunStartedEvent,
+} from "./benchmarkContract.js";
 
 export type AudioSegmentRecord = {
   sessionId: string;
@@ -252,6 +257,9 @@ export type LocalEvent =
   | SttBenchmarkResultEvent
   | SttBenchmarkRunStartedEvent
   | SttBenchmarkRunFinishedEvent
+  | BenchmarkRunStartedEvent
+  | BenchmarkResultEvent
+  | BenchmarkRunFinishedEvent
   | SttCorrectionEvent
   | SttBenchmarkSetMembershipEvent
   | SttCandidateSelectionEvent
