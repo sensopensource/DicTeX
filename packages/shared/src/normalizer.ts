@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { extractCommands } from "./commands.js";
+import {
+  COMMANDS,
+  COMMAND_TABLE_CONTRACT_VERSION,
+  extractCommands,
+  extractCommandsWithTrace,
+} from "./commands.js";
+import { LATEX_CANONICALIZATION_CONTRACT_VERSION } from "./latex.js";
 import type { NormalizerPipelineVersion } from "./normalizerBenchmark.js";
 
 /**
@@ -54,6 +60,7 @@ export type NormalizationLayerName =
 
 /** One entry of the personal dictionary: literal `from` becomes literal `to`. */
 export type DictionaryEntry = {
+  id: string;
   from: string;
   to: string;
 };
@@ -78,17 +85,102 @@ export type NormalizationResult = {
   layers: NormalizationLayerOutput[];
   /** Flattened diagnostics across all layers, for a single visible-but-quiet surface. */
   diagnostics: string[];
+  /** Present only when the benchmark explicitly requests detailed tracing. */
+  operations?: NormalizerOperationTrace[];
 };
+
+export type NormalizerTraceOccurrence = {
+  start: number;
+  end: number;
+  matched_text: string;
+  replacement_text?: string;
+};
+
+export type NormalizerOperationTrace =
+  | {
+      operation: "dictionary";
+      definition_id: string;
+      occurrence_count: number;
+      occurrences: NormalizerTraceOccurrence[];
+    }
+  | {
+      operation: "command";
+      definition_id: string;
+      debug_label: string;
+      occurrence_count: number;
+      occurrences: NormalizerTraceOccurrence[];
+    }
+  | {
+      operation: "regex";
+      definition_id: string;
+      pass: number;
+      occurrence_count: number;
+      occurrences: NormalizerTraceOccurrence[];
+    };
+
+export type NormalizerSourceState = "file" | "default_absent" | "invalid" | "unreadable";
+
+export type NormalizerIgnoredDefinition = {
+  index: number | null;
+  raw_json: string | null;
+  diagnostic: string;
+};
+
+export type NormalizerPipelineSnapshot = {
+  schema_version: 1;
+  pipeline_contract_version: number;
+  semantic_version: string;
+  dictionary: {
+    source_state: NormalizerSourceState;
+    sha256: string;
+    source_content: string | null;
+    effective_entries: { id: string; order: number; from: string; to: string }[];
+    ignored_entries: NormalizerIgnoredDefinition[];
+    diagnostics: string[];
+  };
+  commands: {
+    contract_version: number;
+    sha256: string;
+    definitions: {
+      id: string;
+      order: number;
+      canonical_phrase: string;
+      debug_label: string;
+      effect: string;
+    }[];
+  };
+  regex_rules: {
+    source_state: NormalizerSourceState;
+    sha256: string;
+    source_content: string | null;
+    effective_rules: {
+      id: string;
+      order: number;
+      pattern: string;
+      flags: string;
+      replacement: string;
+    }[];
+    ignored_rules: NormalizerIgnoredDefinition[];
+    diagnostics: string[];
+  };
+  latex_canonicalization_contract_version: number;
+};
+
+export const NORMALIZER_PIPELINE_CONTRACT_VERSION = 2;
+export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v2";
 
 type LayerApplication = {
   output: string;
   diagnostics: string[];
+  operations?: NormalizerOperationTrace[];
 };
 
 type NormalizationLayer = {
   name: NormalizationLayerName;
-  apply: (input: string) => Promise<LayerApplication> | LayerApplication;
+  apply: (input: string, detailedTrace: boolean) => Promise<LayerApplication> | LayerApplication;
 };
+
+export type NormalizeRuntimeOptions = { detailedTrace?: boolean };
 
 export type NormalizeOptions = {
   /** Absolute path to the personal dictionary JSON file. */
@@ -108,7 +200,8 @@ export type NormalizeOptions = {
 export type TranscriptNormalizer = {
   /** Full SHA-256 fingerprints of the dictionary and rules loaded into this instance. */
   version: NormalizerPipelineVersion;
-  normalize: (input: string) => Promise<NormalizationResult>;
+  pipelineSnapshot: NormalizerPipelineSnapshot;
+  normalize: (input: string, options?: NormalizeRuntimeOptions) => Promise<NormalizationResult>;
 };
 
 /**
@@ -123,7 +216,9 @@ export async function createTranscriptNormalizer(
   const pipeline = await buildPipeline(options);
   return {
     version: pipeline.version,
-    normalize: (input: string) => runPipeline(input, pipeline.layers),
+    pipelineSnapshot: pipeline.snapshot,
+    normalize: (input: string, runtimeOptions) =>
+      runPipeline(input, pipeline.layers, runtimeOptions?.detailedTrace === true),
   };
 }
 
@@ -148,11 +243,42 @@ export async function normalizeTranscript(
 
 async function buildPipeline(
   options: NormalizeOptions,
-): Promise<{ layers: NormalizationLayer[]; version: NormalizerPipelineVersion }> {
+): Promise<{
+  layers: NormalizationLayer[];
+  version: NormalizerPipelineVersion;
+  snapshot: NormalizerPipelineSnapshot;
+}> {
   // Load the dictionary and rules once per run so layer application is synchronous
   // and deterministic. Layer 3 will be appended to this array in a later issue.
   const dictionary = await loadDictionary(options.dictionaryPath);
   const rules = await loadRules(options.rulesPath);
+
+  const commandDefinitions = COMMANDS.map((command, index) => ({
+    id: command.id,
+    order: index,
+    canonical_phrase: command.canonical,
+    debug_label: command.label,
+    effect: command.effectDescription,
+  }));
+  const commandTableHash = hashNormalizerSource(JSON.stringify({
+    version: COMMAND_TABLE_CONTRACT_VERSION,
+    commands: COMMANDS.map((command) => ({
+      id: command.id,
+      sentinel: command.sentinel.codePointAt(0),
+      canonical: command.canonical,
+      expansion: command.expansion,
+      label: command.label,
+      effectDescription: command.effectDescription,
+    })),
+  }));
+  const version: NormalizerPipelineVersion = {
+    pipelineContractVersion: NORMALIZER_PIPELINE_CONTRACT_VERSION,
+    semanticVersion: NORMALIZER_PIPELINE_SEMANTIC_VERSION,
+    dictionaryHash: dictionary.sourceHash,
+    commandTableHash,
+    rulesHash: rules.sourceHash,
+    latexCanonicalizationContractVersion: LATEX_CANONICALIZATION_CONTRACT_VERSION,
+  };
 
   return {
     layers: [
@@ -160,9 +286,39 @@ async function buildPipeline(
       createCommandExtractionLayer(),
       createRegexRulesLayer(rules.entries, rules.diagnostics),
     ],
-    version: {
-      dictionaryHash: dictionary.sourceHash,
-      rulesHash: rules.sourceHash,
+    version,
+    snapshot: {
+      schema_version: 1,
+      pipeline_contract_version: NORMALIZER_PIPELINE_CONTRACT_VERSION,
+      semantic_version: NORMALIZER_PIPELINE_SEMANTIC_VERSION,
+      dictionary: {
+        source_state: dictionary.sourceState,
+        sha256: dictionary.sourceHash,
+        source_content: dictionary.sourceContent,
+        effective_entries: dictionary.entries.map((entry, order) => ({ ...entry, order })),
+        ignored_entries: dictionary.ignored,
+        diagnostics: dictionary.diagnostics,
+      },
+      commands: {
+        contract_version: COMMAND_TABLE_CONTRACT_VERSION,
+        sha256: commandTableHash,
+        definitions: commandDefinitions,
+      },
+      regex_rules: {
+        source_state: rules.sourceState,
+        sha256: rules.sourceHash,
+        source_content: rules.sourceContent,
+        effective_rules: rules.entries.map((rule, order) => ({
+          id: rule.id,
+          order,
+          pattern: rule.pattern,
+          flags: rule.flags,
+          replacement: rule.replacement,
+        })),
+        ignored_rules: rules.ignored,
+        diagnostics: rules.diagnostics,
+      },
+      latex_canonicalization_contract_version: LATEX_CANONICALIZATION_CONTRACT_VERSION,
     },
   };
 }
@@ -178,20 +334,46 @@ async function buildPipeline(
 function createCommandExtractionLayer(): NormalizationLayer {
   return {
     name: "command_extraction",
-    apply: (input) => ({ output: extractCommands(input), diagnostics: [] }),
+    apply: (input, detailedTrace) => {
+      if (!detailedTrace) {
+        return { output: extractCommands(input), diagnostics: [] };
+      }
+      const detailed = extractCommandsWithTrace(input);
+      return {
+        output: detailed.output,
+        diagnostics: [],
+        operations: detailed.traces.map((trace) => ({
+          operation: "command" as const,
+          definition_id: trace.commandId,
+          debug_label: trace.debugLabel,
+          occurrence_count: trace.occurrences.length,
+          occurrences: trace.occurrences.map((occurrence) => ({
+            start: occurrence.start,
+            end: occurrence.end,
+            matched_text: occurrence.matchedText,
+            replacement_text: trace.debugLabel,
+          })),
+        })),
+      };
+    },
   };
 }
 
-async function runPipeline(input: string, layers: NormalizationLayer[]): Promise<NormalizationResult> {
+async function runPipeline(
+  input: string,
+  layers: NormalizationLayer[],
+  detailedTrace: boolean,
+): Promise<NormalizationResult> {
   const layerOutputs: NormalizationLayerOutput[] = [];
   const diagnostics: string[] = [];
+  const operations: NormalizerOperationTrace[] = [];
   let current = input;
 
   for (const layer of layers) {
     const layerInput = current;
     let application: LayerApplication;
     try {
-      application = await layer.apply(layerInput);
+      application = await layer.apply(layerInput, detailedTrace);
     } catch (error) {
       // A layer must never break the dictation path; treat an unexpected failure
       // as a passthrough for that layer and record why.
@@ -208,6 +390,7 @@ async function runPipeline(input: string, layers: NormalizationLayer[]): Promise
       diagnostics: application.diagnostics,
     });
     diagnostics.push(...application.diagnostics);
+    operations.push(...(application.operations ?? []));
   }
 
   return {
@@ -216,6 +399,7 @@ async function runPipeline(input: string, layers: NormalizationLayer[]): Promise
     passthrough: current === input,
     layers: layerOutputs,
     diagnostics,
+    ...(detailedTrace ? { operations } : {}),
   };
 }
 
@@ -225,14 +409,29 @@ function createPersonalDictionaryLayer(
 ): NormalizationLayer {
   return {
     name: "personal_dictionary",
-    apply: (input) => {
+    apply: (input, detailedTrace) => {
       let output = input;
+      const operations: NormalizerOperationTrace[] = [];
       // Apply entries in file order so the transform is fully deterministic and
       // predictable for a user editing the file by hand.
       for (const entry of entries) {
-        output = output.split(entry.from).join(entry.to);
+        const operationInput = output;
+        const occurrences = findLiteralOccurrences(operationInput, entry.from).map((occurrence) => ({
+          ...occurrence,
+          matched_text: entry.from,
+          replacement_text: entry.to,
+        }));
+        output = operationInput.split(entry.from).join(entry.to);
+        if (detailedTrace && occurrences.length > 0) {
+          operations.push({
+            operation: "dictionary",
+            definition_id: entry.id,
+            occurrence_count: occurrences.length,
+            occurrences,
+          });
+        }
       }
-      return { output, diagnostics: loadDiagnostics };
+      return { output, diagnostics: loadDiagnostics, ...(detailedTrace ? { operations } : {}) };
     },
   };
 }
@@ -255,9 +454,23 @@ type RawDictionaryEntry = {
  */
 async function loadDictionary(
   dictionaryPath: string,
-): Promise<{ entries: DictionaryEntry[]; diagnostics: string[]; sourceHash: string }> {
+): Promise<{
+  entries: DictionaryEntry[];
+  diagnostics: string[];
+  ignored: NormalizerIgnoredDefinition[];
+  sourceHash: string;
+  sourceState: NormalizerSourceState;
+  sourceContent: string | null;
+}> {
   if (!existsSync(dictionaryPath)) {
-    return { entries: [], diagnostics: [], sourceHash: hashNormalizerSource(DEFAULT_DICTIONARY_SOURCE) };
+    return {
+      entries: [],
+      diagnostics: [],
+      ignored: [],
+      sourceHash: hashNormalizerSource(DEFAULT_DICTIONARY_SOURCE),
+      sourceState: "default_absent",
+      sourceContent: null,
+    };
   }
 
   let contents: string;
@@ -268,7 +481,10 @@ async function loadDictionary(
     return {
       entries: [],
       diagnostics: [`dictionary.json could not be read (${message}); using passthrough`],
+      ignored: [{ index: null, raw_json: null, diagnostic: `dictionary.json could not be read (${message})` }],
       sourceHash: hashNormalizerSource(UNREADABLE_DICTIONARY_SOURCE),
+      sourceState: "unreadable",
+      sourceContent: null,
     };
   }
   const sourceHash = hashNormalizerSource(contents);
@@ -281,7 +497,10 @@ async function loadDictionary(
     return {
       entries: [],
       diagnostics: [`dictionary.json is not valid JSON (${message}); using passthrough`],
+      ignored: [{ index: null, raw_json: contents, diagnostic: `dictionary.json is not valid JSON (${message})` }],
       sourceHash,
+      sourceState: "invalid",
+      sourceContent: contents,
     };
   }
 
@@ -289,34 +508,56 @@ async function loadDictionary(
     return {
       entries: [],
       diagnostics: ['dictionary.json must be an object with an "entries" array; using passthrough'],
+      ignored: [{
+        index: null,
+        raw_json: safeJson(parsed),
+        diagnostic: 'dictionary.json must be an object with an "entries" array',
+      }],
       sourceHash,
+      sourceState: "invalid",
+      sourceContent: contents,
     };
   }
 
   const entries: DictionaryEntry[] = [];
   const diagnostics: string[] = [];
+  const ignored: NormalizerIgnoredDefinition[] = [];
+  const usedIds = new Set<string>();
 
   parsed.entries.forEach((rawEntry: unknown, index: number) => {
     if (!isRecord(rawEntry)) {
-      diagnostics.push(`dictionary entry #${index + 1} is not an object; skipped`);
+      const diagnostic = `dictionary entry #${index + 1} is not an object; skipped`;
+      diagnostics.push(diagnostic);
+      ignored.push({ index, raw_json: safeJson(rawEntry), diagnostic });
       return;
     }
 
     const { from, to } = rawEntry as RawDictionaryEntry;
     if (typeof from !== "string" || from.length === 0) {
-      diagnostics.push(`dictionary entry #${index + 1} has an empty or non-string "from"; skipped`);
+      const diagnostic = `dictionary entry #${index + 1} has an empty or non-string "from"; skipped`;
+      diagnostics.push(diagnostic);
+      ignored.push({ index, raw_json: safeJson(rawEntry), diagnostic });
       return;
     }
 
     if (typeof to !== "string") {
-      diagnostics.push(`dictionary entry #${index + 1} has a non-string "to"; skipped`);
+      const diagnostic = `dictionary entry #${index + 1} has a non-string "to"; skipped`;
+      diagnostics.push(diagnostic);
+      ignored.push({ index, raw_json: safeJson(rawEntry), diagnostic });
       return;
     }
 
-    entries.push({ from, to });
+    entries.push({ id: stableDefinitionId("dictionary", { from, to }, usedIds), from, to });
   });
 
-  return { entries, diagnostics, sourceHash };
+  return {
+    entries,
+    diagnostics,
+    ignored,
+    sourceHash,
+    sourceState: "file",
+    sourceContent: contents,
+  };
 }
 
 const DEFAULT_DICTIONARY_SOURCE = JSON.stringify({ version: 1, entries: [] });
@@ -342,7 +583,10 @@ export type RuleEntry = {
 };
 
 type CompiledRule = {
+  id: string;
   regex: RegExp;
+  pattern: string;
+  flags: string;
   replacement: string;
 };
 
@@ -502,20 +746,31 @@ const MAX_RULE_PASSES = 10;
 function createRegexRulesLayer(rules: CompiledRule[], loadDiagnostics: string[]): NormalizationLayer {
   return {
     name: "regex_rules",
-    apply: (input) => {
+    apply: (input, detailedTrace) => {
       let output = input;
+      const operations: NormalizerOperationTrace[] = [];
       // Apply rules in file order, same determinism guarantee as the dictionary
       // layer, so a user reordering the file changes behavior predictably.
       for (const rule of rules) {
         for (let pass = 0; pass < MAX_RULE_PASSES; pass += 1) {
-          const next = output.replace(rule.regex, rule.replacement);
+          const replaced = replaceWithTrace(output, rule.regex, rule.replacement);
+          const next = replaced.output;
+          if (detailedTrace && replaced.occurrences.length > 0) {
+            operations.push({
+              operation: "regex",
+              definition_id: rule.id,
+              pass: pass + 1,
+              occurrence_count: replaced.occurrences.length,
+              occurrences: replaced.occurrences,
+            });
+          }
           if (next === output) {
             break;
           }
           output = next;
         }
       }
-      return { output, diagnostics: loadDiagnostics };
+      return { output, diagnostics: loadDiagnostics, ...(detailedTrace ? { operations } : {}) };
     },
   };
 }
@@ -540,12 +795,21 @@ type RawRuleEntry = {
  */
 async function loadRules(
   rulesPath: string,
-): Promise<{ entries: CompiledRule[]; diagnostics: string[]; sourceHash: string }> {
+): Promise<{
+  entries: CompiledRule[];
+  diagnostics: string[];
+  ignored: NormalizerIgnoredDefinition[];
+  sourceHash: string;
+  sourceState: NormalizerSourceState;
+  sourceContent: string | null;
+}> {
   if (!existsSync(rulesPath)) {
+    const compiled = compileRules(DEFAULT_RULES);
     return {
-      entries: compileRules(DEFAULT_RULES).entries,
-      diagnostics: [],
+      ...compiled,
       sourceHash: hashNormalizerSource(JSON.stringify({ version: 1, rules: DEFAULT_RULES })),
+      sourceState: "default_absent",
+      sourceContent: null,
     };
   }
 
@@ -557,7 +821,10 @@ async function loadRules(
     return {
       entries: [],
       diagnostics: [`rules.json could not be read (${message}); using passthrough`],
+      ignored: [{ index: null, raw_json: null, diagnostic: `rules.json could not be read (${message})` }],
       sourceHash: hashNormalizerSource(UNREADABLE_RULES_SOURCE),
+      sourceState: "unreadable",
+      sourceContent: null,
     };
   }
   const sourceHash = hashNormalizerSource(contents);
@@ -570,7 +837,10 @@ async function loadRules(
     return {
       entries: [],
       diagnostics: [`rules.json is not valid JSON (${message}); using passthrough`],
+      ignored: [{ index: null, raw_json: contents, diagnostic: `rules.json is not valid JSON (${message})` }],
       sourceHash,
+      sourceState: "invalid",
+      sourceContent: contents,
     };
   }
 
@@ -578,49 +848,84 @@ async function loadRules(
     return {
       entries: [],
       diagnostics: ['rules.json must be an object with a "rules" array; using passthrough'],
+      ignored: [{
+        index: null,
+        raw_json: safeJson(parsed),
+        diagnostic: 'rules.json must be an object with a "rules" array',
+      }],
       sourceHash,
+      sourceState: "invalid",
+      sourceContent: contents,
     };
   }
 
-  return { ...compileRules(parsed.rules as unknown[]), sourceHash };
+  return {
+    ...compileRules(parsed.rules as unknown[]),
+    sourceHash,
+    sourceState: "file",
+    sourceContent: contents,
+  };
 }
 
-function compileRules(rawRules: unknown[]): { entries: CompiledRule[]; diagnostics: string[] } {
+function compileRules(rawRules: readonly unknown[]): {
+  entries: CompiledRule[];
+  diagnostics: string[];
+  ignored: NormalizerIgnoredDefinition[];
+} {
   const entries: CompiledRule[] = [];
   const diagnostics: string[] = [];
+  const ignored: NormalizerIgnoredDefinition[] = [];
+  const usedIds = new Set<string>();
 
   rawRules.forEach((rawRule: unknown, index: number) => {
     if (!isRecord(rawRule)) {
-      diagnostics.push(`rule #${index + 1} is not an object; skipped`);
+      const diagnostic = `rule #${index + 1} is not an object; skipped`;
+      diagnostics.push(diagnostic);
+      ignored.push({ index, raw_json: safeJson(rawRule), diagnostic });
       return;
     }
 
     const { pattern, replacement, flags } = rawRule as RawRuleEntry;
     if (typeof pattern !== "string" || pattern.length === 0) {
-      diagnostics.push(`rule #${index + 1} has an empty or non-string "pattern"; skipped`);
+      const diagnostic = `rule #${index + 1} has an empty or non-string "pattern"; skipped`;
+      diagnostics.push(diagnostic);
+      ignored.push({ index, raw_json: safeJson(rawRule), diagnostic });
       return;
     }
 
     if (typeof replacement !== "string") {
-      diagnostics.push(`rule #${index + 1} has a non-string "replacement"; skipped`);
+      const diagnostic = `rule #${index + 1} has a non-string "replacement"; skipped`;
+      diagnostics.push(diagnostic);
+      ignored.push({ index, raw_json: safeJson(rawRule), diagnostic });
       return;
     }
 
     if (flags !== undefined && typeof flags !== "string") {
-      diagnostics.push(`rule #${index + 1} has a non-string "flags"; skipped`);
+      const diagnostic = `rule #${index + 1} has a non-string "flags"; skipped`;
+      diagnostics.push(diagnostic);
+      ignored.push({ index, raw_json: safeJson(rawRule), diagnostic });
       return;
     }
 
     try {
       const regex = compileRuleRegex(pattern, flags);
-      entries.push({ regex, replacement });
+      const normalizedFlags = regex.flags;
+      entries.push({
+        id: stableDefinitionId("regex", { pattern, flags: normalizedFlags, replacement }, usedIds),
+        regex,
+        pattern,
+        flags: normalizedFlags,
+        replacement,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "invalid pattern";
-      diagnostics.push(`rule #${index + 1} has an invalid regex (${message}); skipped`);
+      const diagnostic = `rule #${index + 1} has an invalid regex (${message}); skipped`;
+      diagnostics.push(diagnostic);
+      ignored.push({ index, raw_json: safeJson(rawRule), diagnostic });
     }
   });
 
-  return { entries, diagnostics };
+  return { entries, diagnostics, ignored };
 }
 
 /** `g` (apply every match) and `u` (Unicode-aware `\p{...}` / lookbehind) are
@@ -628,4 +933,131 @@ function compileRules(rawRules: unknown[]): { entries: CompiledRule[]; diagnosti
 function compileRuleRegex(pattern: string, flags: string | undefined): RegExp {
   const extra = Array.from(new Set((flags ?? "").split(""))).filter((flag) => flag !== "g" && flag !== "u");
   return new RegExp(pattern, ["g", "u", ...extra].join(""));
+}
+
+function findLiteralOccurrences(input: string, literal: string): { start: number; end: number }[] {
+  const occurrences: { start: number; end: number }[] = [];
+  let cursor = 0;
+  while (cursor <= input.length - literal.length) {
+    const start = input.indexOf(literal, cursor);
+    if (start < 0) {
+      break;
+    }
+    occurrences.push({ start, end: start + literal.length });
+    cursor = start + literal.length;
+  }
+  return occurrences;
+}
+
+function replaceWithTrace(
+  input: string,
+  regex: RegExp,
+  replacementTemplate: string,
+): { output: string; occurrences: NormalizerTraceOccurrence[] } {
+  const occurrences: NormalizerTraceOccurrence[] = [];
+  const output = input.replace(regex, (...args: unknown[]) => {
+    const matchedText = String(args[0]);
+    const maybeGroups = args[args.length - 1];
+    const hasNamedGroups = typeof maybeGroups === "object" && maybeGroups !== null;
+    const offsetIndex = hasNamedGroups ? args.length - 3 : args.length - 2;
+    const offset = args[offsetIndex] as number;
+    const captures = args.slice(1, offsetIndex).map((capture) =>
+      typeof capture === "string" ? capture : undefined,
+    );
+    const groups = hasNamedGroups ? (maybeGroups as Record<string, string | undefined>) : undefined;
+    const replacementText = expandReplacementTemplate(
+      replacementTemplate,
+      matchedText,
+      captures,
+      groups,
+      offset,
+      input,
+    );
+    occurrences.push({
+      start: offset,
+      end: offset + matchedText.length,
+      matched_text: matchedText,
+      replacement_text: replacementText,
+    });
+    return replacementText;
+  });
+  return { output, occurrences };
+}
+
+/** Mirrors JavaScript replacement-string tokens while allowing us to record the
+ * exact fragment emitted by each regex hit. */
+function expandReplacementTemplate(
+  template: string,
+  match: string,
+  captures: (string | undefined)[],
+  groups: Record<string, string | undefined> | undefined,
+  offset: number,
+  input: string,
+): string {
+  let output = "";
+  for (let index = 0; index < template.length; index += 1) {
+    const char = template[index];
+    if (char !== "$" || index + 1 >= template.length) {
+      output += char;
+      continue;
+    }
+    const next = template[index + 1];
+    if (next === "$") {
+      output += "$";
+      index += 1;
+    } else if (next === "&") {
+      output += match;
+      index += 1;
+    } else if (next === "`") {
+      output += input.slice(0, offset);
+      index += 1;
+    } else if (next === "'") {
+      output += input.slice(offset + match.length);
+      index += 1;
+    } else if (next === "<" && groups) {
+      const close = template.indexOf(">", index + 2);
+      if (close >= 0) {
+        const name = template.slice(index + 2, close);
+        output += groups[name] ?? "";
+        index = close;
+      } else {
+        output += "$";
+      }
+    } else if (/\d/.test(next)) {
+      const second = template[index + 2];
+      const twoDigit = second && /\d/.test(second) ? Number(`${next}${second}`) : 0;
+      const oneDigit = Number(next);
+      if (twoDigit > 0 && twoDigit <= captures.length) {
+        output += captures[twoDigit - 1] ?? "";
+        index += 2;
+      } else if (oneDigit > 0 && oneDigit <= captures.length) {
+        output += captures[oneDigit - 1] ?? "";
+        index += 1;
+      } else {
+        output += "$";
+      }
+    } else {
+      output += "$";
+    }
+  }
+  return output;
+}
+
+function stableDefinitionId(prefix: string, definition: unknown, usedIds: Set<string>): string {
+  const digest = hashNormalizerSource(JSON.stringify(definition)).slice(0, 16);
+  const base = `${prefix}_${digest}`;
+  let id = base;
+  for (let suffix = 2; usedIds.has(id); suffix += 1) {
+    id = `${base}_${suffix}`;
+  }
+  usedIds.add(id);
+  return id;
+}
+
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
 }

@@ -83,6 +83,8 @@ Déjà disponible :
 - référence du normaliseur déterministe sur les paires `math_transform`, avec
   snapshot figé, version complète du pipeline, exact match canonique et traces
   par couche dans `Results` ;
+- export local d'un run terminé du normaliseur en trois fichiers compacts pour
+  l'analyse LLM, avec provenance complète et traces détaillées sans envoi ;
 - passage d'un `initial_prompt` nommé à faster-whisper pour les expériences.
 
 Prochaines étapes :

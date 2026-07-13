@@ -1,6 +1,7 @@
 import {
   buildMathTransformBenchmarkRunSnapshot,
   buildNormalizerBenchmarkCandidate,
+  buildNormalizerBenchmarkPipelineSnapshot,
   containsSentinel,
   prepareNormalizerBenchmarkResultForStorage,
   restoreCommandWords,
@@ -91,6 +92,10 @@ export async function runNormalizerBenchmark(options: {
     split: options.split,
     candidates: [candidate],
     snapshot,
+    pipeline_snapshot: buildNormalizerBenchmarkPipelineSnapshot(
+      options.normalizer.pipelineSnapshot,
+      options.normalizer.version,
+    ),
   };
   await appendSentinelFreeEvent(startEvent, options.appendEvent);
 
@@ -125,7 +130,7 @@ export async function runNormalizerBenchmark(options: {
 
     try {
       const startedAt = monotonicNow();
-      const normalized = await options.normalizer.normalize(member.layer1_input);
+      const normalized = await options.normalizer.normalize(member.layer1_input, { detailedTrace: true });
       const transformationDurationMs = Math.max(0, monotonicNow() - startedAt);
       const stored = prepareNormalizerBenchmarkResultForStorage(normalized);
       await appendSentinelFreeEvent(
@@ -140,6 +145,7 @@ export async function runNormalizerBenchmark(options: {
           output_transcript: stored.outputTranscript,
           transformation_duration_ms: transformationDurationMs,
           layers: stored.layers,
+          operations: stored.operations,
         },
         options.appendEvent,
       );

@@ -985,3 +985,54 @@ dénominateur. Le détail conserve la sortie brute restaurée, les deux formes
 canoniques, le diff textuel et les traces ordonnées, de sorte qu'une règle de
 portée insuffisante reste un échec visible plutôt qu'un score artificiellement
 amélioré.
+
+---
+
+## 12. Vue dérivée du run Normalizer pour analyse LLM (issue #141)
+
+Le paquet LLM reste une vue régénérable, jamais une source de vérité. Pour la
+produire sans divergence train/serve, le start du run fige le snapshot de
+pipeline fourni par la **même instance** de `TranscriptNormalizer` qui traite
+les membres. Les fichiers courants ne sont plus consultés après ce start.
+
+```text
+benchmark_run_started
+  snapshot math_transform ordonné
+  candidat versionné
+  pipeline effectif (dictionnaire -> commandes -> regex -> canonicalisation)
+benchmark_result
+  couches ordonnées
+  opérations rencontrées -> identifiants du manifeste + deltas du segment
+benchmark_run_finished
+  -> manifest.json
+  -> dataset.math_transform.jsonl
+  -> outputs.jsonl
+```
+
+Le manifeste est la seule copie des définitions statiques. Les identifiants des
+entrées du dictionnaire et des regex sont dérivés de leur contenu ; ceux des
+commandes appartiennent à la table partagée. Une sortie ne répète donc ni tout le
+dictionnaire ni toutes les règles. Elle conserve seulement les occurrences,
+positions, captures et fragments produits nécessaires pour attribuer l'effet.
+Cette déduplication réduit fortement le nombre de tokens sans perdre la
+provenance déterministe.
+
+Le snapshot distingue fichier lisible, défaut absent, source invalide et source
+illisible. Une source lisible est conservée avec son SHA-256 complet ; les
+définitions valides, ignorées et diagnostics expliquent ce qui était réellement
+actif. La table de commandes et les versions sémantiques entrent dans l'identité
+du candidat : modifier une commande ou le contrat du pipeline ne peut plus
+conserver artificiellement la même candidature.
+
+Les deux JSONL portent exactement les mêmes membres, dans l'ordre du snapshot,
+et se joignent par `session_id + segment_id`. `failed` et `missing` restent
+explicites. L'exact match compare les formes canonicalisées, conserve aussi les
+textes bruts et n'établit aucune équivalence mathématique. Un ancien run sans la
+provenance ou les traces requises doit être relancé : relire le dictionnaire ou
+les règles du jour fabriquerait une histoire fausse.
+
+Le paquet ne contient ni audio ni chemin audio. Il contient en revanche le
+dictionnaire personnel effectif et peut contenir du texte dicté ; cette présence
+est annoncée dans le manifeste et l'interface. Aucun envoi n'est effectué par
+DicTeX. Comme dans les événements, tout PUA est éliminé ou représenté sous forme
+échappée avant sérialisation.
