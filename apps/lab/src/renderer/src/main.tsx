@@ -27,7 +27,6 @@ import type {
   SttDatasetExportSummary,
 } from "@dictex/shared";
 import {
-  CORRECTION_KIND_OPTIONS,
   formatAudioDuration,
   formatBatchOutcomeScore,
   formatCandidateIdentity,
@@ -39,7 +38,6 @@ import {
   formatScore,
   formatTimestamp,
   formatBenchmarkSetSplit,
-  isCorrectionKind,
   isSttBenchmarkSetSplit,
 } from "@dictex/shared/formatting";
 import {
@@ -51,6 +49,7 @@ import {
   type SttErrorCategory,
 } from "@dictex/shared/errorAnalysis";
 import { diffWords, type DiffSegment } from "@dictex/shared/textDiff";
+import { planCorpusCorrection, type CorpusCorrectionLayer } from "./corpusCorrection.js";
 import type {
   DatasetBuilderSaveRequest,
   DatasetBuilderSaveResponse,
@@ -148,11 +147,18 @@ function formatRunOption(run: SttBenchmarkRunListEntry): string {
   return `${when} · ${run.snapshotSize} seg · ${status}`;
 }
 
+/**
+ * The correction kind travels WITH the raw transcript it was derived from (see
+ * planCorpusCorrection): both are frozen when the human clicks Edit Layer 1 or
+ * Edit Layer 2, and nothing between opening and saving can change one without
+ * the other.
+ */
 type HistoryCorrectionTarget = {
   sessionId: string;
   segmentId: string;
   audioRef: string;
   rawTranscript: string;
+  correctionKind: CorrectionKind;
 };
 
 function LabNavigation({
@@ -207,7 +213,6 @@ function App(): React.ReactElement {
   const [benchmarkSetTargetKey, setBenchmarkSetTargetKey] = useState<string | null>(null);
   const [historyCorrectionTarget, setHistoryCorrectionTarget] = useState<HistoryCorrectionTarget | null>(null);
   const [historyCorrectionDraft, setHistoryCorrectionDraft] = useState("");
-  const [historyCorrectionKind, setHistoryCorrectionKind] = useState<CorrectionKind | "">("");
 
   // Benchmark.
   const [benchmarkSource, setBenchmarkSource] = useState<AudioSegmentRecord | null>(null);
@@ -513,15 +518,21 @@ function App(): React.ReactElement {
     }
   }
 
-  function startSegmentCorrection(segment: ReconstructedSegment): void {
+  function startSegmentCorrection(segment: ReconstructedSegment, layer: CorpusCorrectionLayer): void {
+    const plan = planCorpusCorrection(segment, layer);
+    if (plan === null) {
+      setCorrectionNotice("Save Layer 1 before adding Layer 2");
+      return;
+    }
+
     setHistoryCorrectionTarget({
       sessionId: segment.sessionId,
       segmentId: segment.segmentId,
       audioRef: segment.audioRef,
-      rawTranscript: segment.transcript,
+      rawTranscript: plan.rawTranscript,
+      correctionKind: plan.correctionKind,
     });
-    setHistoryCorrectionDraft(segment.correctedTranscript ?? segment.transcript);
-    setHistoryCorrectionKind("");
+    setHistoryCorrectionDraft(plan.draft);
     setCorrectionNotice("");
     setNotice(`Correction target ${segment.sessionId} / ${segment.segmentId}`);
   }
@@ -529,15 +540,10 @@ function App(): React.ReactElement {
   function cancelSegmentCorrection(): void {
     setHistoryCorrectionTarget(null);
     setHistoryCorrectionDraft("");
-    setHistoryCorrectionKind("");
   }
 
   async function saveSegmentCorrection(): Promise<void> {
     if (!historyCorrectionTarget) {
-      return;
-    }
-    if (historyCorrectionKind === "") {
-      setCorrectionNotice("Choose a correction kind before saving");
       return;
     }
 
@@ -550,7 +556,7 @@ function App(): React.ReactElement {
         audioRef: historyCorrectionTarget.audioRef,
         rawTranscript: historyCorrectionTarget.rawTranscript,
         correctedTranscript: historyCorrectionDraft,
-        correctionKind: historyCorrectionKind,
+        correctionKind: historyCorrectionTarget.correctionKind,
         correctionMethod: "keyboard",
       });
       setCorrectionNotice(
@@ -995,20 +1001,11 @@ function App(): React.ReactElement {
         benchmarkSetTargetKey={benchmarkSetTargetKey}
         markSttBenchmarkSetMembership={(segment, split) => void markSttBenchmarkSetMembership(segment, split)}
         startSegmentCorrection={startSegmentCorrection}
-        benchmarkTargetKey={benchmarkTargetKey}
-        runSegmentSttBenchmark={(segment) => void runSegmentSttBenchmark(segment)}
-        isBenchmarking={isBenchmarking}
-        isRunningBatch={isRunningBatch}
         isSavingCorrection={isSavingCorrection}
         historyCorrectionTarget={historyCorrectionTarget}
         historyCorrectionDraft={historyCorrectionDraft}
         setHistoryCorrectionDraft={(value) => {
           setHistoryCorrectionDraft(value);
-          setCorrectionNotice("");
-        }}
-        historyCorrectionKind={historyCorrectionKind}
-        setHistoryCorrectionKind={(kind) => {
-          setHistoryCorrectionKind(kind);
           setCorrectionNotice("");
         }}
         saveSegmentCorrection={() => void saveSegmentCorrection()}
@@ -1077,17 +1074,11 @@ type SegmentsViewProps = {
   playSegmentAudio: (segment: ReconstructedSegment) => void;
   benchmarkSetTargetKey: string | null;
   markSttBenchmarkSetMembership: (segment: ReconstructedSegment, split: SttBenchmarkSetSplit) => void;
-  startSegmentCorrection: (segment: ReconstructedSegment) => void;
-  benchmarkTargetKey: string | null;
-  runSegmentSttBenchmark: (segment: ReconstructedSegment) => void;
-  isBenchmarking: boolean;
-  isRunningBatch: boolean;
+  startSegmentCorrection: (segment: ReconstructedSegment, layer: CorpusCorrectionLayer) => void;
   isSavingCorrection: boolean;
   historyCorrectionTarget: HistoryCorrectionTarget | null;
   historyCorrectionDraft: string;
   setHistoryCorrectionDraft: (value: string) => void;
-  historyCorrectionKind: CorrectionKind | "";
-  setHistoryCorrectionKind: (kind: CorrectionKind | "") => void;
   saveSegmentCorrection: () => void;
   cancelSegmentCorrection: () => void;
   correctionNotice: string;
@@ -1118,16 +1109,10 @@ function SegmentsView({
   benchmarkSetTargetKey,
   markSttBenchmarkSetMembership,
   startSegmentCorrection,
-  benchmarkTargetKey,
-  runSegmentSttBenchmark,
-  isBenchmarking,
-  isRunningBatch,
   isSavingCorrection,
   historyCorrectionTarget,
   historyCorrectionDraft,
   setHistoryCorrectionDraft,
-  historyCorrectionKind,
-  setHistoryCorrectionKind,
   saveSegmentCorrection,
   cancelSegmentCorrection,
   correctionNotice,
@@ -1137,6 +1122,22 @@ function SegmentsView({
   openLabEventsLog,
   onNavigate,
 }: SegmentsViewProps): React.ReactElement {
+  const [selectedSegmentKey, setSelectedSegmentKey] = useState<string | null>(null);
+  const selectedSegment =
+    segments.find((segment) => getSegmentKey(segment) === selectedSegmentKey) ?? segments[0] ?? null;
+  const acousticCorrection = selectedSegment?.correctionsByKind.find(
+    (correction) => correction.correctionKind === "acoustic",
+  );
+  const mathTransformCorrection = selectedSegment?.correctionsByKind.find(
+    (correction) => correction.correctionKind === "math_transform",
+  );
+  const qualificationState =
+    acousticCorrection && mathTransformCorrection
+      ? "Layers 1 and 2 qualified"
+      : acousticCorrection
+        ? "Layer 1 only"
+        : "No human layers";
+
   return (
     <>
       <header className="titlebar">
@@ -1195,7 +1196,8 @@ function SegmentsView({
         {notice && <p className="notice">{notice}</p>}
       </section>
 
-      <section className="panel history-panel" aria-busy={isLoadingSegments}>
+      <section className="panel corpus-master-detail" aria-busy={isLoadingSegments}>
+        <div className="corpus-segment-list">
         <div className="panel-header">
           <div>
             <h2>DicTeX segments</h2>
@@ -1217,7 +1219,10 @@ function SegmentsView({
         ) : (
           <div className="history-list">
             {segments.map((segment) => (
-              <article className="history-item" key={getSegmentKey(segment)}>
+              <article
+                className={`history-item corpus-segment-item ${getSegmentKey(segment) === getSegmentKey(selectedSegment ?? segment) ? "corpus-segment-item-selected" : ""}`}
+                key={getSegmentKey(segment)}
+              >
                 <div className="history-heading">
                   <span title={segment.createdAt ?? undefined}>{formatTimestamp(segment.createdAt)}</span>
                   <strong title={`${segment.sessionId} / ${segment.segmentId}`}>
@@ -1257,45 +1262,10 @@ function SegmentsView({
                   <div className="history-actions">
                     <button
                       className="secondary-button"
-                      disabled={!segment.audioRef || loadingAudioSegmentKey === getSegmentKey(segment)}
-                      onClick={() => playSegmentAudio(segment)}
+                      aria-pressed={getSegmentKey(segment) === getSegmentKey(selectedSegment ?? segment)}
+                      onClick={() => setSelectedSegmentKey(getSegmentKey(segment))}
                     >
-                      {loadingAudioSegmentKey === getSegmentKey(segment)
-                        ? "Loading"
-                        : playingAudioSegmentKey === getSegmentKey(segment)
-                          ? "Stop"
-                          : "Play"}
-                    </button>
-                    <select
-                      aria-label={`STT benchmark set split for ${segment.sessionId} / ${segment.segmentId}`}
-                      className="secondary-select"
-                      disabled={!segment.correctedTranscript || benchmarkSetTargetKey === getSegmentKey(segment)}
-                      value={segment.benchmarkSetSplit ?? ""}
-                      onChange={(event) => {
-                        const split = event.currentTarget.value;
-                        if (isSttBenchmarkSetSplit(split)) {
-                          markSttBenchmarkSetMembership(segment, split);
-                        }
-                      }}
-                    >
-                      <option value="">Set split</option>
-                      <option value="train_candidate_pool">Train pool</option>
-                      <option value="validation">Validation</option>
-                      <option value="test_frozen">Test frozen</option>
-                    </select>
-                    <button
-                      className="secondary-button"
-                      disabled={isSavingCorrection}
-                      onClick={() => startSegmentCorrection(segment)}
-                    >
-                      Correct
-                    </button>
-                    <button
-                      className="secondary-button"
-                      disabled={isBenchmarking || isRunningBatch}
-                      onClick={() => runSegmentSttBenchmark(segment)}
-                    >
-                      {benchmarkTargetKey === getSegmentKey(segment) ? "Running" : "Benchmark"}
+                      {getSegmentKey(segment) === getSegmentKey(selectedSegment ?? segment) ? "Selected" : "Select"}
                     </button>
                   </div>
                 </div>
@@ -1303,46 +1273,118 @@ function SegmentsView({
             ))}
           </div>
         )}
+        </div>
+
+        <aside className="corpus-detail" aria-live="polite">
+          {selectedSegment === null ? (
+            <p className="empty-state">Select a DicTeX segment to inspect and qualify it.</p>
+          ) : (
+            <>
+              <div className="panel-header">
+                <div>
+                  <h2>Selected segment</h2>
+                  <p title={`${selectedSegment.sessionId} / ${selectedSegment.segmentId}`}>
+                    {selectedSegment.sessionId} / {selectedSegment.segmentId}
+                  </p>
+                </div>
+                <em className={`qualification-state ${acousticCorrection ? "qualification-state-partial" : ""} ${acousticCorrection && mathTransformCorrection ? "qualification-state-complete" : ""}`}>
+                  {qualificationState}
+                </em>
+              </div>
+
+              <dl className="corpus-provenance">
+                <div><dt>Recorded</dt><dd>{formatTimestamp(selectedSegment.createdAt)}</dd></div>
+                <div><dt>STT</dt><dd>{selectedSegment.sttEngine} / {selectedSegment.sttModel} · {selectedSegment.sttLanguage}</dd></div>
+                <div><dt>Audio</dt><dd>{formatAudioDuration(selectedSegment.audioDurationSeconds)}</dd></div>
+                <div><dt>Split</dt><dd>{selectedSegment.benchmarkSetSplit ? `${formatBenchmarkSetSplit(selectedSegment.benchmarkSetSplit)}${selectedSegment.benchmarkSetCreatedAt ? ` · ${formatTimestamp(selectedSegment.benchmarkSetCreatedAt)}` : ""}` : "Not assigned"}</dd></div>
+              </dl>
+
+              <section className="corpus-layer">
+                <h3>Raw STT</h3>
+                <p>{selectedSegment.transcript || "-"}</p>
+              </section>
+              <section className="corpus-layer">
+                <h3>Layer 1 — acoustic</h3>
+                <p>{acousticCorrection?.correctedTranscript ?? "Not qualified yet"}</p>
+              </section>
+              <section className="corpus-layer">
+                <h3>Layer 2 — math transform</h3>
+                <p>{mathTransformCorrection?.correctedTranscript ?? "Not qualified yet"}</p>
+              </section>
+
+              <div className="actions">
+                <button
+                  className="secondary-button"
+                  disabled={!selectedSegment.audioRef || loadingAudioSegmentKey === getSegmentKey(selectedSegment)}
+                  onClick={() => playSegmentAudio(selectedSegment)}
+                >
+                  {loadingAudioSegmentKey === getSegmentKey(selectedSegment)
+                    ? "Loading"
+                    : playingAudioSegmentKey === getSegmentKey(selectedSegment)
+                      ? "Stop"
+                      : "Play audio"}
+                </button>
+                <select
+                  aria-label={`Benchmark set split for selected ${selectedSegment.sessionId} / ${selectedSegment.segmentId}`}
+                  className="secondary-select"
+                  disabled={!selectedSegment.correctedTranscript || benchmarkSetTargetKey === getSegmentKey(selectedSegment)}
+                  value={selectedSegment.benchmarkSetSplit ?? ""}
+                  onChange={(event) => {
+                    const split = event.currentTarget.value;
+                    if (isSttBenchmarkSetSplit(split)) {
+                      markSttBenchmarkSetMembership(selectedSegment, split);
+                    }
+                  }}
+                >
+                  <option value="">Set split</option>
+                  <option value="train_candidate_pool">Train pool</option>
+                  <option value="validation">Validation</option>
+                  <option value="test_frozen">Test frozen</option>
+                </select>
+                <button className="secondary-button" disabled={isSavingCorrection} onClick={() => startSegmentCorrection(selectedSegment, "layer1")}>
+                  Edit Layer 1
+                </button>
+                <button
+                  className="secondary-button"
+                  disabled={isSavingCorrection || !acousticCorrection}
+                  title={acousticCorrection ? undefined : "Save Layer 1 before adding Layer 2"}
+                  onClick={() => startSegmentCorrection(selectedSegment, "layer2")}
+                >
+                  Edit Layer 2
+                </button>
+              </div>
+
+              {historyCorrectionTarget && getSegmentKey(historyCorrectionTarget) === getSegmentKey(selectedSegment) && (
+                <div className="corpus-correction-editor">
+                  <p className="transcript-label">
+                    {historyCorrectionTarget.correctionKind === "acoustic" ? "Layer 1" : "Layer 2"} —{" "}
+                    {formatCorrectionKind(historyCorrectionTarget.correctionKind)}
+                  </p>
+                  <p className="corpus-correction-input" title={historyCorrectionTarget.rawTranscript}>
+                    From: {historyCorrectionTarget.rawTranscript || "-"}
+                  </p>
+                  <textarea
+                    value={historyCorrectionDraft}
+                    onChange={(event) => setHistoryCorrectionDraft(event.target.value)}
+                    aria-label={`Corrected transcript (${formatCorrectionKind(historyCorrectionTarget.correctionKind)})`}
+                  />
+                  <div className="actions">
+                    <button
+                      className="secondary-button"
+                      disabled={isSavingCorrection || historyCorrectionDraft.length === 0}
+                      onClick={saveSegmentCorrection}
+                    >
+                      {isSavingCorrection ? "Saving" : "Save correction"}
+                    </button>
+                    <button className="secondary-button" disabled={isSavingCorrection} onClick={cancelSegmentCorrection}>Cancel</button>
+                  </div>
+                  {correctionNotice && <p className="notice">{correctionNotice}</p>}
+                </div>
+              )}
+            </>
+          )}
+        </aside>
       </section>
-
-      {historyCorrectionTarget && (
-        <section className="panel correction-panel">
-          <div className="panel-header">
-            <div>
-              <h2>STT correction</h2>
-              <p title={`${historyCorrectionTarget.sessionId} / ${historyCorrectionTarget.segmentId}`}>
-                {historyCorrectionTarget.sessionId} / {historyCorrectionTarget.segmentId}
-              </p>
-            </div>
-            <button className="secondary-button" disabled={isSavingCorrection} onClick={cancelSegmentCorrection}>
-              Cancel
-            </button>
-          </div>
-
-          <p className="correction-raw">Raw: {historyCorrectionTarget.rawTranscript || "-"}</p>
-          <textarea
-            value={historyCorrectionDraft}
-            onChange={(event) => setHistoryCorrectionDraft(event.target.value)}
-            aria-label="Corrected transcript"
-          />
-          <div className="actions">
-            <CorrectionKindSelect
-              ariaLabel={`Correction kind for ${historyCorrectionTarget.sessionId} / ${historyCorrectionTarget.segmentId}`}
-              value={historyCorrectionKind}
-              disabled={isSavingCorrection}
-              onChange={(kind) => setHistoryCorrectionKind(kind)}
-            />
-            <button
-              className="secondary-button"
-              disabled={isSavingCorrection || historyCorrectionDraft.length === 0 || historyCorrectionKind === ""}
-              onClick={saveSegmentCorrection}
-            >
-              {isSavingCorrection ? "Saving" : "Save correction"}
-            </button>
-          </div>
-          {correctionNotice && <p className="notice">{correctionNotice}</p>}
-        </section>
-      )}
 
       <section className="panel transcript-panel">
         <div className="actions">
@@ -2453,10 +2495,12 @@ function DatasetView({
         </div>
       </header>}
 
-      <section className="panel" aria-busy={isSavingBuilderEntry}>
+      <details className="panel manual-entry" aria-busy={isSavingBuilderEntry}>
+        <summary>New manual entry</summary>
+        <div className="manual-entry-content">
         <div className="panel-header">
           <div>
-            <h2>Build a dataset entry</h2>
+            <h2>New manual entry</h2>
             <p>No microphone: paste a transcription or pick a DicTeX segment, then type the two layers by hand</p>
           </div>
         </div>
@@ -2622,7 +2666,8 @@ function DatasetView({
         {builderError && <pre className="error">{builderError}</pre>}
         {builderNotice && <p className="notice">{builderNotice}</p>}
         {!builderError && !builderNotice && <p className="builder-hint">{builderPlanHint}</p>}
-      </section>
+        </div>
+      </details>
 
       <section className="panel" aria-busy={isExportingDataset}>
         <div className="panel-header">
@@ -2695,38 +2740,6 @@ function DatasetView({
         )}
       </section>
     </>
-  );
-}
-
-function CorrectionKindSelect({
-  value,
-  onChange,
-  disabled,
-  ariaLabel,
-}: {
-  value: CorrectionKind | "";
-  onChange: (kind: CorrectionKind | "") => void;
-  disabled?: boolean;
-  ariaLabel: string;
-}): React.ReactElement {
-  return (
-    <select
-      aria-label={ariaLabel}
-      className="secondary-select"
-      value={value}
-      disabled={disabled}
-      onChange={(event) => {
-        const next = event.currentTarget.value;
-        onChange(isCorrectionKind(next) ? next : "");
-      }}
-    >
-      <option value="">Correction kind…</option>
-      {CORRECTION_KIND_OPTIONS.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
   );
 }
 

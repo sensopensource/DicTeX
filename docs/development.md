@@ -324,9 +324,20 @@ whatever is left in the field, same as before this issue.
    with a `data folder ok` pill when DicTeX has recorded at least once.
 2. Confirm DicTeX segments recorded by `apps/dictex` appear in the list
    (read from the source folder), and `Play` plays their audio.
-3. `Correct` a segment (choose a correction kind), then set its split to
-   `Test frozen`; confirm both land only in the Lab's events log
-   (`Open Lab events log`) and DicTeX's `events.jsonl` is untouched.
+3. Sélectionner un segment dans `Corpus`. Le type d'une correction n'est plus
+   choisi librement : il découle du bouton cliqué. `Edit Layer 1` écrit
+   toujours une correction `acoustic` dont le `raw_transcript` est la sortie STT
+   brute ; `Edit Layer 2` écrit toujours une correction `math_transform` dont le
+   `raw_transcript` est la dernière couche 1 (le bouton reste désactivé tant
+   qu'aucune couche 1 n'existe, la couche 1 étant l'entrée de la couche 2).
+   Vérifier dans `Open Lab events log` que l'événement `stt_correction` écrit
+   porte bien cette paire `correction_kind` / `raw_transcript`, et qu'aucune
+   paire incohérente — un `acoustic` dont le `raw_transcript` serait déjà une
+   couche 1, ou un `math_transform` chaîné sur le STT brut — n'est atteignable
+   depuis cette vue (`DEC-COUCHE1-001`, `docs/product-decisions.md`). Affecter
+   ensuite le split `Test frozen` ; confirmer que la correction et le split
+   n'atterrissent que dans le journal du Lab et que `events.jsonl` de DicTeX
+   reste intact.
 4. In `Benchmark`, click `Benchmark latest` (needs the venv or
    `DICTEX_PYTHON`); confirm `tiny`/`base`/`small` transcripts + latency
    appear. Confirm the split selector opens on `Validation` (the default).
