@@ -27,7 +27,6 @@ import type {
   SttDatasetExportSummary,
 } from "@dictex/shared";
 import {
-  CORRECTION_KIND_OPTIONS,
   formatAudioDuration,
   formatBatchOutcomeScore,
   formatCandidateIdentity,
@@ -39,7 +38,6 @@ import {
   formatScore,
   formatTimestamp,
   formatBenchmarkSetSplit,
-  isCorrectionKind,
   isSttBenchmarkSetSplit,
 } from "@dictex/shared/formatting";
 import {
@@ -51,6 +49,7 @@ import {
   type SttErrorCategory,
 } from "@dictex/shared/errorAnalysis";
 import { diffWords, type DiffSegment } from "@dictex/shared/textDiff";
+import { planCorpusCorrection, type CorpusCorrectionLayer } from "./corpusCorrection.js";
 import type {
   DatasetBuilderSaveRequest,
   DatasetBuilderSaveResponse,
@@ -148,11 +147,18 @@ function formatRunOption(run: SttBenchmarkRunListEntry): string {
   return `${when} · ${run.snapshotSize} seg · ${status}`;
 }
 
+/**
+ * The correction kind travels WITH the raw transcript it was derived from (see
+ * planCorpusCorrection): both are frozen when the human clicks Edit Layer 1 or
+ * Edit Layer 2, and nothing between opening and saving can change one without
+ * the other.
+ */
 type HistoryCorrectionTarget = {
   sessionId: string;
   segmentId: string;
   audioRef: string;
   rawTranscript: string;
+  correctionKind: CorrectionKind;
 };
 
 function LabNavigation({
@@ -207,7 +213,6 @@ function App(): React.ReactElement {
   const [benchmarkSetTargetKey, setBenchmarkSetTargetKey] = useState<string | null>(null);
   const [historyCorrectionTarget, setHistoryCorrectionTarget] = useState<HistoryCorrectionTarget | null>(null);
   const [historyCorrectionDraft, setHistoryCorrectionDraft] = useState("");
-  const [historyCorrectionKind, setHistoryCorrectionKind] = useState<CorrectionKind | "">("");
 
   // Benchmark.
   const [benchmarkSource, setBenchmarkSource] = useState<AudioSegmentRecord | null>(null);
@@ -513,24 +518,21 @@ function App(): React.ReactElement {
     }
   }
 
-  function startSegmentCorrection(segment: ReconstructedSegment, correctionKind: CorrectionKind = "acoustic"): void {
-    const existingCorrection = segment.correctionsByKind.find(
-      (correction) => correction.correctionKind === correctionKind,
-    );
-    const acousticCorrection = segment.correctionsByKind.find(
-      (correction) => correction.correctionKind === "acoustic",
-    );
-    const rawTranscript =
-      correctionKind === "math_transform" ? acousticCorrection?.correctedTranscript ?? segment.transcript : segment.transcript;
+  function startSegmentCorrection(segment: ReconstructedSegment, layer: CorpusCorrectionLayer): void {
+    const plan = planCorpusCorrection(segment, layer);
+    if (plan === null) {
+      setCorrectionNotice("Save Layer 1 before adding Layer 2");
+      return;
+    }
 
     setHistoryCorrectionTarget({
       sessionId: segment.sessionId,
       segmentId: segment.segmentId,
       audioRef: segment.audioRef,
-      rawTranscript,
+      rawTranscript: plan.rawTranscript,
+      correctionKind: plan.correctionKind,
     });
-    setHistoryCorrectionDraft(existingCorrection?.correctedTranscript ?? rawTranscript);
-    setHistoryCorrectionKind(correctionKind);
+    setHistoryCorrectionDraft(plan.draft);
     setCorrectionNotice("");
     setNotice(`Correction target ${segment.sessionId} / ${segment.segmentId}`);
   }
@@ -538,15 +540,10 @@ function App(): React.ReactElement {
   function cancelSegmentCorrection(): void {
     setHistoryCorrectionTarget(null);
     setHistoryCorrectionDraft("");
-    setHistoryCorrectionKind("");
   }
 
   async function saveSegmentCorrection(): Promise<void> {
     if (!historyCorrectionTarget) {
-      return;
-    }
-    if (historyCorrectionKind === "") {
-      setCorrectionNotice("Choose a correction kind before saving");
       return;
     }
 
@@ -559,7 +556,7 @@ function App(): React.ReactElement {
         audioRef: historyCorrectionTarget.audioRef,
         rawTranscript: historyCorrectionTarget.rawTranscript,
         correctedTranscript: historyCorrectionDraft,
-        correctionKind: historyCorrectionKind,
+        correctionKind: historyCorrectionTarget.correctionKind,
         correctionMethod: "keyboard",
       });
       setCorrectionNotice(
@@ -1011,11 +1008,6 @@ function App(): React.ReactElement {
           setHistoryCorrectionDraft(value);
           setCorrectionNotice("");
         }}
-        historyCorrectionKind={historyCorrectionKind}
-        setHistoryCorrectionKind={(kind) => {
-          setHistoryCorrectionKind(kind);
-          setCorrectionNotice("");
-        }}
         saveSegmentCorrection={() => void saveSegmentCorrection()}
         cancelSegmentCorrection={cancelSegmentCorrection}
         correctionNotice={correctionNotice}
@@ -1082,13 +1074,11 @@ type SegmentsViewProps = {
   playSegmentAudio: (segment: ReconstructedSegment) => void;
   benchmarkSetTargetKey: string | null;
   markSttBenchmarkSetMembership: (segment: ReconstructedSegment, split: SttBenchmarkSetSplit) => void;
-  startSegmentCorrection: (segment: ReconstructedSegment, correctionKind?: CorrectionKind) => void;
+  startSegmentCorrection: (segment: ReconstructedSegment, layer: CorpusCorrectionLayer) => void;
   isSavingCorrection: boolean;
   historyCorrectionTarget: HistoryCorrectionTarget | null;
   historyCorrectionDraft: string;
   setHistoryCorrectionDraft: (value: string) => void;
-  historyCorrectionKind: CorrectionKind | "";
-  setHistoryCorrectionKind: (kind: CorrectionKind | "") => void;
   saveSegmentCorrection: () => void;
   cancelSegmentCorrection: () => void;
   correctionNotice: string;
@@ -1123,8 +1113,6 @@ function SegmentsView({
   historyCorrectionTarget,
   historyCorrectionDraft,
   setHistoryCorrectionDraft,
-  historyCorrectionKind,
-  setHistoryCorrectionKind,
   saveSegmentCorrection,
   cancelSegmentCorrection,
   correctionNotice,
@@ -1353,14 +1341,14 @@ function SegmentsView({
                   <option value="validation">Validation</option>
                   <option value="test_frozen">Test frozen</option>
                 </select>
-                <button className="secondary-button" disabled={isSavingCorrection} onClick={() => startSegmentCorrection(selectedSegment, "acoustic")}>
+                <button className="secondary-button" disabled={isSavingCorrection} onClick={() => startSegmentCorrection(selectedSegment, "layer1")}>
                   Edit Layer 1
                 </button>
                 <button
                   className="secondary-button"
                   disabled={isSavingCorrection || !acousticCorrection}
                   title={acousticCorrection ? undefined : "Save Layer 1 before adding Layer 2"}
-                  onClick={() => startSegmentCorrection(selectedSegment, "math_transform")}
+                  onClick={() => startSegmentCorrection(selectedSegment, "layer2")}
                 >
                   Edit Layer 2
                 </button>
@@ -1368,22 +1356,22 @@ function SegmentsView({
 
               {historyCorrectionTarget && getSegmentKey(historyCorrectionTarget) === getSegmentKey(selectedSegment) && (
                 <div className="corpus-correction-editor">
-                  <p className="transcript-label">Typed correction</p>
+                  <p className="transcript-label">
+                    {historyCorrectionTarget.correctionKind === "acoustic" ? "Layer 1" : "Layer 2"} —{" "}
+                    {formatCorrectionKind(historyCorrectionTarget.correctionKind)}
+                  </p>
+                  <p className="corpus-correction-input" title={historyCorrectionTarget.rawTranscript}>
+                    From: {historyCorrectionTarget.rawTranscript || "-"}
+                  </p>
                   <textarea
                     value={historyCorrectionDraft}
                     onChange={(event) => setHistoryCorrectionDraft(event.target.value)}
-                    aria-label="Corrected transcript"
+                    aria-label={`Corrected transcript (${formatCorrectionKind(historyCorrectionTarget.correctionKind)})`}
                   />
                   <div className="actions">
-                    <CorrectionKindSelect
-                      ariaLabel={`Correction kind for ${selectedSegment.sessionId} / ${selectedSegment.segmentId}`}
-                      value={historyCorrectionKind}
-                      disabled={isSavingCorrection}
-                      onChange={(kind) => setHistoryCorrectionKind(kind)}
-                    />
                     <button
                       className="secondary-button"
-                      disabled={isSavingCorrection || historyCorrectionDraft.length === 0 || historyCorrectionKind === ""}
+                      disabled={isSavingCorrection || historyCorrectionDraft.length === 0}
                       onClick={saveSegmentCorrection}
                     >
                       {isSavingCorrection ? "Saving" : "Save correction"}
@@ -2752,38 +2740,6 @@ function DatasetView({
         )}
       </section>
     </>
-  );
-}
-
-function CorrectionKindSelect({
-  value,
-  onChange,
-  disabled,
-  ariaLabel,
-}: {
-  value: CorrectionKind | "";
-  onChange: (kind: CorrectionKind | "") => void;
-  disabled?: boolean;
-  ariaLabel: string;
-}): React.ReactElement {
-  return (
-    <select
-      aria-label={ariaLabel}
-      className="secondary-select"
-      value={value}
-      disabled={disabled}
-      onChange={(event) => {
-        const next = event.currentTarget.value;
-        onChange(isCorrectionKind(next) ? next : "");
-      }}
-    >
-      <option value="">Correction kind…</option>
-      {CORRECTION_KIND_OPTIONS.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
   );
 }
 

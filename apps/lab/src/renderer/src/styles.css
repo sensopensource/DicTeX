@@ -93,6 +93,13 @@
   background: var(--bg);
 }
 
+.corpus-correction-input {
+  margin: 0 0 var(--space-1);
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
 .corpus-provenance dt,
 .corpus-layer h3 {
   margin: 0 0 0.2rem;
