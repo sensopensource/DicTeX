@@ -28,6 +28,23 @@ call]** (left as a written proposal for a human to greenlight).
 - Cross-checked every `className` in the JSX against the CSS to find classes that
   were used but unstyled (drift introduced by the #77/#83 slimming).
 
+## Shell du Lab : Corpus, Experiments et Results (#136)
+
+Le shell du Lab est désormais organisé selon trois tâches stables, sans modifier
+les événements, les corrections, les splits ni les exports :
+
+- **Corpus** rassemble les segments DicTeX, leurs corrections, le choix du
+  split, le builder manuel à deux couches et l’export Dataset ;
+- **Experiments** contient la sélection des candidats STT, le split évalué et
+  le lancement des benchmarks ;
+- **Results** sert à choisir un run, en lire le statut et les résumés, consulter
+  l’analyse d’erreurs, sélectionner un candidat et exporter un run pour un LLM.
+
+La navigation reste locale en React, compacte et sans bibliothèque de routage.
+Les actions et états existants sont conservés : le changement porte uniquement
+sur leur regroupement visible, afin de préparer le benchmark du normaliseur sans
+figer le Lab dans le seul vocabulaire STT.
+
 ---
 
 ## Findings and what was done
