@@ -45,6 +45,40 @@ Les actions et états existants sont conservés : le changement porte uniquement
 sur leur regroupement visible, afin de préparer le benchmark du normaliseur sans
 figer le Lab dans le seul vocabulaire STT.
 
+## Séparer le lancement de son résultat (#138)
+
+#136 avait regroupé les panneaux ; #138 sépare enfin les deux temps qu'ils
+mélangeaient. Un protocole se **prépare** ; un run est **figé**. Tant que les
+deux vivaient dans la même page, l'utilisateur devait deviner quels panneaux
+décrivaient ce qu'il allait lancer et lesquels décrivaient ce qui avait déjà été
+mesuré — et cette page ne pouvait pas accueillir proprement une seconde étape
+expérimentale.
+
+- **`Experiments` n'est plus qu'un formulaire de lancement**, en cinq étapes
+  ordonnées : étape, dataset, candidats, protocole, lancement. Le protocole est
+  annoncé avant l'exécution — entrée `audio`, cible `Layer 1 (acoustic)`,
+  transformation `audio -> Layer 1`, split, membres évaluables, identité complète
+  des candidats — parce qu'une expérience qui n'annonce pas ce qu'elle mesure
+  n'est pas relisible ensuite.
+- **Une étape non exécutable est annoncée, jamais offerte.** Normaliseur et bout
+  en bout apparaissent désactivés avec leur raison : un contrôle qui ne fait rien
+  est un mensonge que l'utilisateur ne découvre qu'après avoir cliqué.
+- **`Results` est la lecture d'un run et rien d'autre.** Il ne porte aucun
+  contrôle de lancement, et tout ce qu'il affiche — snapshot, candidats, sorties,
+  erreurs, résumé, export — est dérivé des seuls événements de ce run.
+- **Un lancement réussi devient son résultat** : le run créé est sélectionné et
+  la vue suit, au lieu de laisser l'utilisateur retrouver son propre run dans une
+  liste.
+- **Le rejeu ad hoc disparaît.** `Benchmark latest` produisait des résultats sans
+  run, donc sans snapshot ni référence explicable, qui ressortaient ensuite comme
+  de faux résultats « legacy ». Une mesure appartient désormais toujours à un run.
+
+Le risque réel de cette vue n'est pas un mauvais clic mais un clic **périmé** :
+deux sélections en vol, la plus lente qui atterrit en dernier, et un run affiché
+contre le snapshot d'un autre. La sélection est donc une petite machine à états
+pure (`resultsSelection.ts`) : choisir un run efface immédiatement les données du
+précédent, et une réponse qui ne répond plus à la sélection courante est ignorée.
+
 ---
 
 ## Findings and what was done

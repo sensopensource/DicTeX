@@ -9,16 +9,14 @@ import type {
   ReconstructedSegment,
   SttBenchmarkCandidateSummary,
   SttBenchmarkCandidateSummaryResponse,
-  SttBenchmarkResponse,
-  SttBenchmarkResult,
+  SttBenchmarkRunDetail,
   SttBenchmarkRunListEntry,
-  SttBenchmarkRunSummaryResponse,
   SttBenchmarkRunExportSummary,
   SttBenchmarkSetMembershipRequest,
   SttBenchmarkSetMembershipResponse,
+  SttBenchmarkSetPreview,
   SttBenchmarkSetProgress,
   SttBenchmarkSetRunResponse,
-  SttBenchmarkSetSegmentOutcome,
   SttBenchmarkSetSplit,
   SttCandidateSelectionRequest,
   SttCandidateSelectionResponse,
@@ -28,7 +26,6 @@ import type {
 } from "@dictex/shared";
 import {
   formatAudioDuration,
-  formatBatchOutcomeScore,
   formatCandidateIdentity,
   formatCandidateIdentityKey,
   formatCorrectionKind,
@@ -45,11 +42,31 @@ import {
   ERROR_CATEGORY_LABELS,
   formatBenchmarkCandidate,
   formatBenchmarkCandidateKey,
+  toSttBenchmarkRunOutcomes,
   type CandidateErrorAnalysis,
   type SttErrorCategory,
 } from "@dictex/shared/errorAnalysis";
 import { diffWords, type DiffSegment } from "@dictex/shared/textDiff";
 import { planCorpusCorrection, type CorpusCorrectionLayer } from "./corpusCorrection.js";
+import {
+  EXPERIMENT_STAGES,
+  getExperimentStage,
+  MAX_EXPERIMENT_CANDIDATES,
+  planExperimentLaunch,
+  planLaunchNavigation,
+  type ExperimentLaunchPlan,
+  type ExperimentStage,
+  type ExperimentStageId,
+} from "./experimentProtocol.js";
+import {
+  applyLegacySummary,
+  applyResultsError,
+  applyRunDetail,
+  emptyResultsState,
+  LEGACY_RUN_KEY,
+  startResultsSelection,
+  type ResultsState,
+} from "./resultsSelection.js";
 import type {
   DatasetBuilderSaveRequest,
   DatasetBuilderSaveResponse,
@@ -85,13 +102,12 @@ type LabApi = {
   markSttBenchmarkSetMembership: (
     membership: SttBenchmarkSetMembershipRequest,
   ) => Promise<SttBenchmarkSetMembershipResponse>;
-  runLatestSttBenchmark: () => Promise<SttBenchmarkResponse>;
-  runSegmentSttBenchmark: (audioSegment: AudioSegmentRecord) => Promise<SttBenchmarkResponse>;
+  previewSttBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkSetPreview>;
   runSetSttBenchmark: (
     split: SttBenchmarkSetSplit,
-    candidates?: BenchmarkCandidateIdentity[],
+    candidates: BenchmarkCandidateIdentity[],
   ) => Promise<SttBenchmarkSetRunResponse>;
-  summarizeSttBenchmarkRun: (runId: string) => Promise<SttBenchmarkRunSummaryResponse | null>;
+  getSttBenchmarkRunDetail: (runId: string) => Promise<SttBenchmarkRunDetail | null>;
   listSttBenchmarkRuns: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkRunListEntry[]>;
   exportSttBenchmarkRun: (runId: string) => Promise<SttBenchmarkRunExportSummary>;
   summarizeLegacySttBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkCandidateSummaryResponse>;
@@ -117,29 +133,6 @@ declare global {
 }
 
 type View = "corpus" | "experiments" | "results";
-type BenchmarkViewMode = "experiments" | "results";
-
-/**
- * Sentinel selector value for the legacy (pre-#122, no run_id) summary, kept
- * distinct from any tracked run id (which is always `run_…`).
- */
-const LEGACY_RUN_KEY = "legacy";
-
-/**
- * Normalized summary the panel renders (issue #122): a tracked run's per-run
- * summary or the legacy no-run-id summary, both flattened to one shape so two
- * runs of the same split stay separate and legacy results are clearly flagged.
- */
-type BenchmarkSummaryView = {
-  kind: "run" | "legacy";
-  runId: string | null;
-  split: SttBenchmarkSetSplit;
-  createdAt: string | null;
-  totalSegments: number;
-  candidates: SttBenchmarkCandidateSummary[];
-  done: number | null;
-  failed: number | null;
-};
 
 function formatRunOption(run: SttBenchmarkRunListEntry): string {
   const when = run.createdAt ? formatTimestamp(run.createdAt) : run.runId;
@@ -214,12 +207,15 @@ function App(): React.ReactElement {
   const [historyCorrectionTarget, setHistoryCorrectionTarget] = useState<HistoryCorrectionTarget | null>(null);
   const [historyCorrectionDraft, setHistoryCorrectionDraft] = useState("");
 
-  // Benchmark.
-  const [benchmarkSource, setBenchmarkSource] = useState<AudioSegmentRecord | null>(null);
-  const [benchmarkResults, setBenchmarkResults] = useState<SttBenchmarkResult[]>([]);
-  const [benchmarkError, setBenchmarkError] = useState("");
-  const [isBenchmarking, setIsBenchmarking] = useState(false);
+  // Experiments: the protocol to launch. Never a past result (issue #138).
   const [candidateCatalog, setCandidateCatalog] = useState<SttBenchmarkCandidateOption[]>([]);
+  const [experimentStageId, setExperimentStageId] = useState<ExperimentStageId>("stt");
+  const [experimentSplit, setExperimentSplit] = useState<SttBenchmarkSetSplit>("validation");
+  // What a run over the experiment's split would freeze right now: read from the
+  // same snapshot builder the launch uses, so the announced member count is the
+  // one that will actually run.
+  const [setPreview, setSetPreview] = useState<SttBenchmarkSetPreview | null>(null);
+  const [previewError, setPreviewError] = useState("");
   // STT prompt variant creation (issue #121): a valid new variant becomes a new
   // faster-whisper benchmark candidate. The candidate selector (issue #126)
   // surfaces this as a secondary "New prompt" action beside the prompt choice,
@@ -231,19 +227,16 @@ function App(): React.ReactElement {
   const [isCreatingPromptVariant, setIsCreatingPromptVariant] = useState(false);
   const [createPromptVariantError, setCreatePromptVariantError] = useState("");
   const [selectedCandidates, setSelectedCandidates] = useState<BenchmarkCandidateIdentity[]>([]);
-  const [benchmarkTargetKey, setBenchmarkTargetKey] = useState<string | null>(null);
-  const [batchSplit, setBatchSplit] = useState<SttBenchmarkSetSplit>("validation");
-  const [batchProgress, setBatchProgress] = useState<SttBenchmarkSetProgress | null>(null);
-  const [batchOutcomes, setBatchOutcomes] = useState<SttBenchmarkSetSegmentOutcome[]>([]);
-  const [batchError, setBatchError] = useState("");
-  const [isRunningBatch, setIsRunningBatch] = useState(false);
-  const [candidateSummary, setCandidateSummary] = useState<BenchmarkSummaryView | null>(null);
-  const [summaryError, setSummaryError] = useState("");
-  const [isSummarizing, setIsSummarizing] = useState(false);
-  // Tracked benchmark runs of the current split (issue #122), newest first,
-  // plus which run (or the legacy bucket) the summary panel is showing.
+  const [launchProgress, setLaunchProgress] = useState<SttBenchmarkSetProgress | null>(null);
+  const [launchError, setLaunchError] = useState("");
+  const [isRunningExperiment, setIsRunningExperiment] = useState(false);
+
+  // Results: one immutable run at a time (issue #138). The split here is a
+  // browse filter over the run list — it never drives a launch, so changing it
+  // cannot change what a pending experiment would run.
+  const [resultsSplit, setResultsSplit] = useState<SttBenchmarkSetSplit>("validation");
   const [runList, setRunList] = useState<SttBenchmarkRunListEntry[]>([]);
-  const [selectedRunKey, setSelectedRunKey] = useState<string | null>(null);
+  const [results, setResults] = useState<ResultsState>(emptyResultsState);
   const [runExportSummary, setRunExportSummary] = useState<SttBenchmarkRunExportSummary | null>(null);
   const [runExportError, setRunExportError] = useState("");
   const [isExportingRun, setIsExportingRun] = useState(false);
@@ -282,12 +275,25 @@ function App(): React.ReactElement {
   const [datasetExportError, setDatasetExportError] = useState("");
   const [isExportingDataset, setIsExportingDataset] = useState(false);
 
-  const errorAnalysis = useMemo(() => analyzeBatchErrors(batchOutcomes), [batchOutcomes]);
+  // The error analysis of the SELECTED run, derived from that run's own logged
+  // outputs — not from the in-memory outcomes of the last launch, which would
+  // show the newest run's errors under an older run's header.
+  const errorAnalysis = useMemo(
+    () => (results.detail ? analyzeBatchErrors(toSttBenchmarkRunOutcomes(results.detail)) : []),
+    [results.detail],
+  );
+  const experimentStage = getExperimentStage(experimentStageId);
+  const launchPlan = planExperimentLaunch({
+    stage: experimentStage,
+    preview: setPreview,
+    candidates: selectedCandidates,
+    isRunning: isRunningExperiment,
+  });
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const audioObjectUrlRef = useRef("");
 
   useEffect(() => {
-    const removeBatchProgressListener = window.dictexLab.onBatchBenchmarkProgress(setBatchProgress);
+    const removeBatchProgressListener = window.dictexLab.onBatchBenchmarkProgress(setLaunchProgress);
     void refreshDataFolder();
     void window.dictexLab
       .getSttBenchmarkCandidates()
@@ -310,18 +316,14 @@ function App(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Tracked benchmark runs are per-split (issue #122): when the split changes,
-  // reload its run list and drop the summary/selection so a stale run's numbers
-  // never show under a different split.
+  // Tracked runs are per-split (issue #122): the Results split filter reloads
+  // its own run list. It never touches the current selection here — the launch
+  // path sets the split and selects its new run in one go, and a human split
+  // change clears the selection in the handler itself.
   useEffect(() => {
     let cancelled = false;
-    setCandidateSummary(null);
-    setSelectedRunKey(null);
-    setSummaryError("");
-    setRunExportSummary(null);
-    setRunExportError("");
     window.dictexLab
-      .listSttBenchmarkRuns(batchSplit)
+      .listSttBenchmarkRuns(resultsSplit)
       .then((runs) => {
         if (!cancelled) {
           setRunList(runs);
@@ -335,7 +337,35 @@ function App(): React.ReactElement {
     return () => {
       cancelled = true;
     };
-  }, [batchSplit]);
+  }, [resultsSplit]);
+
+  // The evaluable member count a launch would freeze. Refreshed when the
+  // experiment's split changes and whenever the view comes back to Experiments,
+  // since qualifying a Layer 1 or assigning a split happens over in Corpus.
+  useEffect(() => {
+    if (view !== "experiments") {
+      return;
+    }
+
+    let cancelled = false;
+    window.dictexLab
+      .previewSttBenchmarkSet(experimentSplit)
+      .then((preview) => {
+        if (!cancelled) {
+          setSetPreview(preview);
+          setPreviewError("");
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setSetPreview(null);
+          setPreviewError(error instanceof Error ? error.message : "Could not read the corpus for this split");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [view, experimentSplit]);
 
   // Layer 2 prefill (#101): debounced so it fires once Layer 1 settles rather
   // than on every keystroke. Reads the SOURCE folder's dictionary/rules
@@ -596,143 +626,97 @@ function App(): React.ReactElement {
     }
   }
 
-  async function runSegmentSttBenchmark(segment: ReconstructedSegment): Promise<void> {
-    const segmentKey = getSegmentKey(segment);
-    setBenchmarkError("");
-    setIsBenchmarking(true);
-    setBenchmarkTargetKey(segmentKey);
+  async function refreshRunList(split: SttBenchmarkSetSplit): Promise<void> {
     try {
-      const result = await window.dictexLab.runSegmentSttBenchmark({
-        sessionId: segment.sessionId,
-        segmentId: segment.segmentId,
-        audioRef: segment.audioRef,
-      });
-      setBenchmarkSource(result.source);
-      setBenchmarkResults(result.results);
-      setView("experiments");
-    } catch (benchmarkRunError) {
-      setBenchmarkError(benchmarkRunError instanceof Error ? benchmarkRunError.message : "Benchmark failed");
-    } finally {
-      setIsBenchmarking(false);
-      setBenchmarkTargetKey(null);
-    }
-  }
-
-  async function runLatestSttBenchmark(): Promise<void> {
-    setBenchmarkError("");
-    setIsBenchmarking(true);
-    setBenchmarkTargetKey("latest");
-    try {
-      const result = await window.dictexLab.runLatestSttBenchmark();
-      setBenchmarkSource(result.source);
-      setBenchmarkResults(result.results);
-    } catch (benchmarkRunError) {
-      setBenchmarkError(benchmarkRunError instanceof Error ? benchmarkRunError.message : "Benchmark failed");
-    } finally {
-      setIsBenchmarking(false);
-      setBenchmarkTargetKey(null);
-    }
-  }
-
-  async function refreshRunList(): Promise<SttBenchmarkRunListEntry[]> {
-    try {
-      const runs = await window.dictexLab.listSttBenchmarkRuns(batchSplit);
-      setRunList(runs);
-      return runs;
+      setRunList(await window.dictexLab.listSttBenchmarkRuns(split));
     } catch {
       setRunList([]);
-      return [];
     }
   }
 
-  async function runSetSttBenchmark(): Promise<string | null> {
-    if (selectedCandidates.length < 1) {
-      setBatchError("Check at least one STT candidate to run");
-      return null;
+  /**
+   * Selects one result: a tracked run (its own snapshot, outputs, failures and
+   * summary) or the legacy bucket of pre-#122 results. The state machine in
+   * ./resultsSelection.ts drops the previous run's data before the new data
+   * lands and discards a response that no longer answers the current selection,
+   * so a run can never be rendered against another run's snapshot.
+   */
+  async function selectResult(key: string): Promise<void> {
+    setResults(startResultsSelection(key));
+    setRunExportSummary(null);
+    setRunExportError("");
+
+    try {
+      if (key === LEGACY_RUN_KEY) {
+        const legacy = await window.dictexLab.summarizeLegacySttBenchmarkSet(resultsSplit);
+        setResults((current) => applyLegacySummary(current, key, legacy));
+        return;
+      }
+
+      const detail = await window.dictexLab.getSttBenchmarkRunDetail(key);
+      setResults((current) => applyRunDetail(current, key, detail));
+    } catch (detailError) {
+      const message = detailError instanceof Error ? detailError.message : "Could not read this run";
+      setResults((current) => applyResultsError(current, key, message));
+    }
+  }
+
+  function selectResultsSplit(split: SttBenchmarkSetSplit): void {
+    setResultsSplit(split);
+    // A run belongs to one split, so browsing another split cannot keep showing
+    // the previous run's numbers.
+    setResults(emptyResultsState());
+    setRunExportSummary(null);
+    setRunExportError("");
+  }
+
+  /**
+   * Launches the announced protocol, then follows the run it created: the new
+   * run becomes the selected result and the Lab moves to Results. The launch
+   * form keeps no trace of it — a result lives with its run, never in the form
+   * that started it.
+   */
+  async function launchExperiment(): Promise<void> {
+    if (!launchPlan.canLaunch) {
+      return;
     }
 
-    setBatchError("");
-    setBatchOutcomes([]);
-    setBatchProgress(null);
-    setIsRunningBatch(true);
+    const split = experimentSplit;
+    setLaunchError("");
+    setLaunchProgress(null);
+    setIsRunningExperiment(true);
+
+    let response: SttBenchmarkSetRunResponse | null = null;
     try {
-      const response = await window.dictexLab.runSetSttBenchmark(batchSplit, selectedCandidates);
-      setBatchOutcomes(response.outcomes);
-      setNotice(
-        `Benchmarked ${formatBenchmarkSetSplit(response.split)}: ${response.done} done, ${response.failed} failed of ${response.total}`,
-      );
-      return response.runId;
+      response = await window.dictexLab.runSetSttBenchmark(split, selectedCandidates);
     } catch (runError) {
-      setBatchError(runError instanceof Error ? runError.message : "Benchmark set run failed");
-      return null;
+      setLaunchError(runError instanceof Error ? runError.message : "The experiment failed to run");
     } finally {
-      setIsRunningBatch(false);
+      setIsRunningExperiment(false);
     }
-  }
 
-  // Summarizes exactly one tracked run (or the legacy no-run-id bucket, issue
-  // #122), so two runs of the same split never blur together.
-  async function summarizeRun(target: string): Promise<void> {
-    setSummaryError("");
-    setSelectedRunKey(target);
-    setIsSummarizing(true);
-    try {
-      if (target === LEGACY_RUN_KEY) {
-        const response = await window.dictexLab.summarizeLegacySttBenchmarkSet(batchSplit);
-        setCandidateSummary({
-          kind: "legacy",
-          runId: null,
-          split: response.split,
-          createdAt: null,
-          totalSegments: response.totalSegments,
-          candidates: response.candidates,
-          done: null,
-          failed: null,
-        });
-        return;
-      }
-
-      const response = await window.dictexLab.summarizeSttBenchmarkRun(target);
-      if (!response) {
-        setCandidateSummary(null);
-        setSummaryError("This run no longer exists in the Lab event log.");
-        return;
-      }
-      setCandidateSummary({
-        kind: "run",
-        runId: response.runId,
-        split: response.split,
-        createdAt: response.createdAt,
-        totalSegments: response.totalSegments,
-        candidates: response.candidates,
-        done: response.done,
-        failed: response.failed,
-      });
-    } catch (summaryRunError) {
-      setSummaryError(summaryRunError instanceof Error ? summaryRunError.message : "Benchmark summary failed");
-    } finally {
-      setIsSummarizing(false);
+    const navigation = planLaunchNavigation(response?.runId ?? null);
+    if (navigation.view !== "results") {
+      return;
     }
-  }
 
-  // "Summarize by candidate" button: (re)summarize the currently selected run,
-  // else the newest run, else the legacy bucket.
-  async function summarizeCandidates(): Promise<void> {
-    const runs = await refreshRunList();
-    const target = selectedRunKey ?? (runs.length > 0 ? runs[0].runId : LEGACY_RUN_KEY);
-    await summarizeRun(target);
+    setResultsSplit(split);
+    await refreshRunList(split);
+    await selectResult(navigation.selectedRunKey);
+    setLaunchProgress(null);
+    setView("results");
   }
 
   async function exportSelectedRun(): Promise<void> {
-    if (!selectedRunKey || selectedRunKey === LEGACY_RUN_KEY) {
-      setRunExportError("Select a completed tracked run before exporting.");
+    const runId = results.detail?.runId;
+    if (!runId) {
       return;
     }
 
     setRunExportError("");
     setIsExportingRun(true);
     try {
-      setRunExportSummary(await window.dictexLab.exportSttBenchmarkRun(selectedRunKey));
+      setRunExportSummary(await window.dictexLab.exportSttBenchmarkRun(runId));
     } catch (exportError) {
       setRunExportSummary(null);
       setRunExportError(exportError instanceof Error ? exportError.message : "Benchmark run export failed");
@@ -749,14 +733,6 @@ function App(): React.ReactElement {
       await window.dictexLab.openExportFolder(runExportSummary.exportDir);
     } catch {
       // Non-fatal convenience.
-    }
-  }
-
-  async function runAnalysis(): Promise<void> {
-    const runId = await runSetSttBenchmark();
-    await refreshRunList();
-    if (runId) {
-      await summarizeRun(runId);
     }
   }
 
@@ -921,34 +897,50 @@ function App(): React.ReactElement {
     }
   }
 
-  if (view === "experiments" || view === "results") {
+  if (view === "experiments") {
     return (
       <main className="app-shell">
-        <BenchmarkView
-          mode={view}
-          benchmarkSource={benchmarkSource}
-          benchmarkResults={benchmarkResults}
-          benchmarkError={benchmarkError}
-          isBenchmarking={isBenchmarking}
+        <ExperimentsView
           candidateCatalog={candidateCatalog}
-          benchmarkTargetKey={benchmarkTargetKey}
-          runLatestSttBenchmark={() => void runLatestSttBenchmark()}
-          isRunningBatch={isRunningBatch}
-          batchSplit={batchSplit}
-          setBatchSplit={setBatchSplit}
-          batchProgress={batchProgress}
-          batchOutcomes={batchOutcomes}
-          batchError={batchError}
+          stageId={experimentStageId}
+          setStageId={setExperimentStageId}
+          stage={experimentStage}
+          split={experimentSplit}
+          setSplit={setExperimentSplit}
+          preview={setPreview}
+          previewError={previewError}
           selectedCandidates={selectedCandidates}
           setSelectedCandidates={setSelectedCandidates}
-          runAnalysis={() => void runAnalysis()}
-          candidateSummary={candidateSummary}
-          summaryError={summaryError}
-          isSummarizing={isSummarizing}
-          summarizeCandidates={() => void summarizeCandidates()}
+          launchPlan={launchPlan}
+          isRunning={isRunningExperiment}
+          launchProgress={launchProgress}
+          launchError={launchError}
+          launchExperiment={() => void launchExperiment()}
+          newPromptVariantName={newPromptVariantName}
+          setNewPromptVariantName={setNewPromptVariantName}
+          newPromptVariantDisplayName={newPromptVariantDisplayName}
+          setNewPromptVariantDisplayName={setNewPromptVariantDisplayName}
+          newPromptVariantText={newPromptVariantText}
+          setNewPromptVariantText={setNewPromptVariantText}
+          isCreatingPromptVariant={isCreatingPromptVariant}
+          createPromptVariantError={createPromptVariantError}
+          createPromptVariant={createPromptVariant}
+          onNavigate={setView}
+        />
+      </main>
+    );
+  }
+
+  if (view === "results") {
+    return (
+      <main className="app-shell">
+        <ResultsView
+          split={resultsSplit}
+          setSplit={selectResultsSplit}
           runList={runList}
-          selectedRunKey={selectedRunKey}
-          summarizeRun={(target) => void summarizeRun(target)}
+          results={results}
+          selectResult={(key) => void selectResult(key)}
+          errorAnalysis={errorAnalysis}
           runExportSummary={runExportSummary}
           runExportError={runExportError}
           isExportingRun={isExportingRun}
@@ -963,16 +955,6 @@ function App(): React.ReactElement {
           selectionError={selectionError}
           isSelectingCandidateKey={isSelectingCandidateKey}
           selectCandidate={(candidate) => void selectCandidate(candidate)}
-          errorAnalysis={errorAnalysis}
-          newPromptVariantName={newPromptVariantName}
-          setNewPromptVariantName={setNewPromptVariantName}
-          newPromptVariantDisplayName={newPromptVariantDisplayName}
-          setNewPromptVariantDisplayName={setNewPromptVariantDisplayName}
-          newPromptVariantText={newPromptVariantText}
-          setNewPromptVariantText={setNewPromptVariantText}
-          isCreatingPromptVariant={isCreatingPromptVariant}
-          createPromptVariantError={createPromptVariantError}
-          createPromptVariant={createPromptVariant}
           onNavigate={setView}
         />
       </main>
@@ -1404,56 +1386,6 @@ function SegmentsView({
   );
 }
 
-type BenchmarkViewProps = {
-  mode: BenchmarkViewMode;
-  benchmarkSource: AudioSegmentRecord | null;
-  benchmarkResults: SttBenchmarkResult[];
-  benchmarkError: string;
-  isBenchmarking: boolean;
-  candidateCatalog: SttBenchmarkCandidateOption[];
-  benchmarkTargetKey: string | null;
-  runLatestSttBenchmark: () => void;
-  isRunningBatch: boolean;
-  batchSplit: SttBenchmarkSetSplit;
-  setBatchSplit: (split: SttBenchmarkSetSplit) => void;
-  batchProgress: SttBenchmarkSetProgress | null;
-  batchOutcomes: SttBenchmarkSetSegmentOutcome[];
-  batchError: string;
-  selectedCandidates: BenchmarkCandidateIdentity[];
-  setSelectedCandidates: React.Dispatch<React.SetStateAction<BenchmarkCandidateIdentity[]>>;
-  runAnalysis: () => void;
-  candidateSummary: BenchmarkSummaryView | null;
-  summaryError: string;
-  isSummarizing: boolean;
-  summarizeCandidates: () => void;
-  runList: SttBenchmarkRunListEntry[];
-  selectedRunKey: string | null;
-  summarizeRun: (target: string) => void;
-  runExportSummary: SttBenchmarkRunExportSummary | null;
-  runExportError: string;
-  isExportingRun: boolean;
-  exportSelectedRun: () => void;
-  openRunExportFolder: () => void;
-  currentSelection: SttCandidateSelectionResponse | null;
-  selectionReasonDraft: string;
-  setSelectionReasonDraft: (value: string) => void;
-  selectionError: string;
-  isSelectingCandidateKey: string;
-  selectCandidate: (candidate: BenchmarkCandidateIdentity) => void;
-  errorAnalysis: CandidateErrorAnalysis[];
-  newPromptVariantName: string;
-  setNewPromptVariantName: (value: string) => void;
-  newPromptVariantDisplayName: string;
-  setNewPromptVariantDisplayName: (value: string) => void;
-  newPromptVariantText: string;
-  setNewPromptVariantText: (value: string) => void;
-  isCreatingPromptVariant: boolean;
-  createPromptVariantError: string;
-  /** Resolves to whether creation succeeded, so the inline form collapses only then. */
-  createPromptVariant: () => Promise<boolean>;
-  onNavigate: (view: View) => void;
-};
-
 /**
  * A chosen model in the progressive candidate selector (issue #126): a
  * provider + model pair, compared by value so no fragile separator-joined
@@ -1500,7 +1432,8 @@ function runtimeLabelsFor(options: SttBenchmarkCandidateOption[]): string[] {
   return seen;
 }
 
-const MAX_CANDIDATES = 3;
+/** The 1-3 rule of #126, kept in one place with the launch gate that enforces it. */
+const MAX_CANDIDATES = MAX_EXPERIMENT_CANDIDATES;
 
 type CandidateSelectorProps = {
   catalog: SttBenchmarkCandidateOption[];
@@ -1900,31 +1833,501 @@ function CandidateSelector({
   );
 }
 
-function BenchmarkView({
-  mode,
-  benchmarkSource,
-  benchmarkResults,
-  benchmarkError,
-  isBenchmarking,
+type ExperimentsViewProps = {
+  candidateCatalog: SttBenchmarkCandidateOption[];
+  stageId: ExperimentStageId;
+  setStageId: (stageId: ExperimentStageId) => void;
+  stage: ExperimentStage;
+  split: SttBenchmarkSetSplit;
+  setSplit: (split: SttBenchmarkSetSplit) => void;
+  preview: SttBenchmarkSetPreview | null;
+  previewError: string;
+  selectedCandidates: BenchmarkCandidateIdentity[];
+  setSelectedCandidates: React.Dispatch<React.SetStateAction<BenchmarkCandidateIdentity[]>>;
+  launchPlan: ExperimentLaunchPlan;
+  isRunning: boolean;
+  launchProgress: SttBenchmarkSetProgress | null;
+  launchError: string;
+  launchExperiment: () => void;
+  newPromptVariantName: string;
+  setNewPromptVariantName: (value: string) => void;
+  newPromptVariantDisplayName: string;
+  setNewPromptVariantDisplayName: (value: string) => void;
+  newPromptVariantText: string;
+  setNewPromptVariantText: (value: string) => void;
+  isCreatingPromptVariant: boolean;
+  createPromptVariantError: string;
+  /** Resolves to whether creation succeeded, so the inline form collapses only then. */
+  createPromptVariant: () => Promise<boolean>;
+  onNavigate: (view: View) => void;
+};
+
+/**
+ * The launch form (issue #138): stage, dataset, candidates, protocol, launch —
+ * in that order, and nothing else. No summary, no past run, no historical
+ * result: what an experiment produced belongs to its run, in Results. The
+ * protocol states what will be consumed (`audio`), what it is scored against
+ * (`Layer 1`), over which split and on how many members, BEFORE anything runs.
+ */
+function ExperimentsView({
   candidateCatalog,
-  benchmarkTargetKey,
-  runLatestSttBenchmark,
-  isRunningBatch,
-  batchSplit,
-  setBatchSplit,
-  batchProgress,
-  batchOutcomes,
-  batchError,
+  stageId,
+  setStageId,
+  stage,
+  split,
+  setSplit,
+  preview,
+  previewError,
   selectedCandidates,
   setSelectedCandidates,
-  runAnalysis,
-  candidateSummary,
-  summaryError,
-  isSummarizing,
-  summarizeCandidates,
+  launchPlan,
+  isRunning,
+  launchProgress,
+  launchError,
+  launchExperiment,
+  newPromptVariantName,
+  setNewPromptVariantName,
+  newPromptVariantDisplayName,
+  setNewPromptVariantDisplayName,
+  newPromptVariantText,
+  setNewPromptVariantText,
+  isCreatingPromptVariant,
+  createPromptVariantError,
+  createPromptVariant,
+  onNavigate,
+}: ExperimentsViewProps): React.ReactElement {
+  const optionByKey = useMemo(() => {
+    const map = new Map<string, SttBenchmarkCandidateOption>();
+    for (const option of candidateCatalog) {
+      map.set(formatCandidateIdentityKey(option.candidate), option);
+    }
+    return map;
+  }, [candidateCatalog]);
+
+  return (
+    <>
+      <header className="titlebar">
+        <div>
+          <p className="eyebrow">DicTeX Lab</p>
+          <h1>Experiments</h1>
+        </div>
+        <div className="status-pill">{stage.flow}</div>
+      </header>
+
+      <LabNavigation activeView="experiments" onNavigate={onNavigate} />
+
+      <section className="panel experiment-panel" aria-busy={isRunning}>
+        <div className="panel-header">
+          <div>
+            <h2>New experiment</h2>
+            <p>Announce the protocol, then launch it. The run it creates opens in Results.</p>
+          </div>
+        </div>
+
+        <ol className="experiment-flow">
+          <li className="experiment-step">
+            <div className="experiment-step-head">
+              <span className="experiment-step-index">1</span>
+              <h3>Stage</h3>
+            </div>
+            <div className="stage-choices">
+              {EXPERIMENT_STAGES.map((option) => (
+                <button
+                  aria-pressed={option.id === stageId}
+                  className={`stage-choice ${option.id === stageId ? "stage-choice-selected" : ""}`}
+                  disabled={!option.available || isRunning}
+                  key={option.id}
+                  title={option.unavailableReason ?? undefined}
+                  onClick={() => setStageId(option.id)}
+                >
+                  <strong>{option.label}</strong>
+                  <span className="stage-choice-flow">{option.flow}</span>
+                  {!option.available && <span className="stage-choice-unavailable">Not runnable yet</span>}
+                </button>
+              ))}
+            </div>
+            <p className="experiment-step-note">
+              Only the STT stage runs today. The others are announced, never offered as a control that would do nothing.
+            </p>
+          </li>
+
+          <li className="experiment-step">
+            <div className="experiment-step-head">
+              <span className="experiment-step-index">2</span>
+              <h3>Dataset</h3>
+            </div>
+            <div className="actions">
+              <select
+                aria-label="Split to evaluate"
+                className="secondary-select"
+                disabled={isRunning}
+                value={split}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  if (isSttBenchmarkSetSplit(value)) {
+                    setSplit(value);
+                  }
+                }}
+              >
+                <option value="validation">Validation</option>
+                <option value="test_frozen">Test frozen</option>
+              </select>
+              <span className="experiment-step-note">
+                {preview
+                  ? `${preview.evaluableSegments} evaluable member${preview.evaluableSegments === 1 ? "" : "s"} · ${preview.scorableSegments} with a Layer 1 reference`
+                  : "Reading the corpus…"}
+              </span>
+            </div>
+            {previewError && <pre className="error">{previewError}</pre>}
+            <p className="experiment-step-note">
+              A member is a corpus segment of this split with real audio. Validation is what a decision is made on; test frozen
+              is read once, after every decision.
+            </p>
+          </li>
+
+          <li className="experiment-step">
+            <div className="experiment-step-head">
+              <span className="experiment-step-index">3</span>
+              <h3>Candidates</h3>
+            </div>
+            <CandidateSelector
+              catalog={candidateCatalog}
+              selectedCandidates={selectedCandidates}
+              setSelectedCandidates={setSelectedCandidates}
+              disabled={isRunning}
+              newPromptVariantName={newPromptVariantName}
+              setNewPromptVariantName={setNewPromptVariantName}
+              newPromptVariantDisplayName={newPromptVariantDisplayName}
+              setNewPromptVariantDisplayName={setNewPromptVariantDisplayName}
+              newPromptVariantText={newPromptVariantText}
+              setNewPromptVariantText={setNewPromptVariantText}
+              isCreatingPromptVariant={isCreatingPromptVariant}
+              createPromptVariantError={createPromptVariantError}
+              createPromptVariant={createPromptVariant}
+            />
+          </li>
+
+          <li className="experiment-step">
+            <div className="experiment-step-head">
+              <span className="experiment-step-index">4</span>
+              <h3>Protocol</h3>
+            </div>
+            <dl className="protocol-summary">
+              <div>
+                <dt>Stage</dt>
+                <dd>{stage.label}</dd>
+              </div>
+              <div>
+                <dt>Input</dt>
+                <dd>{stage.input}</dd>
+              </div>
+              <div>
+                <dt>Target</dt>
+                <dd>{stage.target}</dd>
+              </div>
+              <div>
+                <dt>Transform</dt>
+                <dd className="protocol-flow">{stage.flow}</dd>
+              </div>
+              <div>
+                <dt>Dataset</dt>
+                <dd>{formatBenchmarkSetSplit(split)}</dd>
+              </div>
+              <div>
+                <dt>Evaluable members</dt>
+                <dd>
+                  {preview
+                    ? `${preview.evaluableSegments} (${preview.scorableSegments} scorable)`
+                    : "reading the corpus…"}
+                </dd>
+              </div>
+              <div className="protocol-summary-wide">
+                <dt>Snapshot</dt>
+                <dd>
+                  Frozen automatically when the run starts: its members and their Layer 1 references are copied into the run,
+                  so a later correction never moves its numbers. There is nothing to create by hand.
+                </dd>
+              </div>
+              <div className="protocol-summary-wide">
+                <dt>Candidates</dt>
+                <dd>
+                  {selectedCandidates.length === 0 ? (
+                    "None selected yet."
+                  ) : (
+                    <ul className="protocol-candidates">
+                      {selectedCandidates.map((candidate) => {
+                        const option = optionByKey.get(formatCandidateIdentityKey(candidate));
+                        return (
+                          <li className="protocol-candidate" key={formatCandidateIdentityKey(candidate)}>
+                            <strong>{option ? option.modelLabel : candidate.model}</strong>
+                            {option && (
+                              <span className="protocol-candidate-meta">
+                                {option.runtimeLabel} · {option.variantLabel}
+                              </span>
+                            )}
+                            <code className="protocol-candidate-identity">{formatCandidateIdentity(candidate)}</code>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </dd>
+              </div>
+            </dl>
+          </li>
+
+          <li className="experiment-step">
+            <div className="experiment-step-head">
+              <span className="experiment-step-index">5</span>
+              <h3>Launch</h3>
+            </div>
+            <div className="actions">
+              <button className="secondary-button" disabled={!launchPlan.canLaunch} onClick={launchExperiment}>
+                {isRunning ? "Running" : "Run experiment"}
+              </button>
+              {launchPlan.blockedReason && <span className="experiment-step-note">{launchPlan.blockedReason}</span>}
+            </div>
+
+            {launchPlan.warning && <p className="notice">{launchPlan.warning}</p>}
+            {launchError && <pre className="error">{launchError}</pre>}
+
+            {launchProgress && (
+              <div className="batch-progress">
+                <div className="batch-progress-counts">
+                  <span className="batch-count">Total {launchProgress.total}</span>
+                  <span className="batch-count">Queued {launchProgress.queued}</span>
+                  <span className="batch-count">Running {launchProgress.running}</span>
+                  <span className="batch-count batch-count-done">Done {launchProgress.done}</span>
+                  <span className="batch-count batch-count-failed">Failed {launchProgress.failed}</span>
+                </div>
+                {launchProgress.current && (
+                  <p
+                    className="batch-current"
+                    title={`${launchProgress.current.sessionId} / ${launchProgress.current.segmentId}`}
+                  >
+                    Running {launchProgress.current.sessionId} / {launchProgress.current.segmentId}
+                  </p>
+                )}
+                {launchProgress.lastOutcome && (
+                  <p
+                    className={
+                      launchProgress.lastOutcome.status === "failed" ? "batch-last batch-last-failed" : "batch-last"
+                    }
+                  >
+                    {launchProgress.lastOutcome.status === "failed"
+                      ? `Failed ${launchProgress.lastOutcome.sessionId} / ${launchProgress.lastOutcome.segmentId}: ${launchProgress.lastOutcome.error ?? "error"}`
+                      : `Done ${launchProgress.lastOutcome.sessionId} / ${launchProgress.lastOutcome.segmentId} (${launchProgress.lastOutcome.resultCount} candidates)`}
+                  </p>
+                )}
+              </div>
+            )}
+          </li>
+        </ol>
+      </section>
+    </>
+  );
+}
+
+type CandidateSummaryTableProps = {
+  candidates: SttBenchmarkCandidateSummary[];
+  currentSelection: SttCandidateSelectionResponse | null;
+  selectionReasonDraft: string;
+  setSelectionReasonDraft: (value: string) => void;
+  selectionError: string;
+  isSelectingCandidateKey: string;
+  selectCandidate: (candidate: BenchmarkCandidateIdentity) => void;
+};
+
+/**
+ * The per-candidate table, shared by a tracked run and the legacy bucket. It is
+ * read-only about the measurement itself; the only thing it writes is the human
+ * choice of a base candidate (`stt_candidate_selection`), which is a reading of
+ * results, not a launch.
+ */
+function CandidateSummaryTable({
+  candidates,
+  currentSelection,
+  selectionReasonDraft,
+  setSelectionReasonDraft,
+  selectionError,
+  isSelectingCandidateKey,
+  selectCandidate,
+}: CandidateSummaryTableProps): React.ReactElement {
+  return (
+    <>
+      <p className="empty-state">
+        {currentSelection
+          ? `Selected base candidate: ${formatCandidateIdentity(currentSelection.candidate)} — ${currentSelection.selectionReason}${
+              currentSelection.createdAt ? ` (${formatTimestamp(currentSelection.createdAt)})` : ""
+            }. The highest-quality candidate is not always best if latency is poor — compare mean latency before selecting.`
+          : "No base STT candidate selected yet. The highest-quality candidate is not always best if latency is poor — compare mean latency before selecting."}
+      </p>
+
+      <div className="actions">
+        <input
+          aria-label="Candidate selection reason"
+          className="reason-input"
+          placeholder="Selection reason (e.g. best quality/latency tradeoff on validation)"
+          value={selectionReasonDraft}
+          onChange={(event) => setSelectionReasonDraft(event.target.value)}
+        />
+      </div>
+
+      {selectionError && <pre className="error">{selectionError}</pre>}
+
+      <div className="summary-table-scroll">
+        <table className="summary-table">
+          <thead>
+            <tr>
+              <th>Candidate</th>
+              <th>Segments</th>
+              <th className="metric-primary">Mean acoustic CER</th>
+              <th className="metric-primary">Median acoustic CER</th>
+              <th>Mean strict CER</th>
+              <th>Median strict CER</th>
+              <th>Mean WER</th>
+              <th>Median WER</th>
+              <th>Mean latency</th>
+              <th>Missing</th>
+              <th>Selection</th>
+            </tr>
+          </thead>
+          <tbody>
+            {candidates.map((summary) => {
+              const candidateKey = formatCandidateIdentityKey(summary.candidate);
+              const isSelected =
+                currentSelection !== null && formatCandidateIdentityKey(currentSelection.candidate) === candidateKey;
+
+              return (
+                <tr key={candidateKey}>
+                  <td title={candidateKey}>
+                    {formatCandidateIdentity(summary.candidate)}
+                    {isSelected && <span className="selected-badge">Selected</span>}
+                  </td>
+                  <td>{summary.resultCount}</td>
+                  <td className="metric-primary">{formatRatePercent(summary.meanAcousticCer)}</td>
+                  <td className="metric-primary">{formatRatePercent(summary.medianAcousticCer)}</td>
+                  <td>{formatRatePercent(summary.meanCer)}</td>
+                  <td>{formatRatePercent(summary.medianCer)}</td>
+                  <td>{formatRatePercent(summary.meanWer)}</td>
+                  <td>{formatRatePercent(summary.medianWer)}</td>
+                  <td>{formatLatency(summary.meanLatencyMs === null ? null : Math.round(summary.meanLatencyMs))}</td>
+                  <td>{summary.missingCount}</td>
+                  <td>
+                    <button
+                      className="secondary-button"
+                      disabled={isSelectingCandidateKey === candidateKey}
+                      onClick={() => selectCandidate(summary.candidate)}
+                    >
+                      {isSelectingCandidateKey === candidateKey ? "Saving" : isSelected ? "Reselect" : "Select"}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+/** One card per snapshot member: what the run measured, and what each candidate answered. */
+function RunSegmentOutputs({ segments }: { segments: SttBenchmarkRunDetail["segments"] }): React.ReactElement {
+  if (segments.length === 0) {
+    return <p className="empty-state">This run's snapshot is empty.</p>;
+  }
+
+  return (
+    <div className="batch-outcomes">
+      {segments.map((segment) => (
+        <article
+          className={segment.status === "failed" ? "batch-outcome batch-outcome-failed" : "batch-outcome"}
+          key={`${segment.sessionId}/${segment.segmentId}`}
+        >
+          <div className="batch-outcome-heading">
+            <strong title={`${segment.sessionId} / ${segment.segmentId}`}>
+              {segment.sessionId} / {segment.segmentId}
+            </strong>
+            <em
+              className={`batch-outcome-state ${
+                segment.status === "failed"
+                  ? "batch-outcome-state-failed"
+                  : segment.status === "missing"
+                    ? "batch-outcome-state-missing"
+                    : ""
+              }`}
+            >
+              {segment.status}
+            </em>
+          </div>
+
+          <p className="run-reference" title={segment.referenceTranscript ?? undefined}>
+            Layer 1 reference: {segment.referenceTranscript ?? "none — this member is not scored"}
+          </p>
+
+          {segment.error && <p className="batch-outcome-error">{segment.error}</p>}
+          {segment.status === "missing" && (
+            <p className="batch-outcome-meta">Never executed in this run — no output was logged for it.</p>
+          )}
+
+          {segment.results.length > 0 && (
+            <ul className="run-outputs">
+              {segment.results.map((result) => (
+                <li className="run-output" key={formatBenchmarkCandidateKey(result)}>
+                  <span className="run-output-candidate" title={formatBenchmarkCandidate(result)}>
+                    {formatBenchmarkCandidate(result)}
+                  </span>
+                  <p className="run-output-transcript">{result.transcript || "-"}</p>
+                  <span className="run-output-meta">
+                    {formatLatency(result.transcriptionDurationMs)}
+                    {result.score ? ` · ${formatScore(result.score)}` : " · no reference, no score"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+type ResultsViewProps = {
+  split: SttBenchmarkSetSplit;
+  setSplit: (split: SttBenchmarkSetSplit) => void;
+  runList: SttBenchmarkRunListEntry[];
+  results: ResultsState;
+  selectResult: (key: string) => void;
+  errorAnalysis: CandidateErrorAnalysis[];
+  runExportSummary: SttBenchmarkRunExportSummary | null;
+  runExportError: string;
+  isExportingRun: boolean;
+  exportSelectedRun: () => void;
+  openRunExportFolder: () => void;
+  currentSelection: SttCandidateSelectionResponse | null;
+  selectionReasonDraft: string;
+  setSelectionReasonDraft: (value: string) => void;
+  selectionError: string;
+  isSelectingCandidateKey: string;
+  selectCandidate: (candidate: BenchmarkCandidateIdentity) => void;
+  onNavigate: (view: View) => void;
+};
+
+/**
+ * The result side (issue #138): pick a run, read the run. Its status, its frozen
+ * snapshot, the candidates it launched, their outputs, its errors, its summary
+ * and its LLM export — all read from that one run's own events. There is no
+ * launch control here: an experiment is announced and started in Experiments, so
+ * a run can never be re-run from the page that displays it.
+ */
+function ResultsView({
+  split,
+  setSplit,
   runList,
-  selectedRunKey,
-  summarizeRun,
+  results,
+  selectResult,
+  errorAnalysis,
   runExportSummary,
   runExportError,
   isExportingRun,
@@ -1936,223 +2339,56 @@ function BenchmarkView({
   selectionError,
   isSelectingCandidateKey,
   selectCandidate,
-  errorAnalysis,
-  newPromptVariantName,
-  setNewPromptVariantName,
-  newPromptVariantDisplayName,
-  setNewPromptVariantDisplayName,
-  newPromptVariantText,
-  setNewPromptVariantText,
-  isCreatingPromptVariant,
-  createPromptVariantError,
-  createPromptVariant,
   onNavigate,
-}: BenchmarkViewProps): React.ReactElement {
-  const selectedTrackedRun = runList.find((run) => run.runId === selectedRunKey) ?? null;
+}: ResultsViewProps): React.ReactElement {
+  const detail = results.detail;
+  const legacySummary = results.legacySummary;
 
   return (
     <>
       <header className="titlebar">
         <div>
           <p className="eyebrow">DicTeX Lab</p>
-          <h1>{mode === "experiments" ? "Experiments" : "Results"}</h1>
+          <h1>Results</h1>
         </div>
       </header>
 
-      <LabNavigation activeView={mode} onNavigate={onNavigate} />
+      <LabNavigation activeView="results" onNavigate={onNavigate} />
 
-      {mode === "experiments" && <>
-      <section className="panel benchmark-panel" aria-busy={isBenchmarking}>
+      <section className="panel results-panel" aria-busy={results.isLoading}>
         <div className="panel-header">
           <div>
-            <h2>STT benchmark</h2>
-            <p title={benchmarkSource ? `${benchmarkSource.sessionId} / ${benchmarkSource.segmentId}` : undefined}>
-              {benchmarkSource ? `${benchmarkSource.sessionId} / ${benchmarkSource.segmentId}` : "Latest audio segment"}
+            <h2>STT runs</h2>
+            <p>
+              Every tracked run over {formatBenchmarkSetSplit(split)}. A run keeps the snapshot it measured — reopening one
+              shows exactly what it saw.
             </p>
-            {candidateCatalog.length > 0 && (
-              <p className="benchmark-models">
-                {candidateCatalog.length} candidate{candidateCatalog.length === 1 ? "" : "s"} available
-              </p>
-            )}
-          </div>
-          <button
-            className="secondary-button"
-            disabled={isBenchmarking || isRunningBatch}
-            onClick={runLatestSttBenchmark}
-          >
-            {benchmarkTargetKey === "latest" ? "Running" : "Benchmark latest"}
-          </button>
-        </div>
-
-        {benchmarkError && <pre className="error">{benchmarkError}</pre>}
-
-        {benchmarkResults.length > 0 ? (
-          <div className="benchmark-results">
-            {benchmarkResults.map((result) => (
-              <article className="benchmark-result" key={formatBenchmarkCandidateKey(result)}>
-                <div className="benchmark-meta">
-                  <strong title={formatBenchmarkCandidate(result)}>{formatBenchmarkCandidate(result)}</strong>
-                  <span>{result.sttLanguage}</span>
-                  <span>{formatAudioDuration(result.audioDurationSeconds)}</span>
-                  <span>{result.transcriptionDurationMs} ms</span>
-                  {result.score && <span title={`Reference: ${result.score.referenceTranscript}`}>{formatScore(result.score)}</span>}
-                </div>
-                <p>{result.transcript || "-"}</p>
-              </article>
-            ))}
-          </div>
-        ) : (
-          !isBenchmarking &&
-          !benchmarkError && (
-            <p className="empty-state">
-              No results yet — click "Benchmark latest" above, or run a benchmark from a segment in Segments.
-            </p>
-          )
-        )}
-      </section>
-
-      <section className="panel benchmark-panel" aria-busy={isRunningBatch}>
-        <div className="panel-header">
-          <div>
-            <h2>Benchmark set</h2>
-            <p>Compare 1-3 STT candidates over every corrected {formatBenchmarkSetSplit(batchSplit)} segment</p>
           </div>
           <div className="batch-controls">
             <select
-              aria-label="STT benchmark set split to run"
+              aria-label="Split to browse"
               className="secondary-select"
-              disabled={isRunningBatch || isBenchmarking}
-              value={batchSplit}
+              disabled={results.isLoading}
+              value={split}
               onChange={(event) => {
-                const split = event.currentTarget.value;
-                if (isSttBenchmarkSetSplit(split)) {
-                  setBatchSplit(split);
+                const value = event.currentTarget.value;
+                if (isSttBenchmarkSetSplit(value)) {
+                  setSplit(value);
                 }
               }}
             >
-              <option value="test_frozen">Test frozen</option>
               <option value="validation">Validation</option>
+              <option value="test_frozen">Test frozen</option>
             </select>
-            <button
-              className="secondary-button"
-              disabled={isRunningBatch || isBenchmarking || selectedCandidates.length < 1}
-              onClick={runAnalysis}
-            >
-              {isRunningBatch ? "Running" : "Run analysis"}
-            </button>
-          </div>
-        </div>
-
-        <CandidateSelector
-          catalog={candidateCatalog}
-          selectedCandidates={selectedCandidates}
-          setSelectedCandidates={setSelectedCandidates}
-          disabled={isRunningBatch || isBenchmarking}
-          newPromptVariantName={newPromptVariantName}
-          setNewPromptVariantName={setNewPromptVariantName}
-          newPromptVariantDisplayName={newPromptVariantDisplayName}
-          setNewPromptVariantDisplayName={setNewPromptVariantDisplayName}
-          newPromptVariantText={newPromptVariantText}
-          setNewPromptVariantText={setNewPromptVariantText}
-          isCreatingPromptVariant={isCreatingPromptVariant}
-          createPromptVariantError={createPromptVariantError}
-          createPromptVariant={createPromptVariant}
-        />
-
-        {batchError && <pre className="error">{batchError}</pre>}
-
-        {batchProgress && (
-          <div className="batch-progress">
-            <div className="batch-progress-counts">
-              <span className="batch-count">Total {batchProgress.total}</span>
-              <span className="batch-count">Queued {batchProgress.queued}</span>
-              <span className="batch-count">Running {batchProgress.running}</span>
-              <span className="batch-count batch-count-done">Done {batchProgress.done}</span>
-              <span className="batch-count batch-count-failed">Failed {batchProgress.failed}</span>
-            </div>
-            {batchProgress.current && (
-              <p className="batch-current" title={`${batchProgress.current.sessionId} / ${batchProgress.current.segmentId}`}>
-                Running {batchProgress.current.sessionId} / {batchProgress.current.segmentId}
-              </p>
-            )}
-            {batchProgress.lastOutcome && (
-              <p className={batchProgress.lastOutcome.status === "failed" ? "batch-last batch-last-failed" : "batch-last"}>
-                {batchProgress.lastOutcome.status === "failed"
-                  ? `Failed ${batchProgress.lastOutcome.sessionId} / ${batchProgress.lastOutcome.segmentId}: ${batchProgress.lastOutcome.error ?? "error"}`
-                  : `Done ${batchProgress.lastOutcome.sessionId} / ${batchProgress.lastOutcome.segmentId} (${batchProgress.lastOutcome.resultCount} candidates)`}
-              </p>
-            )}
-          </div>
-        )}
-
-        {batchProgress && batchProgress.total === 0 && !isRunningBatch && (
-          <p className="empty-state">
-            No corrected segments in {formatBenchmarkSetSplit(batchSplit)} yet. Correct segments and set their split in
-            Segments first.
-          </p>
-        )}
-
-        {!batchProgress && batchOutcomes.length === 0 && !batchError && !isRunningBatch && (
-          <p className="empty-state">
-            No batch run yet — check 1-3 candidates above and click "Run analysis".
-          </p>
-        )}
-
-        {batchOutcomes.length > 0 && (
-          <div className="batch-outcomes">
-            {batchOutcomes.map((outcome) => (
-              <article
-                className={outcome.status === "failed" ? "batch-outcome batch-outcome-failed" : "batch-outcome"}
-                key={`${outcome.sessionId}/${outcome.segmentId}`}
-              >
-                <div className="batch-outcome-heading">
-                  <strong title={`${outcome.sessionId} / ${outcome.segmentId}`}>
-                    {outcome.sessionId} / {outcome.segmentId}
-                  </strong>
-                  <em
-                    className={
-                      outcome.status === "failed" ? "batch-outcome-state batch-outcome-state-failed" : "batch-outcome-state"
-                    }
-                  >
-                    {outcome.status}
-                  </em>
-                </div>
-                {outcome.status === "failed" ? (
-                  <p className="batch-outcome-error">{outcome.error ?? "Benchmark failed"}</p>
-                ) : (
-                  <p className="batch-outcome-meta">
-                    {outcome.results.length} candidates{formatBatchOutcomeScore(outcome)}
-                  </p>
-                )}
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-
-      </>}
-
-      {mode === "results" && <>
-      <section className="panel summary-panel">
-        <div className="panel-header">
-          <div>
-            <h2>Candidate summary</h2>
-            <p>
-              One benchmark run over {formatBenchmarkSetSplit(batchSplit)}, scored against its frozen acoustic
-              snapshot. Acoustic CER (the highlighted metric) ignores sentence punctuation; strict CER counts it.
-              CER/WER: lower is better.
-            </p>
-          </div>
-          <div className="batch-controls">
             <select
-              aria-label="Benchmark run to summarize"
+              aria-label="Benchmark run to read"
               className="secondary-select"
-              disabled={isSummarizing}
-              value={selectedRunKey ?? ""}
+              disabled={results.isLoading}
+              value={results.selectedKey ?? ""}
               onChange={(event) => {
                 const value = event.currentTarget.value;
                 if (value) {
-                  summarizeRun(value);
+                  selectResult(value);
                 }
               }}
             >
@@ -2166,201 +2402,232 @@ function BenchmarkView({
               ))}
               <option value={LEGACY_RUN_KEY}>Legacy (pre-run results)</option>
             </select>
-            <button className="secondary-button" disabled={isSummarizing} onClick={summarizeCandidates}>
-              {isSummarizing ? "Summarizing" : "Summarize by candidate"}
-            </button>
-            <button
-              className="secondary-button"
-              disabled={!selectedTrackedRun?.finished || isExportingRun}
-              onClick={exportSelectedRun}
-            >
-              {isExportingRun ? "Exporting" : "Export for LLM"}
-            </button>
           </div>
         </div>
 
-        {summaryError && <pre className="error">{summaryError}</pre>}
-        {runExportError && <pre className="error">{runExportError}</pre>}
-
-        {runExportSummary && (
-          <div className="dataset-export-summary">
-            <p>
-              Exported {runExportSummary.segmentCount} acoustic segment
-              {runExportSummary.segmentCount === 1 ? "" : "s"} and {runExportSummary.candidateCount} candidate
-              {runExportSummary.candidateCount === 1 ? "" : "s"} for run {runExportSummary.runId}. Missing outputs: {" "}
-              {runExportSummary.missingOutputs}.
-            </p>
-            <p className="dataset-export-path" title={runExportSummary.exportDir}>
-              {runExportSummary.exportDir}
-            </p>
-            <button className="secondary-button" onClick={openRunExportFolder}>
-              Open export folder
-            </button>
-          </div>
-        )}
-
-        <p className="empty-state">
-          {currentSelection
-            ? `Selected base candidate: ${formatCandidateIdentity(currentSelection.candidate)} — ${currentSelection.selectionReason}${
-                currentSelection.createdAt ? ` (${formatTimestamp(currentSelection.createdAt)})` : ""
-              }. The highest-quality candidate is not always best if latency is poor — compare mean latency before selecting.`
-            : "No base STT candidate selected yet. The highest-quality candidate is not always best if latency is poor — compare mean latency before selecting."}
-        </p>
-
-        {candidateSummary && candidateSummary.kind === "run" && (
+        {results.error && <pre className="error">{results.error}</pre>}
+        {results.isLoading && <p className="empty-state">Reading the run…</p>}
+        {!results.isLoading && results.selectedKey === null && (
           <p className="empty-state">
-            Run {candidateSummary.createdAt ? formatTimestamp(candidateSummary.createdAt) : candidateSummary.runId} ·{" "}
-            {candidateSummary.totalSegments} acoustic segment{candidateSummary.totalSegments === 1 ? "" : "s"}
-            {candidateSummary.done !== null && candidateSummary.failed !== null
-              ? ` · ${candidateSummary.done} done, ${candidateSummary.failed} failed`
-              : " · run not finished"}
-            . This run's snapshot is frozen — later re-corrections or split changes never alter its numbers.
+            {runList.length > 0
+              ? "Pick a run to read its snapshot, its candidates and their outputs."
+              : `No tracked run over ${formatBenchmarkSetSplit(split)} yet — announce and launch one in Experiments.`}
           </p>
         )}
+      </section>
 
-        {candidateSummary && candidateSummary.kind === "legacy" && (
-          <p className="empty-state">
-            Legacy results recorded before run tracking (no run id). Shown for reference; never attached to a run.
-          </p>
-        )}
+      {detail && (
+        <>
+          <section className="panel run-panel">
+            <div className="panel-header">
+              <div>
+                <h2>Run {formatTimestamp(detail.createdAt)}</h2>
+                <p className="benchmark-models" title={detail.runId}>
+                  {detail.runId}
+                </p>
+              </div>
+              <em
+                className={`run-status ${
+                  detail.finished
+                    ? (detail.failed ?? 0) > 0
+                      ? "run-status-failed"
+                      : "run-status-done"
+                    : "run-status-unfinished"
+                }`}
+              >
+                {detail.finished ? `${detail.done ?? 0} done · ${detail.failed ?? 0} failed` : "unfinished"}
+              </em>
+            </div>
 
-        {!candidateSummary && (
-          <p className="empty-state">Run analysis above, or pick a run to summarize, to see per-candidate scores.</p>
-        )}
+            <dl className="run-provenance">
+              <div>
+                <dt>Stage</dt>
+                <dd>
+                  {detail.stage} · {detail.datasetKind}
+                </dd>
+              </div>
+              <div>
+                <dt>Dataset</dt>
+                <dd>{formatBenchmarkSetSplit(detail.split)}</dd>
+              </div>
+              <div>
+                <dt>Snapshot</dt>
+                <dd>
+                  {detail.segments.length} member{detail.segments.length === 1 ? "" : "s"}, frozen at launch
+                </dd>
+              </div>
+              <div>
+                <dt>Finished</dt>
+                <dd>{detail.finishedAt ? formatTimestamp(detail.finishedAt) : "-"}</dd>
+              </div>
+            </dl>
 
-        {candidateSummary && candidateSummary.split !== batchSplit && (
-          <p className="empty-state">
-            Showing {formatBenchmarkSetSplit(candidateSummary.split)}; switch the split back to see its runs.
-          </p>
-        )}
+            <section className="run-candidates">
+              <h3>Candidates launched</h3>
+              <ul className="protocol-candidates">
+                {detail.candidates.map((candidate) => (
+                  <li className="protocol-candidate" key={formatCandidateIdentityKey(candidate)}>
+                    <strong>{candidate.model}</strong>
+                    <span className="protocol-candidate-meta">{candidate.promptVariant ?? "baseline — no prompt"}</span>
+                    <code className="protocol-candidate-identity">{formatCandidateIdentity(candidate)}</code>
+                  </li>
+                ))}
+              </ul>
+            </section>
 
-        {candidateSummary && candidateSummary.totalSegments === 0 && (
-          <p className="empty-state">
-            {candidateSummary.kind === "run"
-              ? "This run had no acoustic segments in its snapshot."
-              : `No legacy results in ${formatBenchmarkSetSplit(candidateSummary.split)}.`}
-          </p>
-        )}
-
-        {candidateSummary && candidateSummary.totalSegments > 0 && candidateSummary.candidates.length === 0 && (
-          <p className="empty-state">
-            {candidateSummary.kind === "run"
-              ? "No candidate produced a result in this run yet."
-              : "No legacy candidate results in this split."}
-          </p>
-        )}
-
-        {candidateSummary && candidateSummary.candidates.length > 0 && (
-          <>
             <div className="actions">
-              <input
-                aria-label="Candidate selection reason"
-                className="reason-input"
-                placeholder="Selection reason (e.g. best quality/latency tradeoff on test_frozen)"
-                value={selectionReasonDraft}
-                onChange={(event) => setSelectionReasonDraft(event.target.value)}
+              <button
+                className="secondary-button"
+                disabled={!detail.finished || isExportingRun}
+                title={detail.finished ? undefined : "Only a finished run can be exported"}
+                onClick={exportSelectedRun}
+              >
+                {isExportingRun ? "Exporting" : "Export for LLM"}
+              </button>
+            </div>
+
+            {runExportError && <pre className="error">{runExportError}</pre>}
+
+            {runExportSummary && (
+              <div className="dataset-export-summary">
+                <p>
+                  Exported {runExportSummary.segmentCount} acoustic segment
+                  {runExportSummary.segmentCount === 1 ? "" : "s"} and {runExportSummary.candidateCount} candidate
+                  {runExportSummary.candidateCount === 1 ? "" : "s"} for run {runExportSummary.runId}. Missing outputs:{" "}
+                  {runExportSummary.missingOutputs}.
+                </p>
+                <p className="dataset-export-path" title={runExportSummary.exportDir}>
+                  {runExportSummary.exportDir}
+                </p>
+                <button className="secondary-button" onClick={openRunExportFolder}>
+                  Open export folder
+                </button>
+              </div>
+            )}
+          </section>
+
+          <section className="panel summary-panel">
+            <div className="panel-header">
+              <div>
+                <h2>Candidate summary</h2>
+                <p>
+                  Scored against this run's frozen acoustic snapshot. Acoustic CER (the highlighted metric) ignores sentence
+                  punctuation; strict CER counts it. CER/WER: lower is better.
+                </p>
+              </div>
+            </div>
+
+            {detail.summary.length === 0 ? (
+              <p className="empty-state">No candidate logged an output in this run.</p>
+            ) : (
+              <CandidateSummaryTable
+                candidates={detail.summary}
+                currentSelection={currentSelection}
+                selectionReasonDraft={selectionReasonDraft}
+                setSelectionReasonDraft={setSelectionReasonDraft}
+                selectionError={selectionError}
+                isSelectingCandidateKey={isSelectingCandidateKey}
+                selectCandidate={selectCandidate}
               />
+            )}
+          </section>
+
+          <section className="panel benchmark-panel">
+            <div className="panel-header">
+              <div>
+                <h2>Outputs</h2>
+                <p>What each candidate answered for each member of this run's frozen snapshot</p>
+              </div>
+            </div>
+            <RunSegmentOutputs segments={detail.segments} />
+          </section>
+
+          <section className="panel error-analysis-panel">
+            <div className="panel-header">
+              <div>
+                <h2>Errors</h2>
+                <p>This run's failures, plus heuristic diagnostics over its outputs — not a training signal</p>
+              </div>
             </div>
 
-            {selectionError && <pre className="error">{selectionError}</pre>}
+            {detail.failures.length > 0 && (
+              <ul className="run-failures">
+                {detail.failures.map((failure) => (
+                  <li className="batch-outcome-error" key={`${failure.sessionId}/${failure.segmentId}`}>
+                    {failure.sessionId} / {failure.segmentId}: {failure.error}
+                  </li>
+                ))}
+              </ul>
+            )}
 
-            <div className="summary-table-scroll">
-            <table className="summary-table">
-              <thead>
-                <tr>
-                  <th>Candidate</th>
-                  <th>Segments</th>
-                  <th className="metric-primary">Mean acoustic CER</th>
-                  <th className="metric-primary">Median acoustic CER</th>
-                  <th>Mean strict CER</th>
-                  <th>Median strict CER</th>
-                  <th>Mean WER</th>
-                  <th>Median WER</th>
-                  <th>Mean latency</th>
-                  <th>Missing</th>
-                  <th>Selection</th>
-                </tr>
-              </thead>
-              <tbody>
-                {candidateSummary.candidates.map((summary) => {
-                  const candidateKey = formatCandidateIdentityKey(summary.candidate);
-                  const isSelected =
-                    currentSelection !== null && formatCandidateIdentityKey(currentSelection.candidate) === candidateKey;
-
-                  return (
-                    <tr key={candidateKey}>
-                      <td title={candidateKey}>
-                        {formatCandidateIdentity(summary.candidate)}
-                        {isSelected && <span className="selected-badge">Selected</span>}
-                      </td>
-                      <td>{summary.resultCount}</td>
-                      <td className="metric-primary">{formatRatePercent(summary.meanAcousticCer)}</td>
-                      <td className="metric-primary">{formatRatePercent(summary.medianAcousticCer)}</td>
-                      <td>{formatRatePercent(summary.meanCer)}</td>
-                      <td>{formatRatePercent(summary.medianCer)}</td>
-                      <td>{formatRatePercent(summary.meanWer)}</td>
-                      <td>{formatRatePercent(summary.medianWer)}</td>
-                      <td>{formatLatency(summary.meanLatencyMs === null ? null : Math.round(summary.meanLatencyMs))}</td>
-                      <td>{summary.missingCount}</td>
-                      <td>
-                        <button
-                          className="secondary-button"
-                          disabled={isSelectingCandidateKey === candidateKey}
-                          onClick={() => selectCandidate(summary.candidate)}
+            {errorAnalysis.length === 0 ? (
+              <p className="empty-state">
+                {detail.failures.length > 0
+                  ? "No heuristic diagnostic beyond the failures above."
+                  : "No error flagged in this run's outputs."}
+              </p>
+            ) : (
+              <div className="error-analysis-candidates">
+                {errorAnalysis.map((analysis) => (
+                  <article className="error-analysis-candidate" key={analysis.candidateKey}>
+                    <strong title={analysis.candidateLabel}>{analysis.candidateLabel}</strong>
+                    <div className="error-category-badges">
+                      {(Object.keys(analysis.categoryCounts) as SttErrorCategory[])
+                        .filter((category) => analysis.categoryCounts[category] > 0)
+                        .map((category) => (
+                          <span className="error-category-badge" key={category}>
+                            {ERROR_CATEGORY_LABELS[category]} · {analysis.categoryCounts[category]}
+                          </span>
+                        ))}
+                    </div>
+                    <ul className="error-examples">
+                      {analysis.examples.map((example, index) => (
+                        <li
+                          className="error-example"
+                          key={`${example.sessionId}/${example.segmentId}/${example.category}/${index}`}
                         >
-                          {isSelectingCandidateKey === candidateKey ? "Saving" : isSelected ? "Reselect" : "Select"}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          <span className="error-example-heading">
+                            {ERROR_CATEGORY_LABELS[example.category]} · {example.sessionId} / {example.segmentId}
+                          </span>
+                          <span className="error-example-detail">{example.detail}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      {legacySummary && (
+        <section className="panel summary-panel">
+          <div className="panel-header">
+            <div>
+              <h2>Legacy results</h2>
+              <p>
+                Results recorded before run tracking (no run id, no snapshot). Kept readable, never attached to a run and
+                never re-scored.
+              </p>
             </div>
-          </>
-        )}
-      </section>
-
-      <section className="panel error-analysis-panel">
-        <div className="panel-header">
-          <div>
-            <h2>Error analysis</h2>
-            <p>Heuristic diagnostics from the last benchmark set run, not a training signal</p>
           </div>
-        </div>
 
-        {errorAnalysis.length === 0 ? (
-          <p className="empty-state">Run analysis above to see per-candidate error diagnostics.</p>
-        ) : (
-          <div className="error-analysis-candidates">
-            {errorAnalysis.map((analysis) => (
-              <article className="error-analysis-candidate" key={analysis.candidateKey}>
-                <strong title={analysis.candidateLabel}>{analysis.candidateLabel}</strong>
-                <div className="error-category-badges">
-                  {(Object.keys(analysis.categoryCounts) as SttErrorCategory[])
-                    .filter((category) => analysis.categoryCounts[category] > 0)
-                    .map((category) => (
-                      <span className="error-category-badge" key={category}>
-                        {ERROR_CATEGORY_LABELS[category]} · {analysis.categoryCounts[category]}
-                      </span>
-                    ))}
-                </div>
-                <ul className="error-examples">
-                  {analysis.examples.map((example, index) => (
-                    <li className="error-example" key={`${example.sessionId}/${example.segmentId}/${example.category}/${index}`}>
-                      <span className="error-example-heading">
-                        {ERROR_CATEGORY_LABELS[example.category]} · {example.sessionId} / {example.segmentId}
-                      </span>
-                      <span className="error-example-detail">{example.detail}</span>
-                    </li>
-                  ))}
-                </ul>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-      </>}
+          {legacySummary.candidates.length === 0 ? (
+            <p className="empty-state">No legacy result in {formatBenchmarkSetSplit(legacySummary.split)}.</p>
+          ) : (
+            <CandidateSummaryTable
+              candidates={legacySummary.candidates}
+              currentSelection={currentSelection}
+              selectionReasonDraft={selectionReasonDraft}
+              setSelectionReasonDraft={setSelectionReasonDraft}
+              selectionError={selectionError}
+              isSelectingCandidateKey={isSelectingCandidateKey}
+              selectCandidate={selectCandidate}
+            />
+          )}
+        </section>
+      )}
     </>
   );
 }

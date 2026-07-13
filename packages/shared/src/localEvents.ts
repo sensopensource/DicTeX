@@ -314,6 +314,13 @@ export type SttScoredBenchmarkResult = {
   scoreMetric: string | null;
   scoreValue: number | null;
   referenceTranscript: string | null;
+  /** Engine metadata as logged, so a run's outputs can be re-read in full
+   * without a second pass over the events (issue #138). Null on a result whose
+   * event omitted the field. */
+  sttEngine: string | null;
+  sttModel: string | null;
+  sttLanguage: string | null;
+  audioDurationSeconds: number | null;
 };
 
 export type SttCandidateSelection = {
@@ -730,6 +737,10 @@ function collectLatestBenchmarkResults(
         scoreMetric: getString(event.score_metric),
         scoreValue: getNumber(event.score_value),
         referenceTranscript: getString(event.score_reference_transcript),
+        sttEngine: getString(event.stt_engine),
+        sttModel: getString(event.stt_model),
+        sttLanguage: getString(event.stt_language),
+        audioDurationSeconds: getNumber(event.audio_duration_seconds),
       },
     });
   });

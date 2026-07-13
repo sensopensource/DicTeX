@@ -852,8 +852,10 @@ La navigation actuelle est séparée par application :
   diagnostic minimal, historique repliable avec copie/réécoute et bouton
   **Open Lab**. Pas de correction, de banc d'essai ou d'ensemble de données dans
   cette application.
-- **DicTeX Lab** possède les vues Segments, Benchmark et Dataset, chacune
-  limitée à sa tâche.
+- **DicTeX Lab** possède les vues Corpus, Experiments et Results (#136), chacune
+  limitée à sa tâche : le corpus et sa qualification, le formulaire de lancement
+  d'une expérience, la lecture d'un run figé (#138). Un lancement ne montre
+  jamais un résultat, et un résultat n'offre jamais de contrôle de lancement.
 
 Ne pas réintroduire dans DicTeX ce que le pivot #75–#78 a extrait. Le caractère
 compact, sobre et utilitaire s'applique aux deux applications.

@@ -1,3 +1,4 @@
+import type { SttBenchmarkRunDetail } from "./benchmarkRunDetail.js";
 import type { SttBenchmarkResult, SttBenchmarkSetSegmentOutcome } from "./benchmarkTypes.js";
 
 /**
@@ -66,6 +67,28 @@ const FRENCH_MATH_KEYWORDS = [
   "racine carree",
   "au carre",
 ];
+
+/**
+ * A tracked run's executed segments, in the same shape a live run reports
+ * (issue #138), so the analysis below reads a historical run exactly as it reads
+ * the run that just finished — the Results view never needs the in-memory
+ * outcomes of the last launch. A snapshot member the run never executed carries
+ * no output and is left out rather than counted as a failure.
+ *
+ * Type-only dependency on the run detail, so this module stays browser-safe.
+ */
+export function toSttBenchmarkRunOutcomes(detail: SttBenchmarkRunDetail): SttBenchmarkSetSegmentOutcome[] {
+  return detail.segments
+    .filter((segment) => segment.status !== "missing")
+    .map((segment) => ({
+      sessionId: segment.sessionId,
+      segmentId: segment.segmentId,
+      audioRef: segment.audioRef,
+      status: segment.status === "failed" ? ("failed" as const) : ("done" as const),
+      error: segment.error,
+      results: segment.results,
+    }));
+}
 
 export function formatBenchmarkCandidate(result: SttBenchmarkResult): string {
   return `${result.stage}:${result.provider}/${result.model}${result.variant ? ` (${result.variant})` : ""}`;

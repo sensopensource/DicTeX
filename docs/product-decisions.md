@@ -63,6 +63,26 @@ deux », et un nombre compact perd souvent sa formulation orale exacte.
 L'orthographe des nombres composés, la ponctuation et les disfluences restent
 ouvertes dans `docs/questions-de-conventions.md`.
 
+## DEC-RUN-001 — Une mesure STT appartient toujours à un run — 13 juillet 2026
+
+**Statut : active.** Toute mesure STT du Lab naît d'un run tracé : un
+`stt_benchmark_run_started` qui fige le snapshot acoustique et les candidats
+lancés, des `stt_benchmark_result` portant son `run_id`, puis un
+`stt_benchmark_run_finished`. Un résultat sans run n'est plus produit.
+
+Conséquence, appliquée par #138 : le rejeu ad hoc du Lab (`Benchmark latest` et
+le benchmark d'un segment isolé) est **retiré**. Il écrivait des
+`stt_benchmark_result` sans `run_id`, donc sans snapshot ni référence
+explicables, qui se mélangeaient ensuite aux vrais résultats antérieurs à #122
+dans le seau « legacy ». Une mesure dont on ne peut pas dire contre quelle
+référence elle a été calculée ne sert ni à comparer des candidats, ni à choisir
+un `initial_prompt`.
+
+Les résultats sans `run_id` déjà enregistrés restent lisibles sous
+`Legacy (pre-run results)` : l'historique est à ajout uniquement et n'est jamais
+réécrit. Un futur besoin d'essai rapide devra passer par un run explicite — au
+besoin un run à un seul segment — plutôt que par un chemin d'écriture parallèle.
+
 ## DicTeX / Lab split (monorepo)
 
 DicTeX est séparé en deux applications Electron dans un même monorepo npm
@@ -71,9 +91,9 @@ DicTeX est séparé en deux applications Electron dans un même monorepo npm
 - **`apps/dictex`** — the consumer dictation tool (voice → STT → normalizer →
   insert). Has the microphone, hotkey, clipboard/paste, and normalizer.
 - **`apps/lab`** — **DicTeX Lab**, the ML tooling app (pivot Phase 2, #76). No
-  microphone: it hosts the STT benchmark (segment/batch, summary, error
-  analysis, candidate selection), typed corrections, benchmark-set split
-  membership, the Vosk provider, and the dataset export.
+  microphone: it hosts the STT benchmark (tracked runs, per-run summary, error
+  analysis, candidate selection — see DEC-RUN-001), typed corrections,
+  benchmark-set split membership, the Vosk provider, and the dataset export.
 
 Data contract (one-directional, file-based, zero code coupling): the Lab reads
 DicTeX's local data folder **read-only** (audio + `stt_result` /
