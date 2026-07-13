@@ -89,7 +89,8 @@ preview de l'interface reste une lecture asynchrone. Un segment ne compte comme
 `done` que si au moins un candidat a produit une sortie ; si tous les candidats
 sont indisponibles, il est consigné dans `failures`. Les rares runs historiques
 dont le terminal annonce `done` sans sortie sont conservés tels quels et lus
-comme « terminé sans sortie », jamais comme « jamais exécuté ».
+comme « terminé sans sortie », jamais comme « jamais exécuté », aussi bien dans
+`Results` que dans l'export LLM régénérable.
 
 ## DicTeX / Lab split (monorepo)
 

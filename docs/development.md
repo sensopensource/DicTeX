@@ -1111,7 +1111,9 @@ segment n'est compté `done` que lorsqu'au moins un candidat a produit une sorti
 enregistrée ; si tous les candidats sont indisponibles, le terminal le consigne
 comme `failed`. Un ancien run terminé qui annonce `done` sans aucune sortie est
 préservé mais affiché « completed without output », distinct de `missing` qui
-signifie bien qu'aucune exécution n'a été enregistrée.
+signifie bien qu'aucune exécution n'a été enregistrée. L'export LLM conserve la
+même distinction et ne compte pas cet état de compatibilité parmi les sorties
+manquantes.
 
 Depuis #130, la référence d'un benchmark STT est exclusivement la dernière
 correction `acoustic` disponible au démarrage. Une correction
@@ -1136,7 +1138,8 @@ horodaté sous `data/exports/`. Une collision de timestamp ajoute un suffixe au
 nouveau dossier ; aucun export antérieur n'est écrasé. Le dossier contient
 exactement trois fichiers :
 
-- `manifest.json` : version du schéma (`2` depuis #134), dates, `run_id`, stage,
+- `manifest.json` : version du schéma (`3` depuis la correction de revue de
+  #138 ; `2` avait ajouté les deux CER dans #134), dates, `run_id`, stage,
   split, statut, référence au snapshot, description distincte des deux CER et du
   WER, identités complètes des candidats et définitions des prompts (`id`, nom
   affiché, texte complet) une seule fois ;
@@ -1144,8 +1147,9 @@ exactement trois fichiers :
   `session_id`, `segment_id`, `audio_ref`, `audio_path`, transcription de
   référence et date de correction utilisées au démarrage du run ;
 - `outputs.jsonl` : une ligne par même couple `session_id + segment_id`, avec
-  tous les candidats du run. Chaque sortie porte `done`, `failed` ou `missing`,
-  le transcript et la latence lorsqu'ils existent, ainsi que `strict_cer`,
+  tous les candidats du run. Chaque sortie porte `done`, `failed`, `missing` ou
+  `completed_without_output` pour un ancien terminal contradictoire, le
+  transcript et la latence lorsqu'ils existent, ainsi que `strict_cer`,
   `acoustic_cer` (#134) et `wer` lorsque le snapshot possède une référence.
 
 Les noms de fichiers du manifeste sont relatifs : le paquet peut donc être

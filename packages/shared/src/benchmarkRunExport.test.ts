@@ -152,7 +152,7 @@ test("buildSttBenchmarkRunExport: includes each full prompt once and only relati
   assert.equal(exported.manifest.files.outputs.includes("\\"), false);
 });
 
-test("buildSttBenchmarkRunExport: acoustic CER ignores only sentence punctuation, strict CER does not (schema v2)", () => {
+test("buildSttBenchmarkRunExport: acoustic CER ignores only sentence punctuation, strict CER does not (schema v3)", () => {
   const events = baseEvents();
   const started = events[0] as Extract<LocalEvent, { event_type: "stt_benchmark_run_started" }>;
   // A candidate that heard the words but added a comma the reference lacks.
@@ -161,7 +161,7 @@ test("buildSttBenchmarkRunExport: acoustic CER ignores only sentence punctuation
   result.transcript = "x au carré, plus b";
 
   const exported = build(events);
-  assert.equal(exported.manifest.schema_version, 2);
+  assert.equal(exported.manifest.schema_version, 3);
 
   const output = exported.outputs[0].outputs[0];
   assert.ok((output.strict_cer as number) > 0, "strict CER penalizes the extra comma");
@@ -218,10 +218,25 @@ test("buildSttBenchmarkRunExport: does not mutate source events", () => {
   assert.equal(JSON.stringify(events), before);
 });
 
-test("buildSttBenchmarkRunExport: distinguishes a missing candidate output from a failed segment", () => {
+test("buildSttBenchmarkRunExport: preserves a legacy completed segment without output", () => {
   const events = baseEvents();
   const finished = events.at(-1) as Extract<LocalEvent, { event_type: "stt_benchmark_run_finished" }>;
   finished.done = 2;
+  finished.failed = 0;
+  finished.failures = [];
+
+  const exported = build(events);
+  assert.deepEqual(
+    exported.outputs[1].outputs.map((output) => output.status),
+    ["completed_without_output", "completed_without_output"],
+  );
+  assert.deepEqual(exported.outputs[1].outputs.map((output) => output.error), [null, null]);
+});
+
+test("buildSttBenchmarkRunExport: distinguishes an interrupted missing output from a failed segment", () => {
+  const events = baseEvents();
+  const finished = events.at(-1) as Extract<LocalEvent, { event_type: "stt_benchmark_run_finished" }>;
+  finished.done = 1;
   finished.failed = 0;
   finished.failures = [];
 
