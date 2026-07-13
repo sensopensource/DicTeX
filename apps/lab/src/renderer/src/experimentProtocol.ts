@@ -6,15 +6,18 @@ import type { BenchmarkCandidateIdentity, SttBenchmarkSetPreview, SttBenchmarkSe
  * many members, with which exact candidates. Nothing here reads a past result —
  * the launch form owns the protocol, the Results view owns the run.
  *
- * Only the STT stage is executable today. A future stage is announced as
- * unavailable rather than given a control that would do nothing: a form that
- * offers a stage it cannot run is a lie the user only discovers after clicking.
+ * Only stages backed by an append-only writer are executable. A future stage is
+ * announced as unavailable rather than given a control that would do nothing:
+ * a form that offers a stage it cannot run is a lie the user only discovers
+ * after clicking.
  */
 
 export type ExperimentStageId = "stt" | "normalizer" | "end_to_end";
 
 export type ExperimentStage = {
   id: ExperimentStageId;
+  /** Append-only benchmark contract stage; null while no writer exists. */
+  benchmarkStage: "stt" | "math_transform" | null;
   label: string;
   /** What the stage consumes. */
   input: string;
@@ -30,6 +33,7 @@ export type ExperimentStage = {
 export const EXPERIMENT_STAGES: ExperimentStage[] = [
   {
     id: "stt",
+    benchmarkStage: "stt",
     label: "STT",
     input: "audio",
     target: "Layer 1 (acoustic)",
@@ -39,15 +43,17 @@ export const EXPERIMENT_STAGES: ExperimentStage[] = [
   },
   {
     id: "normalizer",
+    benchmarkStage: "math_transform",
     label: "Normalizer",
     input: "Layer 1",
     target: "Layer 2 (notation)",
-    flow: "Layer 1 -> Layer 2",
-    available: false,
-    unavailableReason: "Not runnable yet — the Lab has no normalizer benchmark.",
+    flow: "Layer 1 -> Normalizer -> Layer 2",
+    available: true,
+    unavailableReason: null,
   },
   {
     id: "end_to_end",
+    benchmarkStage: null,
     label: "End to end",
     input: "audio",
     target: "Layer 2 (notation)",
@@ -102,7 +108,7 @@ export function planExperimentLaunch({
   }
 
   const warning =
-    preview !== null && preview.evaluableSegments > 0 && preview.scorableSegments === 0
+    stage.id === "stt" && preview !== null && preview.evaluableSegments > 0 && preview.scorableSegments === 0
       ? "No member of this split has a Layer 1 acoustic reference yet: the run will produce transcripts but no CER."
       : null;
 
@@ -113,7 +119,14 @@ export function planExperimentLaunch({
     return { canLaunch: false, blockedReason: null, warning };
   }
   if (candidates.length < 1) {
-    return { canLaunch: false, blockedReason: "Add at least one STT candidate to run.", warning };
+    return {
+      canLaunch: false,
+      blockedReason:
+        stage.id === "normalizer"
+          ? "Read the current deterministic pipeline before launching."
+          : "Add at least one STT candidate to run.",
+      warning,
+    };
   }
   if (candidates.length > MAX_EXPERIMENT_CANDIDATES) {
     return {
@@ -129,7 +142,9 @@ export function planExperimentLaunch({
     return {
       canLaunch: false,
       blockedReason:
-        "No evaluable member in this split: qualify a segment's Layer 1 in Corpus and assign it to this split first.",
+        stage.id === "normalizer"
+          ? "No evaluable math_transform pair in this split: qualify Layer 2 in Corpus and assign the segment first."
+          : "No evaluable member in this split: qualify a segment's Layer 1 in Corpus and assign it to this split first.",
       warning: null,
     };
   }

@@ -18,6 +18,7 @@
 // Renderer-only (browser-safe) helpers live in dedicated subpath exports so
 // they never pull node built-ins into a renderer bundle:
 //   `@dictex/shared/commands`       — command table + sentinel extract/expand
+//   `@dictex/shared/normalizerBenchmark` — pure benchmark provenance + summaries
 //   `@dictex/shared/latex`          — LaTeX canonicalizer (#106)
 //   `@dictex/shared/formatting`     — presentation string formatting
 //   `@dictex/shared/errorAnalysis`  — heuristic benchmark error analysis
@@ -33,6 +34,7 @@ export * from "./sttScoring.js";
 export * from "./benchmarkSummary.js";
 export * from "./benchmarkRunDetail.js";
 export * from "./benchmarkContract.js";
+export * from "./normalizerBenchmark.js";
 export * from "./benchmarkRunExport.js";
 export * from "./normalizer.js";
 export * from "./datasetExport.js";

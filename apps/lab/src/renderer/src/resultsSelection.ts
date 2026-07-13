@@ -1,4 +1,10 @@
-import type { SttBenchmarkCandidateSummaryResponse, SttBenchmarkRunDetail } from "@dictex/shared";
+import type {
+  BenchmarkMathTransformRunProjection,
+  SttBenchmarkCandidateSummaryResponse,
+  SttBenchmarkRunDetail,
+} from "@dictex/shared";
+
+export type ResultsRunDetail = SttBenchmarkRunDetail | BenchmarkMathTransformRunProjection;
 
 /**
  * The Results view shows exactly ONE run at a time (issue #138), and every
@@ -19,7 +25,7 @@ export type ResultsState = {
   /** A run id, LEGACY_RUN_KEY, or null when nothing is selected. */
   selectedKey: string | null;
   /** The selected run's own projection; null for the legacy bucket or while loading. */
-  detail: SttBenchmarkRunDetail | null;
+  detail: ResultsRunDetail | null;
   /** The legacy (no run_id) summary; null unless the legacy bucket is selected. */
   legacySummary: SttBenchmarkCandidateSummaryResponse | null;
   isLoading: boolean;
@@ -43,7 +49,7 @@ function isStale(state: ResultsState, key: string): boolean {
   return state.selectedKey !== key;
 }
 
-export function applyRunDetail(state: ResultsState, key: string, detail: SttBenchmarkRunDetail | null): ResultsState {
+export function applyRunDetail(state: ResultsState, key: string, detail: ResultsRunDetail | null): ResultsState {
   if (isStale(state, key)) {
     return state;
   }

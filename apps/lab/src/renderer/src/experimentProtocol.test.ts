@@ -25,10 +25,35 @@ function preview(
 }
 
 test("the STT protocol states audio -> Layer 1", () => {
+  assert.equal(STT.benchmarkStage, "stt");
   assert.equal(STT.flow, "audio -> Layer 1");
   assert.equal(STT.input, "audio");
   assert.equal(STT.target, "Layer 1 (acoustic)");
   assert.equal(STT.available, true);
+});
+
+test("the Normalizer protocol is runnable as the internal math_transform stage", () => {
+  assert.equal(NORMALIZER.benchmarkStage, "math_transform");
+  assert.equal(NORMALIZER.flow, "Layer 1 -> Normalizer -> Layer 2");
+  assert.equal(NORMALIZER.input, "Layer 1");
+  assert.equal(NORMALIZER.target, "Layer 2 (notation)");
+  assert.equal(NORMALIZER.available, true);
+
+  const plan = planExperimentLaunch({
+    stage: NORMALIZER,
+    split: "validation",
+    preview: preview(3),
+    candidates: [
+      {
+        stage: "math_transform",
+        provider: "dictex",
+        model: "deterministic-pipeline",
+        variant: "dictionary-sha256:a;rules-sha256:b",
+      },
+    ],
+    isRunning: false,
+  });
+  assert.equal(plan.canLaunch, true);
 });
 
 test("a stage that cannot run announces itself as unavailable instead of offering a control", () => {
@@ -153,10 +178,9 @@ test("a failed launch stays in Experiments and selects no result", () => {
   assert.deepEqual(planLaunchNavigation(""), { view: "experiments", selectedRunKey: null });
 });
 
-test("the unavailable stages keep the STT protocol as the only executable one", () => {
-  assert.equal(NORMALIZER.available, false);
+test("only stages with an implemented writer are executable", () => {
   assert.deepEqual(
     EXPERIMENT_STAGES.filter((stage) => stage.available).map((stage) => stage.id),
-    ["stt"],
+    ["stt", "normalizer"],
   );
 });

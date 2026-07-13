@@ -132,6 +132,31 @@ perdre cette contradiction ancienne. Les résumés, l'interface et l'export LLM
 STT existants gardent leurs lecteurs et leurs octets à état égal ; #139 ajoute
 un contrat de lecture, pas un nouveau writer STT.
 
+## DEC-RUN-003 — La référence du normaliseur mesure la paire textuelle figée — 13 juillet 2026
+
+**Statut : active.** Le premier run `math_transform` du Lab mesure exclusivement
+`couche 1 -> normaliseur déterministe -> couche 2`. Il ne relit aucun audio et
+ne mélange donc jamais une erreur STT à une erreur de règle. Son snapshot copie
+la paire et la date portées par la dernière correction `math_transform` de
+chaque membre du split au moment du lancement ; une recorrection ultérieure ne
+change ni le détail ni le score historique.
+
+Le candidat unique porte `stage=math_transform`, `provider=dictex`,
+`model=deterministic-pipeline`. Son `variant` contient les SHA-256 complets du
+dictionnaire et des règles chargés dans l'instance qui exécute le run. Le nom
+court affiché reste `Current deterministic pipeline` : les hash appartiennent à
+la provenance, pas au libellé principal. Si les fichiers changent après la
+prévisualisation du protocole, le lancement est refusé avant tout événement et
+doit être rafraîchi.
+
+Le pipeline exécuté est l'unique normaliseur partagé : dictionnaire, extraction
+des commandes, règles regex. Avant chaque `benchmark_result`, les sentinelles de
+commande sont restaurées en mots canoniques dans la sortie et dans toutes les
+traces ; aucun caractère PUA n'est écrit. La mesure est l'exact match après
+`canonicalizeLatex`, sans équivalence mathématique ou réparation sémantique.
+Une portée erronée reste donc un échec visible et explicable par le diff et les
+traces de couches dans `Results`.
+
 ## DicTeX / Lab split (monorepo)
 
 DicTeX est séparé en deux applications Electron dans un même monorepo npm
