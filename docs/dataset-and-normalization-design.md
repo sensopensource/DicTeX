@@ -802,3 +802,139 @@ référence n'est pas acoustique reste identifié comme non comparable (voir
 « Compatibilité des runs antérieurs à #130 » ci-dessus) et n'est pas corrigé
 rétroactivement. Une projection WER acoustique n'est pas incluse ici ; elle
 pourra faire l'objet d'un ticket séparé si elle devient nécessaire.
+
+---
+
+## 10. Contrat de runs multi-étapes sans migration STT (issue #139)
+
+> **Statut : implémenté.** Les types d'événements, les validations, le snapshot
+> `math_transform` et la projection commune vivent dans
+> `packages/shared/src/benchmarkContract.ts`. Le writer STT historique et son
+> export LLM ne sont pas modifiés.
+
+Le contrat STT de §9 est correct pour l'audio, mais ses noms et ses champs sont
+spécifiques à cette étape. Lui ajouter une couche 1 textuelle, une cible couche
+2 et des traces du normaliseur sous forme de champs optionnels créerait un objet
+où des combinaisons incohérentes seraient représentables. Les nouveaux stages
+utilisent donc une famille parallèle et discriminée :
+
+```text
+benchmark_run_started
+  -> benchmark_result         (un candidat × un membre)
+  -> benchmark_run_finished   (terminal)
+```
+
+Cette famille ne remplace pas `stt_benchmark_*`. Un run n'est écrit que dans une
+famille ; aucun historique n'est renommé, réémis ou corrigé.
+
+### Stages, datasets et snapshots
+
+`BenchmarkRunStage` réserve trois noms : `stt`, `math_transform` et
+`end_to_end`. Seuls les deux premiers appartiennent aux unions d'événements
+implémentées. `end_to_end` ne possède ni snapshot, ni résultat writable : le
+nom peut être utilisé pour planifier sans prétendre que son contrat existe déjà.
+
+La paire `stage` / `dataset_kind` est fermée :
+
+| Stage | `dataset_kind` | Membre figé |
+| --- | --- | --- |
+| `stt` | `acoustic` | `audio_ref`, référence humaine de couche 1, date de correction acoustique |
+| `math_transform` | `math_transform` | entrée couche 1, cible couche 2, date de la correction `math_transform` |
+
+Chaque membre porte aussi son propre discriminant `stage`. TypeScript interdit
+donc d'insérer un membre textuel dans un start STT, ou un membre audio dans un
+start `math_transform`. Les validateurs reproduisent cette garde pour le JSONL
+lu depuis le disque.
+
+Le snapshot `math_transform` applique une règle de provenance plus forte qu'une
+jointure « dernière couche 1 + dernière couche 2 » : **les deux textes viennent
+du même `stt_correction` de type `math_transform`**.
+
+```text
+stt_correction(math_transform).raw_transcript       -> layer1_input
+stt_correction(math_transform).corrected_transcript -> layer2_target
+stt_correction(math_transform).created_at           -> date de la paire
+```
+
+Une correction `acoustic` postérieure peut contenir une meilleure couche 1 pour
+un futur exemple, mais elle ne réécrit ni ne recompose la paire déjà portée par
+la correction `math_transform`. `buildMathTransformBenchmarkRunSnapshot` prend
+la dernière correction **dans ce type**, copie sa paire et accepte les membres
+sans audio. Une recorrection effectuée après le start ne change ensuite jamais
+le snapshot stocké.
+
+### Candidats, résultats et métriques typées
+
+L'identité commune reste exactement :
+
+```text
+stage + provider + model + variant
+```
+
+Le `stage` du candidat doit être celui du run. Les résultats sont eux aussi une
+union discriminée : transcript et métadonnées STT pour `stt`, sortie textuelle,
+durée et traces `NormalizationLayerRecord[]` pour `math_transform`. Il n'existe
+pas d'objet libre `metrics: Record<string, unknown>`.
+
+La projection calcule des scores explicitement typés depuis le snapshot figé :
+
+- pour STT, CER strict, CER acoustique et WER contre la référence couche 1 ;
+- pour `math_transform`, exact match après `canonicalizeLatex` contre la cible
+  couche 2, en conservant aussi sortie et cible canoniques pour l'explication.
+
+Le résultat stocké reste la sortie du candidat et ses traces. La cible ne vient
+jamais d'une correction relue au moment de l'affichage.
+
+### Immuabilité et statut candidat × membre
+
+Le `run_id` forme un espace commun aux anciennes et nouvelles familles. Le
+premier start **valide** rencontré possède l'identifiant ; un start ultérieur,
+même d'une autre famille, ne peut ni remplacer le snapshot ni agréger ses
+résultats.
+
+Dans la nouvelle famille :
+
+1. le premier start valide fait foi ;
+2. le premier résultat valide de chaque candidat × membre fait foi ;
+3. le premier terminal valide fait foi ;
+4. seuls les résultats placés après le start et avant le terminal sont lus ;
+5. un résultat doit viser le même run, le même stage, un candidat annoncé et un
+   membre du snapshot ;
+6. les orphelins et doublons sont signalés par la validation mais jamais réparés
+   dans le journal.
+
+Pour chaque candidat × membre :
+
+- `done` : une sortie valide existe ;
+- `failed` : aucune sortie n'existe et le terminal porte une failure pour ce
+  slot ;
+- `missing` : ni sortie ni failure, par exemple après un arrêt partiel.
+
+Les compteurs `done` / `failed` du nouveau terminal comptent ces slots, pas les
+segments. Une failure contient donc aussi l'identité candidat. Si une sortie et
+une failure contradictoires existent pour le même slot, la sortie prouve que ce
+candidat a produit un résultat et le slot reste `done`; la validation permet de
+repérer le journal incohérent sans le réécrire.
+
+### Projection commune et compatibilité
+
+`getBenchmarkRunProjections(events, split)` produit le modèle de lecture que
+`Results` pourra consommer. Trois sources restent identifiées :
+
+- `stt_tracked` : adaptation des runs modernes `stt_benchmark_*`, avec leur
+  snapshot acoustique et leur règle historique latest-result-wins ;
+- `stage_aware` : nouvelle famille, avec les règles d'immuabilité ci-dessus ;
+- `stt_legacy` : seau virtuel explicite des `stt_benchmark_result` sans
+  `run_id`, limité aux membres et références encore observables.
+
+Le seau legacy n'acquiert pas rétroactivement un snapshot ou un terminal qu'il
+n'a jamais eus. L'adaptateur STT suivi conserve aussi
+`completed_without_output`, état de compatibilité introduit lors de #138 pour un
+ancien terminal affirmant `done` sans sortie ; les nouveaux stages n'émettent
+que `done`, `failed` ou `missing`.
+
+Les lecteurs STT existants ne passent pas automatiquement par cette projection :
+`buildSttBenchmarkRunDetail`, les résumés et l'export LLM gardent leur chemin
+actuel. Ainsi #139 rend les stages comparables dans une future vue `Results`
+sans modifier les événements historiques, le schéma 3 de l'export ou les octets
+produits à état égal.

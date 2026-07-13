@@ -1115,6 +1115,79 @@ signifie bien qu'aucune exécution n'a été enregistrée. L'export LLM conserve
 même distinction et ne compte pas cet état de compatibilité parmi les sorties
 manquantes.
 
+### Contrat stage-aware pour les futurs benchmarks (issue #139)
+
+Le writer STT reste volontairement inchangé : il continue d'écrire uniquement
+`stt_benchmark_run_started`, `stt_benchmark_result` et
+`stt_benchmark_run_finished`. Aucun double-write et aucune migration de journal
+ne sont autorisés. Les nouveaux stages utilisent les événements génériques
+`benchmark_run_started`, `benchmark_result` et `benchmark_run_finished`, dont
+les types, validations et projections pures vivent dans
+`packages/shared/src/benchmarkContract.ts`.
+
+Le contrat est une union discriminée, pas un objet rempli de champs optionnels :
+
+```text
+stage stt            + dataset_kind acoustic
+  snapshot           = audio_ref + référence Layer 1 + date acoustique
+  result             = transcript STT + métadonnées STT typées
+
+stage math_transform + dataset_kind math_transform
+  snapshot           = Layer 1 textuelle + cible Layer 2 + date math_transform
+  result             = sortie textuelle + durée + traces de couches typées
+```
+
+`end_to_end` appartient à `BenchmarkRunStage` comme nom réservé, mais n'apparaît
+dans aucune union d'événement implémentée. Une tentative de l'écrire échoue donc
+à la compilation et à la validation d'exécution au lieu de créer un snapshot
+incomplet.
+
+Le helper `buildMathTransformBenchmarkRunSnapshot(events, split)` sélectionne la
+dernière correction `math_transform` de chaque membre et copie **sa propre**
+paire : `raw_transcript` → couche 1, `corrected_transcript` → couche 2. Il ne
+relit pas la dernière correction acoustique pour fabriquer l'entrée ; une
+correction acoustique postérieure ne peut donc pas changer la paire. Un membre
+textuel peut porter `audio_ref: ""` dans les événements de corpus et reste
+évaluable : l'audio n'entre pas dans ce stage.
+
+Le terminal stage-aware compte des tentatives candidat × membre et ses failures
+portent aussi l'identité candidat complète. La projection applique ces règles :
+
+- premier `benchmark_run_started` valide d'un `run_id` faisant foi, à travers
+  les deux familles de starts ;
+- premier `benchmark_result` valide par candidat × membre faisant foi dans la
+  nouvelle famille ;
+- premier terminal valide faisant foi ;
+- résultat d'un autre run, stage, candidat ou membre ignoré ;
+- résultat après le terminal ignoré ;
+- `done` si une sortie existe, `failed` si le terminal porte une failure pour
+  le slot, `missing` sinon.
+
+`validateBenchmarkRunStartedEvent`, `validateBenchmarkResultEvent` et
+`validateBenchmarkRunFinishedEvent` contrôlent chaque forme. La validation
+croisée `validateStageAwareBenchmarkEvents` signale doublons, orphelins,
+stages incohérents et références à un candidat ou membre absent sans modifier le
+journal.
+
+Pour `Results`, `getBenchmarkRunProjections(events, split)` renvoie un modèle
+commun en adaptant séparément :
+
+1. les runs STT modernes de la famille `stt_benchmark_*` (`stt_tracked`) ;
+2. les nouveaux runs `benchmark_*` (`stage_aware`) ;
+3. les résultats STT sans `run_id` dans un seau virtuel explicite
+   (`stt_legacy`).
+
+La collision accidentelle d'un `run_id` entre familles ne fusionne jamais les
+résultats : le premier start possède l'identifiant. L'adaptateur STT conserve en
+plus `completed_without_output`, état historique de #138. Les fonctions
+`buildSttBenchmarkRunDetail`, `summarizeSttBenchmarkRun` et
+`buildSttBenchmarkRunExport` restent inchangées ; le résumé et l'export LLM STT
+gardent donc leur compatibilité historique et leur schéma 3.
+
+#139 n'ajoute ni lancement Normalizer, ni contrôle renderer, ni nouveau format
+d'export. Le premier writer `math_transform` et son affichage sont le périmètre
+du ticket suivant.
+
 Depuis #130, la référence d'un benchmark STT est exclusivement la dernière
 correction `acoustic` disponible au démarrage. Une correction
 `math_transform`, `normalization` ou `rephrasing` plus récente n'est jamais un
