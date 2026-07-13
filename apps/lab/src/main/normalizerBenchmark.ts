@@ -3,6 +3,7 @@ import {
   buildNormalizerBenchmarkCandidate,
   containsSentinel,
   prepareNormalizerBenchmarkResultForStorage,
+  restoreCommandWords,
   sameNormalizerBenchmarkCandidate,
   type BenchmarkCandidateRecord,
   type BenchmarkMathTransformRunFinishedEvent,
@@ -91,7 +92,7 @@ export async function runNormalizerBenchmark(options: {
     candidates: [candidate],
     snapshot,
   };
-  await options.appendEvent(startEvent);
+  await appendSentinelFreeEvent(startEvent, options.appendEvent);
 
   const total = snapshot.length;
   let queued = total;
@@ -127,18 +128,21 @@ export async function runNormalizerBenchmark(options: {
       const normalized = await options.normalizer.normalize(member.layer1_input);
       const transformationDurationMs = Math.max(0, monotonicNow() - startedAt);
       const stored = prepareNormalizerBenchmarkResultForStorage(normalized);
-      await options.appendEvent({
-        event_type: "benchmark_result",
-        run_id: options.runId,
-        created_at: now(),
-        stage: "math_transform",
-        session_id: member.session_id,
-        segment_id: member.segment_id,
-        candidate,
-        output_transcript: stored.outputTranscript,
-        transformation_duration_ms: transformationDurationMs,
-        layers: stored.layers,
-      });
+      await appendSentinelFreeEvent(
+        {
+          event_type: "benchmark_result",
+          run_id: options.runId,
+          created_at: now(),
+          stage: "math_transform",
+          session_id: member.session_id,
+          segment_id: member.segment_id,
+          candidate,
+          output_transcript: stored.outputTranscript,
+          transformation_duration_ms: transformationDurationMs,
+          layers: stored.layers,
+        },
+        options.appendEvent,
+      );
       running = 0;
       done += 1;
       sendProgress(null, {
@@ -151,7 +155,9 @@ export async function runNormalizerBenchmark(options: {
     } catch (error) {
       running = 0;
       failed += 1;
-      const message = error instanceof Error ? error.message : "Normalizer benchmark failed";
+      const message = restoreCommandWords(
+        error instanceof Error ? error.message : "Normalizer benchmark failed",
+      );
       failures.push({
         session_id: member.session_id,
         segment_id: member.segment_id,
@@ -168,15 +174,18 @@ export async function runNormalizerBenchmark(options: {
     }
   }
 
-  await options.appendEvent({
-    event_type: "benchmark_run_finished",
-    run_id: options.runId,
-    created_at: now(),
-    stage: "math_transform",
-    done,
-    failed,
-    failures,
-  });
+  await appendSentinelFreeEvent(
+    {
+      event_type: "benchmark_run_finished",
+      run_id: options.runId,
+      created_at: now(),
+      stage: "math_transform",
+      done,
+      failed,
+      failures,
+    },
+    options.appendEvent,
+  );
 
   return {
     stage: "math_transform",
@@ -186,6 +195,18 @@ export async function runNormalizerBenchmark(options: {
     done,
     failed,
   };
+}
+
+async function appendSentinelFreeEvent(
+  event: NormalizerBenchmarkWritableEvent,
+  appendEvent: (event: NormalizerBenchmarkWritableEvent) => Promise<void>,
+): Promise<void> {
+  if (containsSentinel(JSON.stringify(event))) {
+    throw new Error(
+      `Refusing to append ${event.event_type}: event contains a reserved command sentinel`,
+    );
+  }
+  await appendEvent(event);
 }
 
 function requireSentinelFreeSnapshot(

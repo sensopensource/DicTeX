@@ -10,6 +10,7 @@ import {
   createTranscriptNormalizer,
   getBenchmarkRunProjection,
   isBenchmarkResultEvent,
+  isBenchmarkRunFinishedEvent,
   isBenchmarkRunStartedEvent,
   parseNormalizerBenchmarkVariant,
   summarizeNormalizerBenchmarkRun,
@@ -90,7 +91,7 @@ test("a normalizer run freezes pairs and version, restores commands, canonicaliz
     version: base.version,
     normalize: async (input): Promise<NormalizationResult> => {
       if (input === "fail this member") {
-        throw new Error("synthetic member failure");
+        throw new Error("synthetic \uE000 member failure \uE00F");
       }
       if (input === "x au carré") {
         return {
@@ -140,6 +141,12 @@ test("a normalizer run freezes pairs and version, restores commands, canonicaliz
   }
 
   assert.equal(containsSentinel(JSON.stringify(written)), false, "no PUA sentinel reaches the event log");
+  const terminal = written.find(isBenchmarkRunFinishedEvent);
+  assert.equal(terminal?.stage, "math_transform");
+  if (terminal?.stage === "math_transform") {
+    assert.match(terminal.failures[0].error, /retour à la ligne/);
+    assert.equal(containsSentinel(terminal.failures[0].error), false);
+  }
   const commandResult = written.find(
     (event): event is BenchmarkMathTransformResultEvent =>
       isBenchmarkResultEvent(event) && event.stage === "math_transform" && event.segment_id === "seg_command",
@@ -183,4 +190,84 @@ test("a normalizer run freezes pairs and version, restores commands, canonicaliz
     projectionBeforeCorrection,
     "a later human correction cannot change the frozen score or detail",
   );
+});
+
+test("invalid-rule diagnostics are readable and sentinel-free in every written event", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "dictex-normalizer-benchmark-diagnostic-"));
+  try {
+    const rulesPath = path.join(directory, "rules.json");
+    writeFileSync(
+      rulesPath,
+      JSON.stringify({ version: 1, rules: [{ pattern: "\uE000[", replacement: "x" }] }),
+      "utf8",
+    );
+    const normalizer = await createTranscriptNormalizer({
+      dictionaryPath: path.join(directory, "dictionary.json"),
+      rulesPath,
+    });
+    const rawResult = await normalizer.normalize("plain prose");
+    assert.equal(
+      containsSentinel(JSON.stringify(rawResult.layers)),
+      true,
+      "the invalid RegExp diagnostic reproduces the storage-boundary bug",
+    );
+
+    const events: LocalEvent[] = [
+      membership("seg_diagnostic"),
+      correction("seg_diagnostic", "plain prose", "plain prose", "2026-07-13T12:00:00.000Z"),
+    ];
+    const preview = buildNormalizerBenchmarkSetPreview(events, "validation", normalizer);
+    const written: LocalEvent[] = [];
+    await runNormalizerBenchmark({
+      events,
+      split: "validation",
+      requestedCandidate: preview.candidate.candidate,
+      normalizer,
+      runId: "run_normalizer_diagnostic",
+      appendEvent: async (event) => {
+        written.push(event);
+      },
+    });
+
+    assert.equal(containsSentinel(JSON.stringify(written)), false);
+    const result = written.find(
+      (event): event is BenchmarkMathTransformResultEvent =>
+        isBenchmarkResultEvent(event) && event.stage === "math_transform",
+    );
+    assert.ok(result);
+    const diagnostics = result.layers.flatMap((layer) => layer.diagnostics ?? []);
+    assert.ok(diagnostics.some((diagnostic) => diagnostic.includes("retour à la ligne")));
+    assert.ok(diagnostics.some((diagnostic) => /invalid regex/i.test(diagnostic)));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("the append boundary rejects a sentinel introduced by any event property", async () => {
+  const events: LocalEvent[] = [
+    membership("seg_boundary"),
+    correction("seg_boundary", "plain prose", "plain prose", "2026-07-13T13:00:00.000Z"),
+  ];
+  const absentRoot = path.join(tmpdir(), "dictex-normalizer-benchmark-boundary-absent");
+  const normalizer = await createTranscriptNormalizer({
+    dictionaryPath: path.join(absentRoot, "dictionary.json"),
+    rulesPath: path.join(absentRoot, "rules.json"),
+  });
+  const preview = buildNormalizerBenchmarkSetPreview(events, "validation", normalizer);
+  const written: LocalEvent[] = [];
+
+  await assert.rejects(
+    runNormalizerBenchmark({
+      events,
+      split: "validation",
+      requestedCandidate: preview.candidate.candidate,
+      normalizer,
+      runId: "run_\uE000_boundary",
+      appendEvent: async (event) => {
+        written.push(event);
+      },
+    }),
+    /Refusing to append benchmark_run_started/,
+  );
+  assert.deepEqual(written, []);
 });

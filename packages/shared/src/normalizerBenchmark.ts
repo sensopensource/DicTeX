@@ -86,6 +86,7 @@ export function prepareNormalizerBenchmarkResultForStorage(
       ...layer,
       input: restoreCommandWords(layer.input),
       output: restoreCommandWords(layer.output),
+      diagnostics: layer.diagnostics.map(restoreCommandWords),
     })),
   };
 }

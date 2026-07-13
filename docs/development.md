@@ -1222,13 +1222,16 @@ Le run écrit dans le journal propre au Lab :
 3. un `benchmark_run_finished` dont les compteurs portent sur les tentatives
    candidat × membre.
 
-Avant l'écriture d'un résultat, `restoreCommandWords` est appliqué à la sortie
-et à chaque entrée/sortie de trace. Une paire source contenant déjà une
-sentinelle PUA est refusée : le journal du benchmark ne peut donc en écrire
-aucune. `Results` canonicalise sortie et cible avec `canonicalizeLatex`, affiche
-l'exact match, le nombre exact de réussites sur le total, le diff de chaque
-membre et ses traces. Aucune équivalence sémantique n'est ajoutée : une prose
-inchangée peut réussir, tandis qu'une portée différente reste un échec visible.
+Avant l'écriture d'un résultat, `restoreCommandWords` est appliqué à la sortie,
+à chaque entrée/sortie de trace et à chaque diagnostic. Les messages d'échec
+sont restaurés avant le terminal, puis une garde commune contrôle la
+sérialisation du start, de chaque résultat et du terminal immédiatement avant
+l'append. Une paire source contenant déjà une sentinelle PUA est refusée : le
+journal du benchmark ne peut donc en écrire aucune. `Results` canonicalise
+sortie et cible avec `canonicalizeLatex`, affiche l'exact match, le nombre exact
+de réussites sur le total, le diff de chaque membre et ses traces. Aucune
+équivalence sémantique n'est ajoutée : une prose inchangée peut réussir, tandis
+qu'une portée différente reste un échec visible.
 
 Procédure de référence :
 

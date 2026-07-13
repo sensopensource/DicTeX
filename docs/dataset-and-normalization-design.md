@@ -968,10 +968,13 @@ l'instance chargée au lancement ; sinon aucun start n'est écrit.
 
 Les commandes suivent toujours la règle de stockage du §4. Le normaliseur les
 extrait pour donner aux regex exactement leur entrée de production, puis le
-writer restaure les phrases canoniques dans la sortie et toutes les traces avant
-`benchmark_result`. Une paire déjà corrompue par un PUA est refusée avant le
-start. La comparaison voit donc les mêmes mots que la cible humaine et le
-journal reste sans sentinelle.
+writer restaure les phrases canoniques dans la sortie, les entrées/sorties et
+les diagnostics de toutes les traces avant `benchmark_result`. Les messages
+d'échec subissent le même traitement avant le terminal. Enfin, une garde commune
+refuse tout événement qui contiendrait encore une sentinelle juste avant
+l'écriture. Une paire déjà corrompue par un PUA est refusée avant le start. La
+comparaison voit donc les mêmes mots que la cible humaine et le journal reste
+sans sentinelle.
 
 La métrique est fermée : exact match de
 `canonicalizeLatex(sortie)` contre `canonicalizeLatex(cible)`. Elle autorise les
