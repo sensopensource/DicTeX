@@ -12,6 +12,7 @@ import type {
   BenchmarkMathTransformRunProjection,
   BenchmarkRunListEntry,
   SttBenchmarkRunExportSummary,
+  NormalizerBenchmarkRunExportSummary,
   SttBenchmarkCandidateSummaryResponse,
   SttCandidateSelectionRequest,
   SttCandidateSelectionResponse,
@@ -84,8 +85,10 @@ contextBridge.exposeInMainWorld("dictexLab", {
     >,
   listBenchmarkRuns: (split: SttBenchmarkSetSplit) =>
     ipcRenderer.invoke("benchmark-set:list-runs", { split }) as Promise<BenchmarkRunListEntry[]>,
-  exportSttBenchmarkRun: (runId: string) =>
-    ipcRenderer.invoke("benchmark-run:export-llm", { runId }) as Promise<SttBenchmarkRunExportSummary>,
+  exportBenchmarkRun: (runId: string) =>
+    ipcRenderer.invoke("benchmark-run:export-llm", { runId }) as Promise<
+      SttBenchmarkRunExportSummary | NormalizerBenchmarkRunExportSummary
+    >,
   summarizeLegacySttBenchmarkSet: (split: SttBenchmarkSetSplit) =>
     ipcRenderer.invoke("benchmark-set:summarize-legacy-stt", { split }) as Promise<SttBenchmarkCandidateSummaryResponse>,
 

@@ -52,6 +52,8 @@
  */
 
 export type CommandDefinition = {
+  /** Stable public identifier used by benchmark traces and portable manifests. */
+  id: string;
   /** Single PUA sentinel code point in `U+E000`–`U+E00F`. Written as an escape. */
   sentinel: string;
   /**
@@ -67,16 +69,40 @@ export type CommandDefinition = {
   /** Human-readable debug label. NEVER persist a sentinel as this label — the
    * store holds the canonical words; this is for a UI pill / debug view only. */
   label: string;
+  /** Portable description of the insertion effect. Never contains a PUA code point. */
+  effectDescription: string;
 };
+
+export const COMMAND_TABLE_CONTRACT_VERSION = 1;
 
 /**
  * The canonical command table — the ONE place the command list is defined.
  * Enlarging it is a config change by construction (see module header).
  */
 export const COMMANDS: readonly CommandDefinition[] = [
-  { sentinel: "\uE000", canonical: "retour à la ligne", expansion: "\n", label: "⟦NL⟧" },
-  { sentinel: "\uE001", canonical: "nouveau paragraphe", expansion: "\n\n", label: "⟦PARA⟧" },
+  {
+    id: "newline",
+    sentinel: "\uE000",
+    canonical: "retour à la ligne",
+    expansion: "\n",
+    label: "⟦NL⟧",
+    effectDescription: "Insert one line break",
+  },
+  {
+    id: "paragraph",
+    sentinel: "\uE001",
+    canonical: "nouveau paragraphe",
+    expansion: "\n\n",
+    label: "⟦PARA⟧",
+    effectDescription: "Insert two line breaks",
+  },
 ];
+
+export type CommandExtractionTrace = {
+  commandId: string;
+  debugLabel: string;
+  occurrences: { start: number; end: number; matchedText: string }[];
+};
 
 /** The full reserved sentinel block, `U+E000`–`U+E00F`. One class matches every
  * command sentinel and no rule written for maths will ever touch it. */
@@ -101,7 +127,7 @@ function escapeRegExp(literal: string): string {
  * Longer phrases are matched first so a shorter command can never consume part of
  * a longer one.
  */
-const COMMAND_MATCHERS: { regex: RegExp; sentinel: string }[] = [...COMMANDS]
+const COMMAND_MATCHERS: { regex: RegExp; command: CommandDefinition }[] = [...COMMANDS]
   .sort((a, b) => b.canonical.length - a.canonical.length)
   .map((command) => {
     const words = command.canonical.trim().split(/\s+/).map(escapeRegExp);
@@ -109,7 +135,7 @@ const COMMAND_MATCHERS: { regex: RegExp; sentinel: string }[] = [...COMMANDS]
     // `(?<![\p{L}\p{N}])` / `(?![\p{L}\p{N}])`: don't match glued inside a word;
     // `g` every occurrence, `u` Unicode-aware, `i` case-insensitive.
     const regex = new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, "giu");
-    return { regex, sentinel: command.sentinel };
+    return { regex, command };
   });
 
 const EXPANSION_BY_SENTINEL: Map<string, string> = new Map(
@@ -128,11 +154,36 @@ const CANONICAL_BY_SENTINEL: Map<string, string> = new Map(
  * pair at export time.
  */
 export function extractCommands(text: string): string {
+  return extractCommandsWithTrace(text).output;
+}
+
+/**
+ * Benchmark-only command extraction instrumentation. It performs the exact
+ * same ordered replacements as `extractCommands` and records only commands
+ * that were encountered. Positions are relative to the input of that command
+ * operation, after earlier command definitions have run.
+ */
+export function extractCommandsWithTrace(text: string): {
+  output: string;
+  traces: CommandExtractionTrace[];
+} {
   let output = text;
+  const traces: CommandExtractionTrace[] = [];
   for (const matcher of COMMAND_MATCHERS) {
-    output = output.replace(matcher.regex, matcher.sentinel);
+    const occurrences: CommandExtractionTrace["occurrences"] = [];
+    output = output.replace(matcher.regex, (matchedText: string, offset: number) => {
+      occurrences.push({ start: offset, end: offset + matchedText.length, matchedText });
+      return matcher.command.sentinel;
+    });
+    if (occurrences.length > 0) {
+      traces.push({
+        commandId: matcher.command.id,
+        debugLabel: matcher.command.label,
+        occurrences,
+      });
+    }
   }
-  return output;
+  return { output, traces };
 }
 
 /**

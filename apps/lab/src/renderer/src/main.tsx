@@ -13,6 +13,7 @@ import type {
   SttBenchmarkCandidateSummaryResponse,
   SttBenchmarkRunDetail,
   SttBenchmarkRunExportSummary,
+  NormalizerBenchmarkRunExportSummary,
   SttBenchmarkSetMembershipRequest,
   SttBenchmarkSetMembershipResponse,
   SttBenchmarkSetPreview,
@@ -104,6 +105,8 @@ type ExperimentPreview =
   | ({ stage: "stt" } & SttBenchmarkSetPreview)
   | NormalizerBenchmarkSetPreview;
 
+type BenchmarkRunExportSummary = SttBenchmarkRunExportSummary | NormalizerBenchmarkRunExportSummary;
+
 type LabApi = {
   getDataFolder: () => Promise<DataFolderStatus>;
   setDataFolder: (folder: string) => Promise<DataFolderStatus>;
@@ -130,7 +133,7 @@ type LabApi = {
     runId: string,
   ) => Promise<SttBenchmarkRunDetail | BenchmarkMathTransformRunProjection | null>;
   listBenchmarkRuns: (split: SttBenchmarkSetSplit) => Promise<BenchmarkRunListEntry[]>;
-  exportSttBenchmarkRun: (runId: string) => Promise<SttBenchmarkRunExportSummary>;
+  exportBenchmarkRun: (runId: string) => Promise<BenchmarkRunExportSummary>;
   summarizeLegacySttBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkCandidateSummaryResponse>;
   selectSttCandidate: (request: SttCandidateSelectionRequest) => Promise<SttCandidateSelectionResponse>;
   getLatestSttCandidateSelection: () => Promise<SttCandidateSelectionResponse | null>;
@@ -259,7 +262,7 @@ function App(): React.ReactElement {
   const [resultsSplit, setResultsSplit] = useState<SttBenchmarkSetSplit>("validation");
   const [runList, setRunList] = useState<BenchmarkRunListEntry[]>([]);
   const [results, setResults] = useState<ResultsState>(emptyResultsState);
-  const [runExportSummary, setRunExportSummary] = useState<SttBenchmarkRunExportSummary | null>(null);
+  const [runExportSummary, setRunExportSummary] = useState<BenchmarkRunExportSummary | null>(null);
   const [runExportError, setRunExportError] = useState("");
   const [isExportingRun, setIsExportingRun] = useState(false);
   const [currentSelection, setCurrentSelection] = useState<SttCandidateSelectionResponse | null>(null);
@@ -795,7 +798,7 @@ function App(): React.ReactElement {
     setRunExportError("");
     setIsExportingRun(true);
     try {
-      setRunExportSummary(await window.dictexLab.exportSttBenchmarkRun(runId));
+      setRunExportSummary(await window.dictexLab.exportBenchmarkRun(runId));
     } catch (exportError) {
       setRunExportSummary(null);
       setRunExportError(exportError instanceof Error ? exportError.message : "Benchmark run export failed");
@@ -2414,7 +2417,21 @@ function RunSegmentOutputs({ segments }: { segments: SttBenchmarkRunDetail["segm
   );
 }
 
-function NormalizerRunResults({ detail }: { detail: BenchmarkMathTransformRunProjection }): React.ReactElement {
+function NormalizerRunResults({
+  detail,
+  runExportSummary,
+  runExportError,
+  isExportingRun,
+  exportSelectedRun,
+  openRunExportFolder,
+}: {
+  detail: BenchmarkMathTransformRunProjection;
+  runExportSummary: BenchmarkRunExportSummary | null;
+  runExportError: string;
+  isExportingRun: boolean;
+  exportSelectedRun: () => void;
+  openRunExportFolder: () => void;
+}): React.ReactElement {
   const summaries = summarizeNormalizerBenchmarkRun(detail);
   const version = parseNormalizerBenchmarkVariant(detail.candidates[0]?.variant ?? null);
 
@@ -2471,6 +2488,40 @@ function NormalizerRunResults({ detail }: { detail: BenchmarkMathTransformRunPro
             )}
           </div>
         </section>
+
+        <p className="batch-outcome-meta">
+          {detail.pipelineSnapshot
+            ? `The LLM export includes this run's personal dictionary (${detail.pipelineSnapshot.dictionary.source_content !== null || detail.pipelineSnapshot.dictionary.effective_entries.length ? "source included" : "default empty"}). DicTeX does not upload it.`
+            : "This historical run has no complete pipeline provenance. Export will be refused; run the Normalizer benchmark again."}
+        </p>
+        <div className="actions">
+          <button
+            className="secondary-button"
+            disabled={!detail.terminal || isExportingRun}
+            title={detail.terminal ? undefined : "Only a finished run can be exported"}
+            onClick={exportSelectedRun}
+          >
+            {isExportingRun ? "Exporting" : "Export for LLM"}
+          </button>
+        </div>
+
+        {runExportError && <pre className="error">{runExportError}</pre>}
+
+        {runExportSummary && "containsPersonalDictionary" in runExportSummary && (
+          <div className="dataset-export-summary">
+            <p>
+              Exported {runExportSummary.segmentCount} math transform segment
+              {runExportSummary.segmentCount === 1 ? "" : "s"} and {runExportSummary.candidateCount} candidate
+              {runExportSummary.candidateCount === 1 ? "" : "s"}. Done: {runExportSummary.done}; failed:{" "}
+              {runExportSummary.failed}; missing: {runExportSummary.missingOutputs}.
+            </p>
+            <p>
+              Personal dictionary: {runExportSummary.containsPersonalDictionary ? "included — review before sharing" : "empty"}.
+            </p>
+            <p className="dataset-export-path" title={runExportSummary.exportDir}>{runExportSummary.exportDir}</p>
+            <button className="secondary-button" onClick={openRunExportFolder}>Open export folder</button>
+          </div>
+        )}
       </section>
 
       <section className="panel summary-panel">
@@ -2594,7 +2645,7 @@ type ResultsViewProps = {
   results: ResultsState;
   selectResult: (key: string) => void;
   errorAnalysis: CandidateErrorAnalysis[];
-  runExportSummary: SttBenchmarkRunExportSummary | null;
+  runExportSummary: BenchmarkRunExportSummary | null;
   runExportError: string;
   isExportingRun: boolean;
   exportSelectedRun: () => void;
@@ -2895,7 +2946,16 @@ function ResultsView({
         </>
       )}
 
-      {detail?.stage === "math_transform" && <NormalizerRunResults detail={detail} />}
+      {detail?.stage === "math_transform" && (
+        <NormalizerRunResults
+          detail={detail}
+          runExportSummary={runExportSummary}
+          runExportError={runExportError}
+          isExportingRun={isExportingRun}
+          exportSelectedRun={exportSelectedRun}
+          openRunExportFolder={openRunExportFolder}
+        />
+      )}
 
       {legacySummary && (
         <section className="panel summary-panel">

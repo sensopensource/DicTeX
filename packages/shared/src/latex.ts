@@ -630,3 +630,5 @@ export function canonicalizeLatex(text: string): string {
     return text;
   }
 }
+/** Version of the deterministic LaTeX canonicalization semantics. */
+export const LATEX_CANONICALIZATION_CONTRACT_VERSION = 1;

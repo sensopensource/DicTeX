@@ -36,6 +36,7 @@ export * from "./benchmarkRunDetail.js";
 export * from "./benchmarkContract.js";
 export * from "./normalizerBenchmark.js";
 export * from "./benchmarkRunExport.js";
+export * from "./normalizerBenchmarkRunExport.js";
 export * from "./normalizer.js";
 export * from "./datasetExport.js";
 export * from "./sttEngine.js";

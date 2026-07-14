@@ -16,6 +16,7 @@ import {
   getBenchmarkRunProjections,
   summarizeLegacySttBenchmarkResultsByCandidate,
   buildSttBenchmarkRunExport,
+  buildNormalizerBenchmarkRunExport,
   buildSttDatasetExport,
   createTranscriptNormalizer,
   normalizeTranscript,
@@ -50,11 +51,13 @@ import {
   type BenchmarkMathTransformRunProjection,
   type BenchmarkRunListEntry,
   type SttBenchmarkRunExportSummary,
+  type NormalizerBenchmarkRunExportSummary,
   type SttDatasetExportFileSummary,
   type SttDatasetExportSplitSummary,
   type SttDatasetExportSummary,
 } from "@dictex/shared";
 import { writeSttBenchmarkRunExport } from "./benchmarkRunExportWriter.js";
+import { writeNormalizerBenchmarkRunExport } from "./normalizerBenchmarkRunExportWriter.js";
 import { requireNonEmptySttBenchmarkSnapshot, requireSttBenchmarkOutput } from "./benchmarkExecution.js";
 import {
   buildNormalizerBenchmarkSetPreview,
@@ -1034,12 +1037,20 @@ ipcMain.handle(
 
 ipcMain.handle(
   "benchmark-run:export-llm",
-  async (_event, request: { runId?: unknown }): Promise<SttBenchmarkRunExportSummary> => {
+  async (
+    _event,
+    request: { runId?: unknown },
+  ): Promise<SttBenchmarkRunExportSummary | NormalizerBenchmarkRunExportSummary> => {
     if (!request || typeof request.runId !== "string" || request.runId.length === 0) {
       throw new Error("A run id is required");
     }
 
     const events = await readAllEvents();
+    const projection = getBenchmarkRunProjection(events, request.runId);
+    if (projection?.stage === "math_transform") {
+      const runExport = buildNormalizerBenchmarkRunExport(events, request.runId, new Date().toISOString());
+      return writeNormalizerBenchmarkRunExport(getOwnExportsRoot(), runExport);
+    }
     const promptDefinitions = listPromptVariants(events)
       .filter((definition) => definition.source === "external" || !definition.shadowedByExternal)
       .map((definition) => ({

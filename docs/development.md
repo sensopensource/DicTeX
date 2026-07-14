@@ -228,9 +228,10 @@ Le Lab sépare strictement le protocole à lancer du run déjà figé :
 - **`Results` est la lecture d'un run immuable.** La liste des runs du split
   parcouru, puis le détail du run choisi : statut, snapshot figé, candidats
   lancés, résumé par candidat, sorties de chaque candidat pour chaque membre,
-  erreurs et provenance. La sélection du candidat de base et `Export for LLM`
-  restent propres aux runs STT ; un run Normalizer expose l'exact match, les
-  diffs et les traces. Aucun contrôle de lancement n'y figure.
+  erreurs et provenance. La sélection du candidat de base reste propre aux runs
+  STT. `Export for LLM` existe pour les deux stages : le paquet STT conserve son
+  format historique, tandis que le paquet Normalizer fige le pipeline complet,
+  l'exact match et les traces détaillées. Aucun contrôle de lancement n'y figure.
 - **Un lancement réussi devient son résultat** : le run créé est immédiatement
   sélectionné et la vue bascule sur `Results`.
 
@@ -479,6 +480,19 @@ whatever is left in the field, same as before this issue.
    le même run et confirmer que sa référence et ses scores ne changent pas.
    Enfin, exporter deux fois rapidement et confirmer que deux dossiers distincts
    sont conservés, sans fichier audio copié et sans modification des journaux.
+4octies. Export LLM d'un run Normalizer (issue #141). Lancer un nouveau run
+   Normalizer terminé, le sélectionner dans `Results`, puis cliquer sur `Export
+   for LLM`. Vérifier que le résumé annonce le dossier, les segments, les
+   candidats, les états `done` / `failed` / `missing` et si le dictionnaire
+   personnel est inclus. Le dossier ouvert doit contenir exactement
+   `manifest.json`, `dataset.math_transform.jsonl` et `outputs.jsonl`. Contrôler
+   dans le manifeste les sources, empreintes, entrées/règles effectives ou
+   ignorées et la table de commandes ; dans les sorties, rapprocher les lignes
+   par `session_id + segment_id` et vérifier que les opérations ne répètent pas
+   les définitions. Modifier ensuite correction, split, dictionnaire et règles,
+   puis réexporter le même run : seules la date et le dossier changent. Un run
+   antérieur à #141 doit être refusé avec une invitation à relancer le benchmark.
+   Aucun caractère PUA, audio ou chemin audio ne doit apparaître.
 5. In `Dataset`, use **Build a dataset entry**: paste a transcription (no
    segment) and type a Layer 1 literal transcript containing a rule the
    shipped default regex recognizes plus a word it does not (e.g.
@@ -1060,6 +1074,10 @@ data/
       manifest.json
       dataset.acoustic.jsonl
       outputs.jsonl
+    normalizer-benchmark-run-<timestamp>/
+      manifest.json
+      dataset.math_transform.jsonl
+      outputs.jsonl
 ```
 
 The `exports/` folder holds generated dataset snapshots (see "Corrected Dataset
@@ -1321,6 +1339,41 @@ espaces avec la même normalisation stricte. Ces limites sont recopiées dans
 chaque manifeste. Les deux CER sont dérivés à la lecture depuis le transcript et
 la référence figée : aucun événement historique n'est réécrit, et un run
 antérieur reste lisible tant que son snapshot porte une référence.
+
+#### Export LLM d'un run Normalizer (issue #141)
+
+Un nouveau run `math_transform` fige dans son `benchmark_run_started` le
+snapshot textuel **et** le pipeline effectivement chargé. Le dictionnaire et les
+regex indiquent leur état (`file`, `default_absent`, `invalid`, `unreadable`),
+leur SHA-256 complet, la source lisible, les définitions effectives dans l'ordre,
+les définitions ignorées et leurs diagnostics. La table de commandes fournit
+version, empreinte, identifiants, phrases, labels de debug et effets décrits sans
+PUA. Les versions du pipeline et de `canonicalizeLatex` complètent la provenance.
+
+Le benchmark seul active `detailedTrace`. Chaque résultat conserve les couches
+ordonnées et une liste compacte d'opérations : identifiant de définition,
+occurrences, positions, texte capturé et fragment produit pour les regex. Les
+définitions statiques ne sont donc pas répétées par segment. Le chemin de dictée
+quotidienne n'active pas ce mode et ne grossit pas ses événements.
+
+L'export crée un dossier `normalizer-benchmark-run-<timestamp>/` sans écrasement :
+
+- `manifest.json` : run, candidat, pipeline complet, contrat de score, limites,
+  ordre de lecture, taxonomie suggérée et avertissement sur le dictionnaire ;
+- `dataset.math_transform.jsonl` : snapshot couche 1 / cible couche 2 dans son
+  ordre figé ;
+- `outputs.jsonl` : un enregistrement par même membre, avec tous les candidats,
+  états, sorties brute/canonique, cible canonique, exact match, durée, couches et
+  références d'opérations.
+
+Lire d'abord le manifeste, puis joindre les deux JSONL sur
+`session_id + segment_id`. Commencer par les sorties non exactes et utiliser les
+identifiants d'opération pour distinguer dictionnaire, commande, regex absente ou
+fausse, limite de portée/composition, convention humaine, diagnostic et échec
+d'exécution. Cette taxonomie est une aide d'analyse, jamais une classification
+calculée par DicTeX. Le lecteur local refuse un fichier supplémentaire, un ordre
+incohérent, une référence inconnue ou un caractère PUA. Un run historique sans
+provenance complète est refusé plutôt qu'enrichi avec l'état courant.
 
 STT corrections are append-only events linked to the original segment:
 

@@ -157,6 +157,32 @@ traces ; aucun caractère PUA n'est écrit. La mesure est l'exact match après
 Une portée erronée reste donc un échec visible et explicable par le diff et les
 traces de couches dans `Results`.
 
+## DEC-RUN-004 — L'export LLM du normaliseur appartient entièrement au run — 13 juillet 2026
+
+**Statut : active.** Un futur `benchmark_run_started` de stage
+`math_transform` fige désormais la configuration effective chargée par
+l'instance de `TranscriptNormalizer` qui exécute le run : sources et empreintes
+du dictionnaire et des regex, définitions retenues ou ignorées, table de
+commandes, versions sémantiques du pipeline et de la canonicalisation LaTeX.
+L'identité du candidat inclut ces versions et l'empreinte des commandes en plus
+des empreintes du dictionnaire et des règles.
+
+Le mode de trace détaillé est demandé uniquement par ce benchmark. Les événements
+de dictée quotidienne gardent leurs traces de couches historiques, sans les
+occurrences par définition. Pour le run, chaque opération réellement rencontrée
+référence un identifiant défini une seule fois dans le snapshot et porte ses
+positions et fragments propres au segment. Les mots de commande sont restaurés
+avant l'écriture ; une source contenant un caractère PUA le représente sous une
+forme échappée, jamais comme caractère brut.
+
+`Export for LLM` construit exclusivement depuis le start, les résultats et le
+terminal de ce run un dossier contenant exactement `manifest.json`,
+`dataset.math_transform.jsonl` et `outputs.jsonl`. L'export ne relit ni corpus,
+ni split, ni fichier courant. Un run antérieur sans snapshot complet ou sans
+traces détaillées est refusé et doit être relancé ; sa provenance n'est jamais
+reconstituée. Le manifeste contient volontairement le dictionnaire personnel et
+l'interface l'annonce. DicTeX ne téléverse rien.
+
 ## DicTeX / Lab split (monorepo)
 
 DicTeX est séparé en deux applications Electron dans un même monorepo npm

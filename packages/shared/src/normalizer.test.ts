@@ -3,7 +3,8 @@ import path from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { normalizeTranscript, type NormalizeOptions } from "./normalizer.js";
+import { createTranscriptNormalizer, normalizeTranscript, type NormalizeOptions } from "./normalizer.js";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { canonicalizeLatex } from "./latex.js";
 
 // Points the normalizer at a directory that does not exist: the personal
@@ -160,4 +161,25 @@ test("the full reserved sentinel block survives the regex layer untouched", asyn
   // No rule fires ("end" is not a valid operand either), so the whole string,
   // sentinels included, is byte-identical to the input.
   assert.equal(output, all);
+});
+
+test("pipeline snapshot distinguishes invalid and unreadable sources without rebuilding provenance", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "dictex-normalizer-snapshot-"));
+  try {
+    const dictionaryPath = path.join(directory, "dictionary.json");
+    const rulesPath = path.join(directory, "rules.json");
+    writeFileSync(dictionaryPath, "{ invalid", "utf8");
+    mkdirSync(rulesPath);
+    const normalizer = await createTranscriptNormalizer({ dictionaryPath, rulesPath });
+    assert.equal(normalizer.pipelineSnapshot.dictionary.source_state, "invalid");
+    assert.equal(normalizer.pipelineSnapshot.dictionary.source_content, "{ invalid");
+    assert.equal(normalizer.pipelineSnapshot.dictionary.ignored_entries.length, 1);
+    assert.equal(normalizer.pipelineSnapshot.regex_rules.source_state, "unreadable");
+    assert.equal(normalizer.pipelineSnapshot.regex_rules.source_content, null);
+    assert.equal(normalizer.pipelineSnapshot.regex_rules.effective_rules.length, 0);
+    assert.match(normalizer.pipelineSnapshot.dictionary.sha256, /^[0-9a-f]{64}$/);
+    assert.match(normalizer.pipelineSnapshot.regex_rules.sha256, /^[0-9a-f]{64}$/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

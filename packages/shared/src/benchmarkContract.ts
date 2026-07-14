@@ -17,6 +17,8 @@ import {
   calculateCharacterErrorRate,
   calculateWordErrorRate,
 } from "./sttScoring.js";
+import type { NormalizerOperationTrace } from "./normalizer.js";
+import type { NormalizerBenchmarkPipelineSnapshot } from "./normalizerBenchmark.js";
 
 /**
  * Stages named by the multi-stage benchmark contract. `end_to_end` is reserved
@@ -92,7 +94,10 @@ export type BenchmarkMathTransformRunStartedEvent = BenchmarkRunStartedBase<
   "math_transform",
   "math_transform",
   BenchmarkMathTransformSnapshotMemberRecord
->;
+> & {
+  /** Added by #141. Optional only so #140 historical runs remain readable. */
+  pipeline_snapshot?: NormalizerBenchmarkPipelineSnapshot;
+};
 
 /** Discriminated start-event union. There is deliberately no end-to-end variant yet. */
 export type BenchmarkRunStartedEvent = BenchmarkSttRunStartedEvent | BenchmarkMathTransformRunStartedEvent;
@@ -121,6 +126,8 @@ export type BenchmarkMathTransformResultEvent = BenchmarkResultBase<"math_transf
   transformation_duration_ms: number | null;
   /** Ordered normalizer layer traces, kept typed instead of hidden in a free-form payload. */
   layers: NormalizationLayerRecord[];
+  /** Added by #141. Missing only on historical results written by #140. */
+  operations?: NormalizerOperationTrace[];
 };
 
 /** Discriminated result union. Metrics are derived from the frozen snapshot, not stored in an arbitrary map. */
@@ -212,6 +219,7 @@ export type BenchmarkMathTransformResultProjection = {
   outputTranscript: string;
   transformationDurationMs: number | null;
   layers: NormalizationLayerRecord[];
+  operations: NormalizerOperationTrace[] | null;
   score: BenchmarkMathTransformScoreProjection;
 };
 
@@ -286,6 +294,7 @@ export type BenchmarkSttRunProjection = BenchmarkRunProjectionBase<"stt", "acous
 
 export type BenchmarkMathTransformRunProjection = BenchmarkRunProjectionBase<"math_transform", "math_transform"> & {
   candidates: BenchmarkCandidateRecord<"math_transform">[];
+  pipelineSnapshot: NormalizerBenchmarkPipelineSnapshot | null;
   members: BenchmarkMathTransformMemberProjection[];
 };
 
@@ -354,6 +363,136 @@ function validateLayer(value: unknown, path: string, errors: string[]): boolean 
     errors.push(`${path}.diagnostics must be an array of strings when present`);
   }
   return true;
+}
+
+function validateOperation(value: unknown, path: string, errors: string[]): boolean {
+  if (!isRecord(value)) {
+    errors.push(`${path} must be an object`);
+    return false;
+  }
+  if (value.operation !== "dictionary" && value.operation !== "command" && value.operation !== "regex") {
+    errors.push(`${path}.operation must be dictionary, command or regex`);
+  }
+  if (!isNonEmptyString(value.definition_id)) {
+    errors.push(`${path}.definition_id must be a non-empty string`);
+  }
+  if (!isNonNegativeInteger(value.occurrence_count)) {
+    errors.push(`${path}.occurrence_count must be a non-negative integer`);
+  }
+  if (!Array.isArray(value.occurrences)) {
+    errors.push(`${path}.occurrences must be an array`);
+  } else {
+    value.occurrences.forEach((occurrence, index) => {
+      if (
+        !isRecord(occurrence) ||
+        !isNonNegativeInteger(occurrence.start) ||
+        !isNonNegativeInteger(occurrence.end) ||
+        typeof occurrence.matched_text !== "string" ||
+        (occurrence.replacement_text !== undefined && typeof occurrence.replacement_text !== "string")
+      ) {
+        errors.push(`${path}.occurrences[${index}] has invalid positions or text`);
+      }
+    });
+    if (isNonNegativeInteger(value.occurrence_count) && value.occurrences.length !== value.occurrence_count) {
+      errors.push(`${path}.occurrence_count must equal occurrences.length`);
+    }
+  }
+  if (value.operation === "command" && !isNonEmptyString(value.debug_label)) {
+    errors.push(`${path}.debug_label must be a non-empty string for commands`);
+  }
+  if (value.operation === "regex" && !isNonNegativeInteger(value.pass)) {
+    errors.push(`${path}.pass must be a non-negative integer for regex operations`);
+  }
+  return true;
+}
+
+function validatePipelineSnapshot(value: unknown, path: string, errors: string[]): boolean {
+  if (!isRecord(value)) {
+    errors.push(`${path} must be an object`);
+    return false;
+  }
+  if (value.schema_version !== 1 || !isNonNegativeInteger(value.pipeline_contract_version)) {
+    errors.push(`${path} must carry schema_version 1 and an integer pipeline_contract_version`);
+  }
+  if (!isNonEmptyString(value.semantic_version)) {
+    errors.push(`${path}.semantic_version must be a non-empty string`);
+  }
+  validateCandidate(value.candidate, "math_transform", `${path}.candidate`, errors);
+  if (!isNonNegativeInteger(value.latex_canonicalization_contract_version)) {
+    errors.push(`${path}.latex_canonicalization_contract_version must be an integer`);
+  }
+
+  validateSourceSnapshot(value.dictionary, `${path}.dictionary`, "effective_entries", "ignored_entries", errors);
+  validateSourceSnapshot(value.regex_rules, `${path}.regex_rules`, "effective_rules", "ignored_rules", errors);
+  if (!isRecord(value.commands)) {
+    errors.push(`${path}.commands must be an object`);
+  } else {
+    if (!isNonNegativeInteger(value.commands.contract_version) || !isSha256(value.commands.sha256)) {
+      errors.push(`${path}.commands must carry contract_version and a full SHA-256`);
+    }
+    if (!Array.isArray(value.commands.definitions)) {
+      errors.push(`${path}.commands.definitions must be an array`);
+    } else {
+      value.commands.definitions.forEach((definition, index) => {
+        if (
+          !isRecord(definition) ||
+          !isNonEmptyString(definition.id) ||
+          !isNonNegativeInteger(definition.order) ||
+          !isNonEmptyString(definition.canonical_phrase) ||
+          !isNonEmptyString(definition.debug_label) ||
+          !isNonEmptyString(definition.effect)
+        ) {
+          errors.push(`${path}.commands.definitions[${index}] is invalid`);
+        }
+      });
+    }
+  }
+  if (containsPrivateUseCharacter(JSON.stringify(value))) {
+    errors.push(`${path} must not contain a Private Use Area character`);
+  }
+  return true;
+}
+
+function validateSourceSnapshot(
+  value: unknown,
+  path: string,
+  effectiveField: string,
+  ignoredField: string,
+  errors: string[],
+): void {
+  if (!isRecord(value)) {
+    errors.push(`${path} must be an object`);
+    return;
+  }
+  if (
+    value.source_state !== "file" &&
+    value.source_state !== "default_absent" &&
+    value.source_state !== "invalid" &&
+    value.source_state !== "unreadable"
+  ) {
+    errors.push(`${path}.source_state is invalid`);
+  }
+  if (!isSha256(value.sha256)) {
+    errors.push(`${path}.sha256 must be a full lowercase SHA-256`);
+  }
+  if (!isNullableString(value.source_content)) {
+    errors.push(`${path}.source_content must be a string or null`);
+  }
+  if (!Array.isArray(value[effectiveField])) {
+    errors.push(`${path}.${effectiveField} must be an array`);
+  } else {
+    value[effectiveField].forEach((definition, index) => {
+      if (!isRecord(definition) || !isNonEmptyString(definition.id) || !isNonNegativeInteger(definition.order)) {
+        errors.push(`${path}.${effectiveField}[${index}] must carry a stable id and order`);
+      }
+    });
+  }
+  if (!Array.isArray(value[ignoredField])) {
+    errors.push(`${path}.${ignoredField} must be an array`);
+  }
+  if (!isStringArray(value.diagnostics)) {
+    errors.push(`${path}.diagnostics must be an array of strings`);
+  }
 }
 
 export function validateBenchmarkRunStartedEvent(value: unknown): BenchmarkEventValidation {
@@ -471,6 +610,26 @@ export function validateBenchmarkRunStartedEvent(value: unknown): BenchmarkEvent
     errors.push("prompt_definitions is STT-specific and must be absent for math_transform");
   }
 
+  if (stage === "math_transform" && value.pipeline_snapshot !== undefined) {
+    validatePipelineSnapshot(value.pipeline_snapshot, "pipeline_snapshot", errors);
+    const snapshotCandidate = isRecord(value.pipeline_snapshot)
+      ? value.pipeline_snapshot.candidate
+      : null;
+    if (
+      isRecord(snapshotCandidate) &&
+      Array.isArray(value.candidates) &&
+      !value.candidates.some(
+        (candidate) =>
+          isRecord(candidate) &&
+          candidateKeyFromUnknown(candidate) === candidateKeyFromUnknown(snapshotCandidate),
+      )
+    ) {
+      errors.push("pipeline_snapshot.candidate must be one of the frozen candidates");
+    }
+  } else if (stage === "stt" && value.pipeline_snapshot !== undefined) {
+    errors.push("pipeline_snapshot is math_transform-specific and must be absent for STT");
+  }
+
   return valid(errors);
 }
 
@@ -523,6 +682,13 @@ export function validateBenchmarkResultEvent(value: unknown): BenchmarkEventVali
       errors.push("layers must be an array for math_transform");
     } else {
       value.layers.forEach((layer, index) => validateLayer(layer, `layers[${index}]`, errors));
+    }
+    if (value.operations !== undefined) {
+      if (!Array.isArray(value.operations)) {
+        errors.push("operations must be an array when present");
+      } else {
+        value.operations.forEach((operation, index) => validateOperation(operation, `operations[${index}]`, errors));
+      }
     }
     if (
       hasOwn(value, "transcript") ||
@@ -1077,6 +1243,7 @@ function projectStageAwareMathTransformRun(
       ? { createdAt: stringOrNull(terminal.event.created_at), done: terminal.event.done, failed: terminal.event.failed }
       : null,
     candidates: start.candidates,
+    pipelineSnapshot: start.pipeline_snapshot ?? null,
     members,
     outcomeCounts: countOutcomes(members.flatMap((member) => member.outcomes)),
   };
@@ -1216,6 +1383,7 @@ function toMathTransformResultProjection(
     outputTranscript: result.output_transcript,
     transformationDurationMs: result.transformation_duration_ms,
     layers: result.layers,
+    operations: result.operations ?? null,
     score: {
       stage: "math_transform",
       metric: "exact_match",
@@ -1413,6 +1581,14 @@ function isNullableNonNegativeNumber(value: unknown): value is number | null {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+
+function containsPrivateUseCharacter(value: string): boolean {
+  return /[\uE000-\uF8FF]/u.test(value);
 }
 
 function isSttBenchmarkSetSplit(value: unknown): value is SttBenchmarkSetSplit {

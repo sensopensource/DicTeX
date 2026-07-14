@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 
 import {
   containsSentinel,
+  buildNormalizerBenchmarkCandidate,
   createTranscriptNormalizer,
   getBenchmarkRunProjection,
   isBenchmarkResultEvent,
@@ -60,6 +61,14 @@ test("the normalizer version hashes the complete dictionary and rules sources lo
     assert.equal(normalizer.version.rulesHash, createHash("sha256").update(rulesSource).digest("hex"));
     assert.match(normalizer.version.dictionaryHash, /^[0-9a-f]{64}$/);
     assert.match(normalizer.version.rulesHash, /^[0-9a-f]{64}$/);
+    const identity = buildNormalizerBenchmarkCandidate(normalizer.version).candidate;
+    assert.match(identity.variant ?? "", /pipeline-contract:2/);
+    assert.match(identity.variant ?? "", /commands-sha256:[0-9a-f]{64}/);
+    const changedCommands = buildNormalizerBenchmarkCandidate({
+      ...normalizer.version,
+      commandTableHash: "0".repeat(64),
+    }).candidate;
+    assert.notEqual(changedCommands.variant, identity.variant, "command-table changes alter candidate identity");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -89,7 +98,8 @@ test("a normalizer run freezes pairs and version, restores commands, canonicaliz
   });
   const normalizer: TranscriptNormalizer = {
     version: base.version,
-    normalize: async (input): Promise<NormalizationResult> => {
+    pipelineSnapshot: base.pipelineSnapshot,
+    normalize: async (input, runtimeOptions): Promise<NormalizationResult> => {
       if (input === "fail this member") {
         throw new Error("synthetic \uE000 member failure \uE00F");
       }
@@ -104,7 +114,7 @@ test("a normalizer run freezes pairs and version, restores commands, canonicaliz
           ],
         };
       }
-      return base.normalize(input);
+      return base.normalize(input, runtimeOptions);
     },
   };
 
@@ -138,6 +148,9 @@ test("a normalizer run freezes pairs and version, restores commands, canonicaliz
     assert.equal(start.snapshot[0].layer2_target, "$x^{2}$", "the latest pair is frozen at launch");
     assert.equal(start.snapshot[0].math_transform_correction_created_at, "2026-07-13T09:00:00.000Z");
     assert.deepEqual(parseNormalizerBenchmarkVariant(start.candidates[0].variant), normalizer.version);
+    assert.equal(start.pipeline_snapshot?.dictionary.source_state, "default_absent");
+    assert.equal(start.pipeline_snapshot?.regex_rules.source_state, "default_absent");
+    assert.equal(start.pipeline_snapshot?.candidate.variant, start.candidates[0].variant);
   }
 
   assert.equal(containsSentinel(JSON.stringify(written)), false, "no PUA sentinel reaches the event log");
@@ -155,6 +168,7 @@ test("a normalizer run freezes pairs and version, restores commands, canonicaliz
     assert.equal(commandResult.output_transcript, "retour à la ligne $y^{2}$");
     assert.equal(containsSentinel(commandResult.output_transcript), false);
     assert.equal(commandResult.layers.some((layer) => containsSentinel(layer.input) || containsSentinel(layer.output)), false);
+    assert.ok(commandResult.operations?.some((operation) => operation.operation === "command"));
   } else {
     assert.fail("command result was not recorded");
   }
