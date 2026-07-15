@@ -267,6 +267,76 @@ propres identifiants stables. Une surcouche ancienne continue donc à désactive
 ou remplacer la même règle, tout en consommant automatiquement les nouvelles
 définitions livrées.
 
+## DEC-COUCHE2-001 — Transformation locale sans inférence sémantique — 13 juillet 2026
+
+**Statut : active.** Une cible humaine `math_transform` doit pouvoir être
+déduite de la seule couche 1 du segment courant. Elle ne récupère aucune unité,
+base de logarithme, opérande ou intention dans un segment voisin et ne corrige
+pas une affirmation parce qu'elle paraît mathématiquement fausse. La couche 2
+nettoie la forme parlée et produit la notation canonique ; elle n'invente pas le
+contenu mathématique.
+
+Cette règle est volontairement fermée : lorsqu'une information nécessaire
+n'est pas prononcée, le Lab conserve la paire acoustique mais aucune cible
+`math_transform` n'est créée tant que le segment n'est pas redicté explicitement
+ou qu'une convention ultérieure ne rend la transformation déterministe. Une
+cible plausible grâce au contexte humain ne devient pas une vérité
+d'entraînement.
+
+Les formes suivantes sont fixées :
+
+| Formulation de couche 1 | Couche 2 canonique | Règle |
+| --- | --- | --- |
+| `exponentielle de A` | `$e^{A}$` | l'expression prononcée est l'exposant |
+| `e puissance A` | `$e^{A}$` | même cible canonique |
+| `e` | `$e$` | constante explicite |
+| `exponentielle` sans opérande | aucune cible automatique | ne signifie jamais la constante `e` |
+| `logarithme de A` | `$\log(A)$` | base laissée non spécifiée |
+| `logarithme naturel de A`, `logarithme népérien de A` ou `ln de A` | `$\ln(A)$` | base naturelle explicite |
+| `logarithme décimal de A` | `$\log_{10}(A)$` | base dix explicite |
+| `sinus de quatre-vingt-dix degrés` | `$\sin(90^\circ)$` | l'unité est prononcée |
+| `sinus de quatre-vingt-dix` | `$\sin(90)$` | aucun degré n'est ajouté |
+| `sinus de l'angle alpha` | `$\sin(\alpha)$` | « angle » introduit l'argument, pas son unité |
+
+Les mêmes règles d'unité valent pour cosinus, tangente et les autres fonctions
+trigonométriques. Dire « angle quatre-vingt-dix » ne suffit pas à produire
+`90^\circ` ; il faut dire « quatre-vingt-dix degrés ». Une base logarithmique ou
+une unité angulaire mentionnée dans le segment précédent ne se propage jamais.
+
+Conséquences pour les données :
+
+- une formulation incomplète comme « logarithme de l'exponentielle est égal à
+  un » reste acoustiquement valide, mais n'a pas de cible mathématique sûre ;
+- une identité destinée au logarithme naturel doit prononcer `ln`, « logarithme
+  naturel » ou « logarithme népérien » ;
+- « exponentielle x » sans « de » reste acoustiquement valide, mais n'a pas de
+  cible automatique ; il faut prononcer « exponentielle de x » ou « e puissance
+  x » ;
+- un segment trigonométrique sans le mot « degrés » produit un argument sans
+  symbole `^\circ`, même si le sujet général de la dictée porte sur les degrés ;
+- une nouvelle prise explicite est préférable à une correction de couche 2 qui
+  dépendrait d'un contexte absent de son entrée.
+
+## DEC-COUCHE2-002 — Décimaux français explicites — 15 juillet 2026
+
+**Statut : active.** La forme orale canonique d'un décimal énonce la partie
+entière, le mot « virgule », puis chaque chiffre décimal séparément. La couche 1
+conserve exactement cette verbalisation : « zéro virgule zéro zéro un », jamais
+`0,001`. La couche 2 produit la virgule française protégée en LaTeX :
+`$0{,}001$`. Le même contrat donne « vingt virgule zéro huit cinq » →
+`$20{,}085$`.
+
+Le mot « virgule » n'est interprété comme séparateur décimal que dans une
+séquence numérique complète : une partie entière reconnue avant lui et au moins
+un chiffre explicitement prononcé après lui. Hors de ce cadre, il reste de la
+prose ou de la ponctuation et ne crée aucune cible décimale. Les chiffres après
+la virgule ne sont ni regroupés ni inférés : « zéro virgule un » vaut
+`$0{,}1$`, tandis que `$0{,}01$` exige « zéro virgule zéro un ».
+
+Cette décision ne transforme pas « point » ou « virgule » en mots de commande
+et ne tranche pas l'orthographe générale des nombres composés, qui reste suivie
+par `CONV-006`.
+
 ## DicTeX / Lab split (monorepo)
 
 DicTeX est séparé en deux applications Electron dans un même monorepo npm

@@ -75,8 +75,19 @@ phonétique. Les choix encore ambigus — orthographe des nombres composés,
 ponctuation éditoriale, hésitations et autocorrections — restent identifiés dans
 `docs/questions-de-conventions.md`. Une sortie STT compacte est corrigée contre
 l'audio dans le Lab ; elle n'est pas rendue vraie par un post-traitement qui ne
-peut plus reconstruire les mots prononcés, en particulier pour un nombre ou un
-décimal.
+peut plus reconstruire les mots prononcés.
+
+Depuis `DEC-COUCHE2-001`, une formulation incomplète reste une référence
+acoustique valide mais ne reçoit aucune cible `math_transform` inventée :
+« logarithme de l'exponentielle est égal à un » ne devient pas `\ln(e)=1`, et
+« exponentielle x » ne devient pas `e^x`. La base naturelle doit être prononcée
+et l'exponentielle exige « exponentielle de A » ou « e puissance A ».
+
+Depuis `DEC-COUCHE2-002`, un décimal canonique se dicte avec la partie entière,
+« virgule », puis chaque chiffre décimal séparément. La couche 1 conserve « zéro
+virgule zéro zéro un » ; la couche 2 porte `$0{,}001$`. Sans partie entière
+reconnue avant « virgule » ou sans chiffre explicite après, aucune cible décimale
+n'est créée.
 
 **Layer 2 is the clean, formal notation.** The `math_transform` pair therefore
 learns two things at once: remove disfluencies, and write notation. Both are the
@@ -608,6 +619,7 @@ canonicalisation, son comportement dans le Lab et sa migration.
 | root             | `\sqrt{x}`, `\sqrt[3]{x}`     | `\sqrt x`                                 |
 | fraction         | `\frac{a}{b}`                 | `\dfrac`, `\tfrac`, `\frac a b`           |
 | multiplication   | `\times`                      | `\cdot`, `*`                              |
+| decimal          | `0{,}001`                     | French decimal comma protected from TeX spacing |
 | relations        | `=`, `<`, `>`, `\leq`, `\geq`, `\neq` | `\le`, `\ge`, `\ne`, `\leqslant`, `\geqslant` |
 | limit arrow      | `\to`                         | `\rightarrow`, `\longrightarrow`          |
 | set              | `\mathbb{R}`                  | `\mathbb R`                              |

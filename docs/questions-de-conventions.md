@@ -21,26 +21,39 @@ de `docs/product-decisions.md`, avec des exemples et une date.
 - Limite : cette décision ne fixe pas encore toute l'orthographe des nombres
   composés, la ponctuation éditoriale ni la manière d'annoter les hésitations.
 
+### CONV-001, CONV-002, CONV-003, CONV-004 et CONV-007 — Fonctions et unités explicites
+
+- Statut : décidées le 13 juillet 2026.
+- Décision : voir `DEC-COUCHE2-001` dans `docs/product-decisions.md`.
+- Principe : une couche 2 est déduite du seul segment courant et n'invente ni
+  unité, ni base logarithmique, ni opérande grâce au contexte.
+- Exponentielle : « exponentielle de A » et « e puissance A » produisent
+  `$e^{A}$` ; « e » désigne la constante ; « exponentielle » seule ne désigne
+  jamais `e`. « Exponentielle x » sans « de » n'a pas de cible automatique.
+- Logarithmes : « logarithme de A » conserve une base non spécifiée avec
+  `$\log(A)$` ; `\ln` exige « ln », « logarithme naturel » ou « logarithme
+  népérien » ; la base dix exige « logarithme décimal ».
+- Angles : `^\circ` n'est produit que si « degré » ou « degrés » est prononcé.
+  Le mot « angle » introduit un argument, pas une unité, et un segment
+  n'hérite jamais de l'unité du précédent.
+
+### CONV-005 — Décimaux
+
+- Statut : décidée le 15 juillet 2026.
+- Décision : voir `DEC-COUCHE2-002` dans `docs/product-decisions.md`.
+- Couche 1 : partie entière, « virgule », puis chiffres décimaux prononcés un
+  par un ; par exemple « zéro virgule zéro zéro un ».
+- Couche 2 : virgule française protégée en LaTeX ; l'exemple devient
+  `$0{,}001$`.
+- Frontière : « virgule » n'est décimale qu'entre une partie entière reconnue et
+  au moins un chiffre explicitement prononcé. Sinon, elle reste prose ou
+  ponctuation.
+
 ## Notation et vocabulaire mathématique
 
-- [ ] **CONV-001 — Angle nul.** Pour `0^\circ`, quelle formulation orale
-  privilégier : « zéro degré » ou « angle zéro » ? Quelle cible LaTeX canonique
-  en découle ?
-- [ ] **CONV-002 — Exponentielle.** Faut-il dire « e puissance x » ou
-  « exponentielle de x » ? La couche 2 produit-elle `e^x` ou `\exp(x)` ?
-- [ ] **CONV-003 — Logarithme naturel.** Faut-il dire « logarithme de x », « ln
-  de x » ou « logarithme népérien de x » ? Quelle différence orale réserver à
-  `log` ?
-- [ ] **CONV-004 — Constante e.** Comment annoncer la constante `e` sans la
-  confondre avec une lettre ou un mot mal entendu ?
-- [ ] **CONV-005 — Décimaux.** Quelle forme orale retenir, par exemple « zéro
-  virgule deux » et « vingt virgule zéro huit cinq » ? Comment séparer cette
-  virgule décimale de la ponctuation de phrase ?
 - [ ] **CONV-006 — Orthographe des nombres composés.** Quelle orthographe
   canonique conserver dans la couche 1, par exemple « quatre-vingts »,
   « quatre-vingt-dix » et « cent quatre-vingts » ?
-- [ ] **CONV-007 — Formulation trigonométrique.** Faut-il dire « sinus de x »
-  ou « sinus de l'angle x » ? Comment annoncer explicitement degrés et radians ?
 - [ ] **CONV-008 — Relations d'ordre.** Quelle différence orale retenir entre
   « inférieur à », « strictement inférieur à » et « inférieur ou égal à » ?
 - [ ] **CONV-009 — Relations chaînées.** Comment désambiguïser les chaînes comme
