@@ -10,6 +10,9 @@ Avant toute modification, lire :
 - `CONTRIBUTING.md` (**langue et conventions de contribution**)
 - `docs/product-decisions.md`
 - `docs/development.md`
+- `docs/principes-des-conventions.md` et
+  `docs/questions-de-conventions.md` avant de créer ou modifier des exemples de
+  couche 1 / couche 2, une verbalisation canonique ou une commande de dictée ;
 - `docs/dataset-and-normalization-design.md` avant de modifier un type de
   correction, une couche du normaliseur ou un champ d'export ;
 - `pivot_dictex_lab_split.md` et `pivot_strategique_stt_normalisation.md`

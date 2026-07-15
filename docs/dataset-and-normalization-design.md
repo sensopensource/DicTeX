@@ -89,6 +89,12 @@ virgule zéro zéro un » ; la couche 2 porte `$0{,}001$`. Sans partie entière
 reconnue avant « virgule » ou sans chiffre explicite après, aucune cible décimale
 n'est créée.
 
+Toute création manuelle ou synthétique d'une paire couche 1 / couche 2 suit la
+passe de `docs/principes-des-conventions.md` : partir de la cible, la verbaliser
+avec les conventions décidées, puis prouver que chaque structure cible est
+déductible du seul segment. Une convention manquante devient une question du
+registre ; elle n'est jamais remplacée par une inférence de contexte.
+
 **Layer 2 is the clean, formal notation.** The `math_transform` pair therefore
 learns two things at once: remove disfluencies, and write notation. Both are the
 same underlying task ("spoken → written"), so they are not separated. The

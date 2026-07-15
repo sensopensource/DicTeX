@@ -2,6 +2,11 @@
 
 Ce document recueille les questions découvertes pendant les dictées réelles.
 
+Les questions et décisions suivent les
+[`principes de conception des conventions`](principes-des-conventions.md) : une
+formulation orale canonique doit produire une seule couche 2, entièrement
+déductible du segment courant.
+
 Ce n'est pas une spécification : une question ouverte ne bloque ni la collecte
 ni un benchmark. Chaque question reçoit un identifiant stable `CONV-NNN`.
 Lorsqu'une décision est prise, la question n'est ni supprimée ni renumérotée :
@@ -49,6 +54,23 @@ de `docs/product-decisions.md`, avec des exemples et une date.
   au moins un chiffre explicitement prononcé. Sinon, elle reste prose ou
   ponctuation.
 
+### CONV-021 et CONV-022 — Casse, délimiteurs et séparateurs explicites
+
+- Statut : décidées le 15 juillet 2026.
+- Décision : voir `DEC-CONV-001` dans `docs/product-decisions.md`.
+- Casse latine : `grand f` produit `$F$` et `petit f` produit `$f$`. Le motif
+  exige immédiatement le nom canonique d'une seule lettre ; « un grand nombre »
+  reste inchangé. Les lettres grecques restent suivies séparément par
+  `CONV-012`.
+- Délimiteurs : « parenthèse ouvrante » et « parenthèse fermante » portent les
+  parenthèses réelles ; aucune parenthèse n'est déduite silencieusement.
+- Séparation : « séparateur » produit une virgule structurelle entre éléments,
+  tandis que « virgule » reste réservée au nombre décimal décidé par
+  `CONV-005`.
+- Exemples : « parenthèse ouvrante x séparateur y parenthèse fermante » produit
+  `$(x,y)$` ; « parenthèse ouvrante zéro séparateur zéro parenthèse fermante »
+  produit `$(0,0)$`, distinct de « zéro virgule zéro » → `$0{,}0$`.
+
 ## Notation et vocabulaire mathématique
 
 - [ ] **CONV-006 — Orthographe des nombres composés.** Quelle orthographe
@@ -89,14 +111,6 @@ de `docs/product-decisions.md`, avec des exemples et une date.
     et non comme de la ponctuation, pour le scoring acoustique ?
 - [ ] **CONV-015 — Ponctuation dictée.** Comment demander explicitement une
   ponctuation lorsque celle-ci compte réellement pour le texte inséré ?
-- [ ] **CONV-021 — Casse des identifiants.** Proposition : employer « grand »
-  comme commande uniquement devant le nom canonique d'une lettre latine ;
-  `grand f` en couche 1 produit `F` en couche 2, et `grand a` produit `A`.
-  Prévoir symétriquement `petit f` → `f` si la casse minuscule doit être rendue
-  explicite. La commande ne s'applique jamais à un mot arbitraire : « un grand
-  nombre » reste inchangé. À valider sur des audios réels, en particulier pour
-  les noms de lettres ambigus, puis à trancher séparément pour les lettres
-  grecques.
 
 ## Annotation et mesure
 

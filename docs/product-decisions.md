@@ -337,6 +337,35 @@ Cette décision ne transforme pas « point » ou « virgule » en mots de comman
 et ne tranche pas l'orthographe générale des nombres composés, qui reste suivie
 par `CONV-006`.
 
+## DEC-CONV-001 — Grammaire orale explicite et déterministe — 15 juillet 2026
+
+**Statut : active.** Les conventions orales suivent le principe « une
+formulation canonique, une structure explicite, une couche 2 ». Toute
+information nécessaire à la cible est prononcée dans le segment courant ; le
+normaliseur ne récupère ni dimension, ni portée, ni casse, ni séparateur dans le
+contexte mathématique. Les principes complets et la passe de création des paires
+sont fixés dans `docs/principes-des-conventions.md`.
+
+Les formes suivantes sont décidées :
+
+| Formulation de couche 1 | Couche 2 canonique | Limite |
+| --- | --- | --- |
+| `grand f` | `$F$` | seulement devant le nom d'une lettre latine unique |
+| `petit f` | `$f$` | même portée bornée |
+| `parenthèse ouvrante x parenthèse fermante` | `$(x)$` | les délimiteurs sont prononcés |
+| `x séparateur y` dans une structure délimitée | `x,y` | virgule structurelle, jamais décimale |
+| `zéro virgule zéro` | `$0{,}0$` | la décision décimale `DEC-COUCHE2-002` reste inchangée |
+
+Ainsi, « parenthèse ouvrante zéro séparateur zéro parenthèse fermante » produit
+`$(0,0)$`, sans collision avec le décimal « zéro virgule zéro ». « Vecteur nul »
+ne produit jamais `(0,0)` ou `(0,0,0)` : ces coordonnées et leur dimension ne
+sont pas présentes dans la formulation.
+
+Cette décision fixe le contrat de données, pas la couche technique qui réalisera
+chaque transformation. Une convention décidée reste signalée comme non
+implémentée tant que le dictionnaire, la table de commandes ou les regex ne la
+prennent pas effectivement en charge et ne possèdent pas leurs tests.
+
 ## DicTeX / Lab split (monorepo)
 
 DicTeX est séparé en deux applications Electron dans un même monorepo npm
