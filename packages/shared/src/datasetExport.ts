@@ -1,9 +1,6 @@
-import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { extractCommands } from "./commands.js";
 import { canonicalizeLatex } from "./latex.js";
-import { createTranscriptNormalizer, type NormalizeOptions } from "./normalizer.js";
+import { createTranscriptNormalizer, type NormalizeOptions, type NormalizerRulesMode } from "./normalizer.js";
 import {
   CORRECTION_KIND_ORDER,
   countUntypedSttCorrections,
@@ -89,17 +86,10 @@ export type SttDatasetSplitGroup = {
 };
 
 /**
- * Content fingerprint of the normalizer configuration that built the
- * `math_transform` training INPUTS (issue #100). Because the input is now the
- * pipeline output over Layer 1, adding or editing a regex rule changes every
- * input — by design — so a dataset must be traceable to the pipeline that
- * produced it. A sha256 (hex) of each config file's bytes is enough.
- *
- * `null` means the file was absent at export time, which is a normal, meaningful
- * state, not an error:
- * - `dictionaryHash: null` — no personal dictionary; that layer was passthrough.
- * - `rulesHash: null` — no user rules file; the built-in `DEFAULT_RULES` applied,
- *   traceable through the source/git version of `@dictex/shared`.
+ * Fingerprints of the normalizer configuration that built the `math_transform`
+ * training inputs. `rulesHash` identifies the effective ordered definitions,
+ * `bundledRulesHash` the shipped base, and `localRulesHash` the raw overlay or
+ * legacy source (`null` when no local source exists).
  *
  * The human-authored TARGET (Layer 2) is independent of this version and never
  * changes — corrections never rot.
@@ -107,6 +97,11 @@ export type SttDatasetSplitGroup = {
 export type NormalizerVersion = {
   dictionaryHash: string | null;
   rulesHash: string | null;
+  bundledRulesVersion?: number;
+  bundledRulesHash?: string;
+  rulesMode?: NormalizerRulesMode;
+  overlayHash?: string | null;
+  localRulesHash?: string | null;
 };
 
 export type SttDatasetExport = {
@@ -166,7 +161,15 @@ export async function buildSttDatasetExport(
   // byte-identical for a given config — the invariant this issue exists to
   // create (asserted directly in datasetExport.test.ts).
   const normalizer = await createTranscriptNormalizer(options);
-  const normalizerVersion = await fingerprintNormalizerConfig(options);
+  const normalizerVersion: NormalizerVersion = {
+    dictionaryHash: normalizer.version.dictionaryHash,
+    rulesHash: normalizer.version.rulesHash,
+    bundledRulesVersion: normalizer.version.bundledRulesVersion,
+    bundledRulesHash: normalizer.version.bundledRulesHash,
+    rulesMode: normalizer.version.rulesMode,
+    overlayHash: normalizer.version.overlayHash,
+    localRulesHash: normalizer.version.localRulesHash,
+  };
 
   let totalRecords = 0;
   let skippedUntypedCorrections = 0;
@@ -268,35 +271,4 @@ export async function buildSttDatasetExport(
     totalRecords,
     skippedUntypedCorrections,
   };
-}
-
-/**
- * Fingerprint the dictionary and rules files that drive the `math_transform`
- * inputs. Reads the SAME two files the normalizer just loaded, read-only. A
- * missing file yields `null` (see `NormalizerVersion`): an absent dictionary is
- * passthrough, and absent rules mean the built-in `DEFAULT_RULES` applied.
- *
- * The two files are read once more here rather than threaded out of the
- * normalizer; for a local single-user export the window in which a config file
- * could change between the pipeline load and this hash is not a concern.
- */
-async function fingerprintNormalizerConfig(options: NormalizeOptions): Promise<NormalizerVersion> {
-  return {
-    dictionaryHash: await hashFileIfPresent(options.dictionaryPath),
-    rulesHash: await hashFileIfPresent(options.rulesPath),
-  };
-}
-
-async function hashFileIfPresent(filePath: string): Promise<string | null> {
-  if (!existsSync(filePath)) {
-    return null;
-  }
-  try {
-    const contents = await readFile(filePath);
-    return createHash("sha256").update(contents).digest("hex");
-  } catch {
-    // Unreadable file: the normalizer already degrades this to passthrough with a
-    // diagnostic, so the export must not crash either. Record it as absent.
-    return null;
-  }
 }

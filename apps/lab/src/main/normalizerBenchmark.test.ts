@@ -46,7 +46,31 @@ function correction(segmentId: string, input: string, target: string, createdAt:
   };
 }
 
-test("the normalizer version hashes the complete dictionary and rules sources loaded by the pipeline", async () => {
+test("historical normalizer candidate variants remain readable without rules provenance", () => {
+  const dictionaryHash = "1".repeat(64);
+  const rulesHash = "2".repeat(64);
+  assert.deepEqual(
+    parseNormalizerBenchmarkVariant(`dictionary-sha256:${dictionaryHash};rules-sha256:${rulesHash}`),
+    { dictionaryHash, rulesHash },
+  );
+  assert.deepEqual(
+    parseNormalizerBenchmarkVariant(
+      `pipeline-contract:2;semantic:dictex-deterministic-pipeline-v3;` +
+      `commands-sha256:${"3".repeat(64)};latex-contract:1;` +
+      `dictionary-sha256:${dictionaryHash};rules-sha256:${rulesHash}`,
+    ),
+    {
+      pipelineContractVersion: 2,
+      semanticVersion: "dictex-deterministic-pipeline-v3",
+      commandTableHash: "3".repeat(64),
+      latexCanonicalizationContractVersion: 1,
+      dictionaryHash,
+      rulesHash,
+    },
+  );
+});
+
+test("the normalizer identity separates legacy source provenance from effective rule provenance", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "dictex-normalizer-benchmark-"));
   try {
     const dictionaryPath = path.join(directory, "dictionary.json");
@@ -58,12 +82,17 @@ test("the normalizer version hashes the complete dictionary and rules sources lo
 
     const normalizer = await createTranscriptNormalizer({ dictionaryPath, rulesPath });
     assert.equal(normalizer.version.dictionaryHash, createHash("sha256").update(dictionarySource).digest("hex"));
-    assert.equal(normalizer.version.rulesHash, createHash("sha256").update(rulesSource).digest("hex"));
+    assert.equal(normalizer.rulesConfiguration.legacyHash, createHash("sha256").update(rulesSource).digest("hex"));
     assert.match(normalizer.version.dictionaryHash, /^[0-9a-f]{64}$/);
     assert.match(normalizer.version.rulesHash, /^[0-9a-f]{64}$/);
+    assert.match(normalizer.version.bundledRulesHash ?? "", /^[0-9a-f]{64}$/);
+    assert.equal(normalizer.version.rulesMode, "legacy");
     const identity = buildNormalizerBenchmarkCandidate(normalizer.version).candidate;
-    assert.match(identity.variant ?? "", /pipeline-contract:2/);
+    assert.match(identity.variant ?? "", /pipeline-contract:3/);
     assert.match(identity.variant ?? "", /commands-sha256:[0-9a-f]{64}/);
+    assert.match(identity.variant ?? "", /bundled-rules-version:2;bundled-rules-sha256:[0-9a-f]{64}/);
+    assert.match(identity.variant ?? "", /rules-mode:legacy/);
+    assert.match(identity.variant ?? "", /local-rules-sha256:[0-9a-f]{64}/);
     const changedCommands = buildNormalizerBenchmarkCandidate({
       ...normalizer.version,
       commandTableHash: "0".repeat(64),
@@ -99,6 +128,7 @@ test("a normalizer run freezes pairs and version, restores commands, canonicaliz
   const normalizer: TranscriptNormalizer = {
     version: base.version,
     pipelineSnapshot: base.pipelineSnapshot,
+    rulesConfiguration: base.rulesConfiguration,
     normalize: async (input, runtimeOptions): Promise<NormalizationResult> => {
       if (input === "fail this member") {
         throw new Error("synthetic \uE000 member failure \uE00F");

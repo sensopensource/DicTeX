@@ -5,6 +5,7 @@ import type {
 } from "./benchmarkContract.js";
 import type { NormalizationLayerOutput, NormalizationResult } from "./normalizer.js";
 import type { NormalizerOperationTrace, NormalizerPipelineSnapshot } from "./normalizer.js";
+import type { NormalizerRulesMode } from "./normalizer.js";
 
 export const NORMALIZER_BENCHMARK_DISPLAY_NAME = "Current deterministic pipeline";
 
@@ -15,6 +16,11 @@ export type NormalizerPipelineVersion = {
   semanticVersion?: string;
   commandTableHash?: string;
   latexCanonicalizationContractVersion?: number;
+  bundledRulesVersion?: number;
+  bundledRulesHash?: string;
+  rulesMode?: NormalizerRulesMode;
+  overlayHash?: string | null;
+  localRulesHash?: string | null;
 };
 
 export type NormalizerBenchmarkPipelineSnapshot = NormalizerPipelineSnapshot & {
@@ -46,6 +52,8 @@ export type NormalizerBenchmarkCandidateSummary = {
 const NORMALIZER_VARIANT_PATTERN = /^dictionary-sha256:([0-9a-f]{64});rules-sha256:([0-9a-f]{64})$/;
 const NORMALIZER_VARIANT_V2_PATTERN =
   /^pipeline-contract:(\d+);semantic:([^;]+);commands-sha256:([0-9a-f]{64});latex-contract:(\d+);dictionary-sha256:([0-9a-f]{64});rules-sha256:([0-9a-f]{64})$/;
+const NORMALIZER_VARIANT_V3_PATTERN =
+  /^pipeline-contract:(\d+);semantic:([^;]+);commands-sha256:([0-9a-f]{64});latex-contract:(\d+);bundled-rules-version:(\d+);bundled-rules-sha256:([0-9a-f]{64});rules-mode:(bundled|overlay|legacy);overlay-sha256:(none|[0-9a-f]{64});local-rules-sha256:(none|[0-9a-f]{64});dictionary-sha256:([0-9a-f]{64});rules-sha256:([0-9a-f]{64})$/;
 
 export function buildNormalizerBenchmarkCandidate(
   version: NormalizerPipelineVersion,
@@ -60,7 +68,30 @@ export function buildNormalizerBenchmarkCandidate(
   if (version.commandTableHash !== undefined) {
     assertFullSha256(version.commandTableHash, "command table");
   }
-  const variant = hasDetailedIdentity
+  if (version.bundledRulesHash !== undefined) {
+    assertFullSha256(version.bundledRulesHash, "bundled rules");
+  }
+  if (version.overlayHash !== undefined && version.overlayHash !== null) {
+    assertFullSha256(version.overlayHash, "rules overlay");
+  }
+  if (version.localRulesHash !== undefined && version.localRulesHash !== null) {
+    assertFullSha256(version.localRulesHash, "local rules source");
+  }
+  const hasRulesProvenance =
+    hasDetailedIdentity &&
+    version.bundledRulesVersion !== undefined &&
+    version.bundledRulesHash !== undefined &&
+    version.rulesMode !== undefined &&
+    version.overlayHash !== undefined &&
+    version.localRulesHash !== undefined;
+  const variant = hasRulesProvenance
+    ? `pipeline-contract:${version.pipelineContractVersion};semantic:${version.semanticVersion};` +
+      `commands-sha256:${version.commandTableHash};latex-contract:${version.latexCanonicalizationContractVersion};` +
+      `bundled-rules-version:${version.bundledRulesVersion};bundled-rules-sha256:${version.bundledRulesHash};` +
+      `rules-mode:${version.rulesMode};overlay-sha256:${version.overlayHash ?? "none"};` +
+      `local-rules-sha256:${version.localRulesHash ?? "none"};` +
+      `dictionary-sha256:${version.dictionaryHash};rules-sha256:${version.rulesHash}`
+    : hasDetailedIdentity
     ? `pipeline-contract:${version.pipelineContractVersion};semantic:${version.semanticVersion};` +
       `commands-sha256:${version.commandTableHash};latex-contract:${version.latexCanonicalizationContractVersion};` +
       `dictionary-sha256:${version.dictionaryHash};rules-sha256:${version.rulesHash}`
@@ -80,6 +111,22 @@ export function buildNormalizerBenchmarkCandidate(
 export function parseNormalizerBenchmarkVariant(variant: string | null): NormalizerPipelineVersion | null {
   if (variant === null) {
     return null;
+  }
+  const current = NORMALIZER_VARIANT_V3_PATTERN.exec(variant);
+  if (current) {
+    return {
+      pipelineContractVersion: Number(current[1]),
+      semanticVersion: current[2],
+      commandTableHash: current[3],
+      latexCanonicalizationContractVersion: Number(current[4]),
+      bundledRulesVersion: Number(current[5]),
+      bundledRulesHash: current[6],
+      rulesMode: current[7] as NormalizerRulesMode,
+      overlayHash: current[8] === "none" ? null : current[8],
+      localRulesHash: current[9] === "none" ? null : current[9],
+      dictionaryHash: current[10],
+      rulesHash: current[11],
+    };
   }
   const modern = NORMALIZER_VARIANT_V2_PATTERN.exec(variant);
   if (modern) {

@@ -31,7 +31,8 @@ apps/
   dictex/      # the Electron + React consumer dictation app (has a microphone)
   lab/         # DicTeX Lab — Electron + React tooling app (NO microphone):
                # benchmark + dataset export + corrections/splits over DicTeX's
-               # data folder, read-only, with its own store
+               # audio/events read-only; confirmed rules migration is the sole
+               # source-write exception; every other artifact uses its own store
 packages/
   engine/      # the Python STT sidecar (faster-whisper + Vosk) — shared
   shared/      # shared TS used by both apps: JSONL event schema + derivations,
@@ -155,17 +156,19 @@ scripts\npm.cmd run dev
 10. Click `Open data folder` and confirm the stored audio file exists under `data/audio/session_.../`.
 11. Click `Open events log` and confirm `audio_segment`, `stt_result`, and `normalization_result` events were appended. (DicTeX no longer writes corrections or benchmark events — those live in DicTeX Lab.)
 12. Click `Open dictionary`, add an entry like `{"from":"dic tex","to":"DicTeX"}`, save the file, then dictate a phrase containing "dic tex". Confirm the clipboard/pasted text and the `Inserted (normalized)` line show `DicTeX`, the `Last transcript (raw)` textarea still shows the raw STT output, and a `normalization_result` event was appended while `stt_result.stt_output` kept the raw transcript. Break the JSON on purpose and confirm the next dictation still inserts the raw text with a quiet `Normalizer:` diagnostic instead of failing.
-13. Sans toucher `rules.json`, dicter « un sur x », « v égal d sur t »,
+13. Sans créer de surcouche, dicter « un sur x », « v égal d sur t »,
     « cosinus de theta » et « x supérieur à zéro ». Vérifier respectivement
     `$\frac{1}{x}$`, `$v = \frac{d}{t}$`, `$\cos(\theta)$` et `$x > 0$`, déjà
     points fixes de `canonicalizeLatex`. Dicter ensuite « il reste trois
     exemples », « je suis de plus en plus fatigué » et « je suis moins fatigué
-    que toi » : la prose doit rester identique. Cliquer sur `Open rules`, casser
-    volontairement le JSON et confirmer que la dictée suivante insère le texte
-    encore normalisé par le dictionnaire mais inchangé par les regex, avec un
-    diagnostic `Normalizer:` discret au lieu d'échouer. Pour une installation
-    possédant un fichier antérieur à la version 2, appliquer d'abord la procédure
-    de migration non destructive décrite sous « Normalization Pipeline ».
+    que toi » : la prose doit rester identique. Cliquer sur `Open rule overlay`,
+    casser volontairement le JSON et confirmer que le jeu livré reste actif avec
+    un diagnostic `Normalizer:` discret. Avec un ancien `rules.json` v1, ouvrir
+    `Experiments -> Normalizer` dans le Lab : vérifier `Migration required`, les
+    versions locale/livrée, les SHA-256 et les nombres de règles. Lancer une fois
+    `Run legacy baseline`, puis `Review migration`. Vérifier la prévisualisation,
+    confirmer, contrôler le chemin de sauvegarde et la nouvelle empreinte, puis
+    relancer : l'état doit être `Current overlay` et les 66 règles v2 actives.
 14. Placer l'interrupteur `Normalizer` sur **Off**, dicter « retour à la ligne x au carré », puis vérifier que le texte copié ou inséré est identique octet par octet à `Last transcript` : les mots de commande restent littéraux et aucun LaTeX n'est produit. Vérifier que le nouvel événement `normalization_result` contient `disabled: true`, aucun champ `passthrough` et des `layers` vides. Redémarrer DicTeX, confirmer que l'état Off persiste, puis repasser sur On et vérifier que règles et commandes s'appliquent à nouveau.
 15. Dans le sélecteur `STT model`, choisir un autre modèle. Vérifier le diagnostic `Model`, dicter une phrase et confirmer que l'événement `stt_result` contient le modèle choisi. Redémarrer l'application et vérifier la persistance dans `data/settings.json`. Corrompre ce fichier et confirmer que DicTeX redémarre avec la variable d'environnement ou `base`, et avec le normaliseur activé.
 16. Cliquer sur **Open Lab**. Avec un Lab construit (`scripts\npm.cmd run build`), vérifier son ouverture ; sans construction, vérifier que DicTeX affiche une erreur explicite sans planter.
@@ -261,11 +264,14 @@ qui réapparaissaient ensuite comme de faux résultats « legacy ». Les anciens
 résultats sans `run_id` restent lisibles sous `Legacy (pre-run results)` ; aucun
 événement n'est réécrit.
 
-### DicTeX data folder (read-only source) + the Lab's own store
+### DicTeX data folder + the Lab's own store
 
 The Lab reads DicTeX's local data folder — `audio/` + `events.jsonl`
 (`audio_segment` / `stt_result` / `normalization_result`) — **read-only**.
-It never writes into DicTeX's folder. Everything the Lab produces
+It never writes into those audio/event sources. The sole exception in DicTeX's
+folder is a user-confirmed legacy-rules migration, restricted to
+`normalizer/rules-overlay.json`, `rules-backups/` and `rules-migrations/` after
+the original has been backed up. Everything else the Lab produces
 (corrections, splits, benchmark results, candidate selections, dataset
 exports, and its own settings) goes into the **Lab's own** store under its
 own Electron `userData` (`%APPDATA%/dictex-lab-app/data`), a separate folder
@@ -1075,7 +1081,10 @@ data/
       seg_0001.webm
   normalizer/
     dictionary.json
-    rules.json
+    rules-overlay.json
+    rules.json                     # legacy conservé, si présent
+    rules-backups/
+    rules-migrations/
   exports/
     stt-dataset-<timestamp>/
       manifest.json
@@ -1489,19 +1498,35 @@ Entries are literal, case-sensitive substring replacements applied in file
 order. Malformed individual entries are skipped (with a diagnostic) while valid
 entries still apply.
 
-La couche de règles regex s'exécute après le dictionnaire. Contrairement à ce
-dernier, elle fournit un jeu conservateur de verbalisation mathématique française
-qui s'applique même en l'absence de fichier. Le bouton `Open rules` crée ou ouvre
-le fichier ; lors de sa création, il reçoit les règles livrées, modifiables sur
-place. Ce jeu porte `version: 2` depuis #148.
+La couche de règles regex s'exécute après le dictionnaire. Le jeu livré réside
+dans `packages/shared`, porte une version et donne à chaque règle un identifiant
+stable ainsi qu'un ordre explicite. Il s'applique donc automatiquement même en
+l'absence de configuration locale. `Open rule overlay` crée ou ouvre uniquement
+la surcouche personnelle ; il ne recopie jamais le jeu livré.
 
 ```text
-data/normalizer/rules.json
+data/normalizer/rules-overlay.json
 ```
 
 ```json
-{"version":2,"rules":[{"pattern":"...","replacement":"$$$<p1>^{2}$$","flags":"i"}]}
+{
+  "version": 1,
+  "bundled_rules_version": 2,
+  "disabled_rule_ids": ["addition"],
+  "replacements": [
+    {"rule_id":"equality","pattern":"...","replacement":"...","flags":"i"}
+  ],
+  "personal_rules": [
+    {"id":"personal-example","order":10,"pattern":"...","replacement":"...","flags":"i"}
+  ]
+}
 ```
+
+Le chargeur partagé construit les règles effectives dans cet ordre : jeu livré
+courant, désactivations et remplacements personnels à la position de
+l'identifiant ciblé, puis règles personnelles triées par `order` et `id`. Une
+future version livrée devient donc active sans recopier ni remigrer la
+surcouche.
 
 Le `pattern` d'une règle est une source regex JavaScript compatible Unicode
 (drapeaux `g`/`u` imposés, plus les éventuels `flags`) ; `replacement` peut
@@ -1539,31 +1564,27 @@ fragment déjà délimité par `$…$`. C'est ce qui permet à « x au carré pl
 devenir d'abord « `$x^{2}$ plus y` », puis `$x^{2} + y$`. La composition et la
 portée générales restent le résidu prévu pour la couche 3 (§7).
 
-Un fichier de règles mal formé désactive toute la couche avec un passthrough et
-un diagnostic discret ; une règle individuelle invalide est ignorée comme une
-entrée individuelle invalide du dictionnaire.
+Une surcouche vide, invalide ou illisible est signalée et le jeu livré reste
+actif. Aucun démarrage ne migre automatiquement un ancien `rules.json` : sans
+surcouche, ce fichier reste exécutable tel quel comme baseline legacy et masque
+volontairement le jeu livré.
 
-**Migration non destructive d'un `rules.json` antérieur à la version 2 :** ce
-fichier est modifiable par l'utilisateur et DicTeX ne le réécrit jamais. Une
-installation existante continue donc volontairement d'utiliser exactement sa
-source et son SHA-256 ; les nouvelles règles ne sont jamais injectées au risque
-d'écraser une règle personnelle. Pour les activer :
+**Migration non destructive d'un ancien `rules.json` :** ouvrir
+`Experiments -> Normalizer`, puis utiliser `Review migration`. La prévisualisation
+affiche version et SHA-256 locaux, version livrée, copies livrées reconnues,
+règles personnelles, ambiguïtés, invalidités et empreinte effective attendue.
+Une règle identique à une signature historique v1/v2 est reconnue comme copie
+livrée ; une règle inconnue reste personnelle ; une définition proche mais
+modifiée exige de choisir explicitement sa conservation personnelle ou le
+remplacement de l'identifiant livré proposé.
 
-1. fermer DicTeX et le Lab ;
-2. copier `rules.json` sous un nom horodaté dans un autre dossier sûr ;
-3. renommer l'original local en `rules.pre-v2.json` ;
-4. rouvrir DicTeX, cliquer `Open rules` et laisser l'application générer le jeu
-   `version: 2` ;
-5. comparer la sauvegarde au nouveau fichier et ajouter volontairement les
-   règles personnelles à la fin de `rules` ;
-6. relancer un run Normalizer : son identité doit annoncer la version
-   sémantique `dictex-deterministic-pipeline-v3`, le nouveau SHA-256 des règles
-   et les définitions effectives dans leur ordre.
-
-Ne jamais supprimer l'unique sauvegarde ni remplacer automatiquement le fichier
-utilisateur. Cette procédure couvre aussi les anciens fichiers Unicode
-antérieurs à #107 : leurs règles personnelles doivent être adaptées
-volontairement au contrat LaTeX avant réintégration.
+Après confirmation, le Lab crée d'abord une sauvegarde horodatée sans
+écrasement dans `normalizer/rules-backups/`, écrit atomiquement
+`rules-overlay.json`, puis produit un reçu sans contenu personnel dans
+`normalizer/rules-migrations/`. L'original `rules.json` reste intact. Une
+collision, une écriture interrompue ou une relance réutilise l'état vérifié sans
+dupliquer la sauvegarde. Un fichier mal formé ou une ambiguïté non résolue est
+refusé avec diagnostic ; aucune règle n'est devinée ou supprimée.
 
 The raw `stt_result` event is left untouched. Each dictation appends a separate
 append-only `normalization_result` event recording the input, the final output,

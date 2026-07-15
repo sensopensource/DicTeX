@@ -19,7 +19,10 @@ import {
   buildNormalizerBenchmarkRunExport,
   buildSttDatasetExport,
   createTranscriptNormalizer,
+  migrateLegacyRules,
   normalizeTranscript,
+  PERSONAL_RULES_OVERLAY_FILENAME,
+  previewLegacyRulesMigration,
   restoreCommandWords,
   transcribeWithPython,
   ProviderUnavailableError,
@@ -52,6 +55,10 @@ import {
   type BenchmarkRunListEntry,
   type SttBenchmarkRunExportSummary,
   type NormalizerBenchmarkRunExportSummary,
+  type LegacyRuleResolution,
+  type LegacyRulesMigrationPreview,
+  type RulesMigrationReceipt,
+  type RulesMigrationConfirmation,
   type SttDatasetExportFileSummary,
   type SttDatasetExportSplitSummary,
   type SttDatasetExportSummary,
@@ -98,13 +105,10 @@ import {
  * clipboard/paste. It never normalizes dictation for insertion, but it replays
  * the shared deterministic pipeline for dataset export and the tracked
  * normalizer benchmark. The Lab benchmarks, corrects, splits, selects
- * candidates, and exports datasets, reading
- * DicTeX's data folder READ-ONLY and keeping its OWN store for everything it
- * writes. See pivot_dictex_lab_split.md and AGENTS.md "Current Direction".
- *
- * Read-only contract: every `readFile`/`existsSync` against the source data
- * folder is a read; every `writeFile`/`appendFile`/`mkdir` in this file
- * targets a path under `getOwnDataRoot()`, never `getSourceDataRoot()`.
+ * candidates, and exports datasets. Audio and events in DicTeX's data folder
+ * stay read-only; the sole explicit source write is the confirmed, backed-up
+ * and atomic legacy-rules migration. Every other artifact goes to the Lab's
+ * own store. See pivot_dictex_lab_split.md and AGENTS.md "Current Direction".
  */
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -132,7 +136,8 @@ const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
 const enginePath = path.join(repoRoot, "packages", "engine", "transcribe.py");
 
 let mainWindow: BrowserWindow | null = null;
-// Configured DicTeX data folder (SOURCE root, read-only). Null = use default.
+// Configured DicTeX data folder (SOURCE root). Audio/events are read-only;
+// confirmed legacy-rules migration is the sole write exception.
 let sourceDataFolderOverride: string | null = null;
 
 /** Default DicTeX data folder per docs/development.md / AGENTS.md
@@ -152,10 +157,9 @@ function getSourceEventsPath(): string {
 }
 
 // The SOURCE (DicTeX) normalizer config, resolved exactly as apps/dictex lays it
-// out under its data root (`<data>/normalizer/{dictionary,rules}.json`). Read
-// READ-ONLY when export or the normalizer benchmark replays the pipeline to
-// build a `math_transform` artifact (issues #100/#140); the Lab never writes
-// into DicTeX's folder. A
+// out under its data root. Export, prefill and benchmark read it. Issue #150's
+// explicit migration may write only backups, a personal overlay and a receipt
+// below this normalizer directory after confirmation. A
 // missing file degrades gracefully inside the normalizer (empty dictionary /
 // built-in DEFAULT_RULES), so no existence check is needed here.
 function getSourceNormalizerDir(): string {
@@ -168,6 +172,10 @@ function getSourceDictionaryPath(): string {
 
 function getSourceRulesPath(): string {
   return path.join(getSourceNormalizerDir(), "rules.json");
+}
+
+function getSourceRulesOverlayPath(): string {
+  return path.join(getSourceNormalizerDir(), PERSONAL_RULES_OVERLAY_FILENAME);
 }
 
 /**
@@ -756,9 +764,45 @@ ipcMain.handle(
       createTranscriptNormalizer({
         dictionaryPath: getSourceDictionaryPath(),
         rulesPath: getSourceRulesPath(),
+        rulesOverlayPath: getSourceRulesOverlayPath(),
       }),
     ]);
     return buildNormalizerBenchmarkSetPreview(events, request.split, normalizer);
+  },
+);
+
+ipcMain.handle(
+  "normalizer-rules:preview-migration",
+  async (_event, resolutions?: LegacyRuleResolution[]): Promise<LegacyRulesMigrationPreview> => {
+    if (resolutions !== undefined && !Array.isArray(resolutions)) {
+      throw new Error("Migration resolutions must be an array");
+    }
+    return previewLegacyRulesMigration(
+      { legacyRulesPath: getSourceRulesPath(), overlayPath: getSourceRulesOverlayPath() },
+      resolutions ?? [],
+    );
+  },
+);
+
+ipcMain.handle(
+  "normalizer-rules:migrate",
+  async (_event, confirmation: RulesMigrationConfirmation): Promise<RulesMigrationReceipt> => {
+    if (
+      typeof confirmation !== "object" || confirmation === null ||
+      !Array.isArray(confirmation.resolutions) ||
+      !/^[0-9a-f]{64}$/u.test(confirmation.expectedLegacyHash) ||
+      !/^[0-9a-f]{64}$/u.test(confirmation.expectedEffectiveHash)
+    ) {
+      throw new Error("Migration confirmation must carry the reviewed resolutions and SHA-256 fingerprints");
+    }
+    return migrateLegacyRules(
+      { legacyRulesPath: getSourceRulesPath(), overlayPath: getSourceRulesOverlayPath() },
+      confirmation.resolutions,
+      {
+        expectedLegacyHash: confirmation.expectedLegacyHash,
+        expectedEffectiveHash: confirmation.expectedEffectiveHash,
+      },
+    );
   },
 );
 
@@ -968,6 +1012,7 @@ ipcMain.handle(
       createTranscriptNormalizer({
         dictionaryPath: getSourceDictionaryPath(),
         rulesPath: getSourceRulesPath(),
+        rulesOverlayPath: getSourceRulesOverlayPath(),
       }),
     ]);
     return runNormalizerBenchmark({
@@ -1239,6 +1284,7 @@ ipcMain.handle("dataset-builder:prefill-layer2", async (_event, literalTranscrip
   const result = await normalizeTranscript(trimmed, {
     dictionaryPath: getSourceDictionaryPath(),
     rulesPath: getSourceRulesPath(),
+    rulesOverlayPath: getSourceRulesOverlayPath(),
   });
 
   return restoreCommandWords(result.output);
@@ -1253,6 +1299,7 @@ ipcMain.handle("dataset:export-stt", async (): Promise<SttDatasetExportSummary> 
   const datasetExport = await buildSttDatasetExport(events, new Date().toISOString(), {
     dictionaryPath: getSourceDictionaryPath(),
     rulesPath: getSourceRulesPath(),
+    rulesOverlayPath: getSourceRulesOverlayPath(),
   });
   return writeSttDatasetExport(datasetExport);
 });
@@ -1293,6 +1340,15 @@ ipcMain.handle("diagnostics:open-source-data-folder", async (): Promise<boolean>
     return false;
   }
   const error = await shell.openPath(sourceRoot);
+  return error.length === 0;
+});
+
+ipcMain.handle("diagnostics:open-source-rules-folder", async (): Promise<boolean> => {
+  const normalizerDir = getSourceNormalizerDir();
+  if (!existsSync(normalizerDir)) {
+    return false;
+  }
+  const error = await shell.openPath(normalizerDir);
   return error.length === 0;
 });
 

@@ -13,6 +13,10 @@ import type {
   BenchmarkRunListEntry,
   SttBenchmarkRunExportSummary,
   NormalizerBenchmarkRunExportSummary,
+  LegacyRuleResolution,
+  LegacyRulesMigrationPreview,
+  RulesMigrationReceipt,
+  RulesMigrationConfirmation,
   SttBenchmarkCandidateSummaryResponse,
   SttCandidateSelectionRequest,
   SttCandidateSelectionResponse,
@@ -76,6 +80,10 @@ contextBridge.exposeInMainWorld("dictexLab", {
     ipcRenderer.invoke("benchmark:run-set-stt", { split, candidates }) as Promise<SttBenchmarkSetRunResponse>,
   runSetNormalizerBenchmark: (split: SttBenchmarkSetSplit, candidate: BenchmarkCandidateIdentity) =>
     ipcRenderer.invoke("benchmark:run-set-normalizer", { split, candidate }) as Promise<NormalizerBenchmarkRunResponse>,
+  previewRulesMigration: (resolutions: LegacyRuleResolution[] = []) =>
+    ipcRenderer.invoke("normalizer-rules:preview-migration", resolutions) as Promise<LegacyRulesMigrationPreview>,
+  migrateRules: (confirmation: RulesMigrationConfirmation) =>
+    ipcRenderer.invoke("normalizer-rules:migrate", confirmation) as Promise<RulesMigrationReceipt>,
   // Results: the run list of a split, then one run's own snapshot, outputs,
   // failures and summary (issues #122/#138). The legacy summary reads only
   // pre-#122 results (no run_id).
@@ -120,6 +128,7 @@ contextBridge.exposeInMainWorld("dictexLab", {
     ipcRenderer.invoke("prompt-variants:create", request) as Promise<SttPromptVariantListEntry>,
   openLabDataFolder: () => ipcRenderer.invoke("diagnostics:open-lab-data-folder") as Promise<boolean>,
   openSourceDataFolder: () => ipcRenderer.invoke("diagnostics:open-source-data-folder") as Promise<boolean>,
+  openSourceRulesFolder: () => ipcRenderer.invoke("diagnostics:open-source-rules-folder") as Promise<boolean>,
   openLabEventsLog: () => ipcRenderer.invoke("diagnostics:open-lab-events-log") as Promise<boolean>,
 
   onBatchBenchmarkProgress: (callback: (progress: SttBenchmarkSetProgress) => void) => {

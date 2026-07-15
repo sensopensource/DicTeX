@@ -964,11 +964,14 @@ nouvelle correction après le lancement n'est jamais relue. Les entrées sans
 audio restent évaluables, car l'audio n'appartient pas à ce stage.
 
 Le candidat initial est unique : `math_transform / dictex /
-deterministic-pipeline`. Sa variante concatène les SHA-256 complets de la source
-du dictionnaire et de la source des règles chargées dans l'instance du run. Les
-valeurs par défaut réellement appliquées sont elles aussi hachées lorsqu'un
-fichier manque. Une identité annoncée dans `Experiments` doit correspondre à
-l'instance chargée au lancement ; sinon aucun start n'est écrit.
+deterministic-pipeline`. Sa variante concatène la version de contrat, la version
+sémantique, les empreintes des commandes et du dictionnaire, puis la provenance
+des règles : version et SHA-256 du jeu livré, mode `bundled`/`overlay`/`legacy`,
+SHA-256 local éventuel et SHA-256 effectif. Les valeurs par défaut réellement
+appliquées sont elles aussi hachées lorsqu'un fichier manque. Une identité
+annoncée dans `Experiments` doit correspondre à l'instance chargée au lancement ;
+sinon aucun start n'est écrit. Les variantes historiques plus courtes restent
+lisibles sans reconstruction ni migration.
 
 Les commandes suivent toujours la règle de stockage du §4. Le normaliseur les
 extrait pour donner aux regex exactement leur entrée de production, puis le
@@ -1014,7 +1017,9 @@ benchmark_run_finished
 ```
 
 Le manifeste est la seule copie des définitions statiques. Les identifiants des
-entrées du dictionnaire et des regex sont dérivés de leur contenu ; ceux des
+entrées du dictionnaire restent dérivés de leur contenu ; ceux des regex livrées
+sont désormais stables et indépendants du contenu, tandis que les règles
+personnelles portent les identifiants de leur surcouche. Les identifiants des
 commandes appartiennent à la table partagée. Une sortie ne répète donc ni tout le
 dictionnaire ni toutes les règles. Elle conserve seulement les occurrences,
 positions, captures et fragments produits nécessaires pour attribuer l'effet.
@@ -1022,11 +1027,13 @@ Cette déduplication réduit fortement le nombre de tokens sans perdre la
 provenance déterministe.
 
 Le snapshot distingue fichier lisible, défaut absent, source invalide et source
-illisible. Une source lisible est conservée avec son SHA-256 complet ; les
-définitions valides, ignorées et diagnostics expliquent ce qui était réellement
-actif. La table de commandes et les versions sémantiques entrent dans l'identité
-du candidat : modifier une commande ou le contrat du pipeline ne peut plus
-conserver artificiellement la même candidature.
+illisible. Il ajoute la version et l'empreinte du jeu livré, l'état et
+l'empreinte de la surcouche, l'empreinte legacy éventuelle, le mode de
+configuration et les définitions effectives ordonnées. Les définitions valides,
+ignorées et diagnostics expliquent ainsi ce qui était réellement actif. La table
+de commandes et les versions sémantiques entrent dans l'identité du candidat :
+modifier une commande ou le contrat du pipeline ne peut plus conserver
+artificiellement la même candidature.
 
 Les deux JSONL portent exactement les mêmes membres, dans l'ordre du snapshot,
 et se joignent par `session_id + segment_id`. `failed` et `missing` restent
