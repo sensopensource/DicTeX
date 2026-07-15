@@ -73,7 +73,7 @@ export type CommandDefinition = {
   effectDescription: string;
 };
 
-export const COMMAND_TABLE_CONTRACT_VERSION = 1;
+export const COMMAND_TABLE_CONTRACT_VERSION = 2;
 
 /**
  * The canonical command table — the ONE place the command list is defined.
@@ -134,7 +134,13 @@ const COMMAND_MATCHERS: { regex: RegExp; command: CommandDefinition }[] = [...CO
     const body = words.join("\\s+");
     // `(?<![\p{L}\p{N}])` / `(?![\p{L}\p{N}])`: don't match glued inside a word;
     // `g` every occurrence, `u` Unicode-aware, `i` case-insensitive.
-    const regex = new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, "giu");
+    // Whisper commonly punctuates an imperative command as a sentence. A full
+    // stop attached to the command is therefore part of the recognition form,
+    // not text to insert on the new line. Other punctuation stays literal.
+    const regex = new RegExp(
+      `(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])(?:[ \\t]*\\.)?`,
+      "giu",
+    );
     return { regex, command };
   });
 

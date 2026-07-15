@@ -206,8 +206,8 @@ export type NormalizerPipelineSnapshot = {
 };
 
 export const NORMALIZER_PIPELINE_CONTRACT_VERSION = 3;
-export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v5";
-export const DEFAULT_RULES_CONFIG_VERSION = 3;
+export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v6";
+export const DEFAULT_RULES_CONFIG_VERSION = 4;
 export const PERSONAL_RULES_OVERLAY_VERSION = 1;
 export const PERSONAL_RULES_OVERLAY_FILENAME = "rules-overlay.json";
 
@@ -797,7 +797,7 @@ const V2_BINARY_SPOKEN_OPERATOR = [
   "moins",
   "fois",
 ].join("|");
-const BINARY_SPOKEN_OPERATOR = [
+const V3_BINARY_SPOKEN_OPERATOR = [
   "divis[ée]e?\\s+par",
   "multipli[ée]e?\\s+par",
   "plus\\s+grand\\s+que",
@@ -810,7 +810,21 @@ const BINARY_SPOKEN_OPERATOR = [
   "moins",
   "fois",
 ].join("|");
-const FUNCTION_SPOKEN_PREFIX = `(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)`;
+const BINARY_SPOKEN_OPERATOR = [
+  "divis[ée]e?\\s+par",
+  "multipli[ée]e?\\s+par",
+  "plus\\s+grand\\s+que",
+  "plus\\s+petit\\s+que",
+  "supérieure?\\s+à",
+  "inférieure?\\s+à",
+  "(?:est\\s+)?[ée]gale?(?:\\s+à)?",
+  "sur",
+  "plus",
+  "moins",
+  "fois",
+].join("|");
+const V3_FUNCTION_SPOKEN_PREFIX = `(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)`;
+const FUNCTION_SPOKEN_PREFIX = `(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)`;
 const PRESERVED_OPERAND = `(?:\\$[^$]+\\$|(?:${OPERAND_BARE}))`;
 
 function escapeRegex(value: string): string {
@@ -827,7 +841,10 @@ function escapeRegex(value: string): string {
  * right-side pass resolves it once the left side is valid. Thus "un sur deux"
  * composes without a general number parser or a combinatorial rule table.
  */
-function buildSpokenAtomRules(binarySpokenOperator = BINARY_SPOKEN_OPERATOR): RuleEntry[] {
+function buildSpokenAtomRules(
+  binarySpokenOperator = BINARY_SPOKEN_OPERATOR,
+  functionSpokenPrefix = FUNCTION_SPOKEN_PREFIX,
+): RuleEntry[] {
   const leftRules = SPOKEN_ATOM_ALIASES.map(([spoken, latex]) => ({
     pattern:
       `${NOT_SPOKEN_ALIAS_BEFORE}${escapeRegex(spoken)}\\s+` +
@@ -840,7 +857,7 @@ function buildSpokenAtomRules(binarySpokenOperator = BINARY_SPOKEN_OPERATOR): Ru
   const rightRules = SPOKEN_ATOM_ALIASES.map(([spoken, latex]) => ({
     pattern:
       `${NOT_WORD_BEFORE}(?:(?<binaryPrefix>${PRESERVED_OPERAND}\\s+(?:${binarySpokenOperator}))|` +
-      `(?<functionPrefix>${FUNCTION_SPOKEN_PREFIX}))\\s+` +
+      `(?<functionPrefix>${functionSpokenPrefix}))\\s+` +
       `(?<unaryMinus>moins\\s+)?${escapeRegex(spoken)}${NOT_SPOKEN_ALIAS_AFTER}`,
     replacement: `$<binaryPrefix>$<functionPrefix> $<unaryMinus>${latex}`,
     flags: "i",
@@ -870,7 +887,7 @@ function buildSpokenAtomRules(binarySpokenOperator = BINARY_SPOKEN_OPERATOR): Ru
     {
       // "sinus de moins trois" -> "sinus de -3".
       pattern:
-        `${NOT_WORD_BEFORE}(?<functionPrefix>${FUNCTION_SPOKEN_PREFIX})\\s+moins\\s+` +
+        `${NOT_WORD_BEFORE}(?<functionPrefix>${functionSpokenPrefix})\\s+moins\\s+` +
         `(?<negativeAtom>\\d+)${NOT_WORD_AFTER}`,
       replacement: `$<functionPrefix> -$<negativeAtom>`,
       flags: "i",
@@ -1117,7 +1134,7 @@ function buildStructuredEqualityRightRules(): IdentifiedRule[] {
   }));
 }
 
-const STRUCTURED_RULES: IdentifiedRule[] = [
+const V3_STRUCTURED_RULES: IdentifiedRule[] = [
   {
     id: "structured-parenthesized-sum-times",
     pattern:
@@ -1253,33 +1270,138 @@ function v3AtomicRule(rule: RuleEntry, id: string): RuleEntry {
   return rule;
 }
 
+function v4AtomicRule(rule: RuleEntry, id: string): RuleEntry {
+  if (id === "equality") {
+    return {
+      pattern:
+        `${NOT_WORD_BEFORE}${operandAny("1")}\\s+` +
+        `(?:est\\s+)?[ée]gale?(?:\\s+à)?\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
+      replacement: `$$${refAny("1")} = ${refAny("2")}$$`,
+      flags: "i",
+    };
+  }
+  return rule;
+}
+
 const SPOKEN_ATOM_RULE_COUNT = SPOKEN_ATOM_RULE_IDS.length + 3;
 const V3_ATOMIC_RULES = [
-  ...buildSpokenAtomRules(),
+  ...buildSpokenAtomRules(V3_BINARY_SPOKEN_OPERATOR, V3_FUNCTION_SPOKEN_PREFIX),
   ...HISTORICAL_V2_RULES.slice(SPOKEN_ATOM_RULE_COUNT).map((rule, index) =>
     v3AtomicRule(rule, V2_RULE_IDS[SPOKEN_ATOM_RULE_COUNT + index]!),
   ),
 ];
-const FUNCTION_APPLICATION_END = V2_RULE_IDS.indexOf("function-application") + 1;
+
+const V4_ATOMIC_INSERTIONS = new Map<string, IdentifiedRule[]>([
+  ["function-natural-log", [{
+    id: "function-unspecified-log",
+    pattern: `${NOT_WORD_BEFORE}logarithme\\s+de\\s+${operandBare("1")}${NOT_WORD_AFTER}`,
+    replacement: `$$\\log(${refBare("1")})$$`,
+    flags: "i",
+  }]],
+]);
+
+const V4_ATOMIC_RULES: IdentifiedRule[] = [
+  ...buildSpokenAtomRules().map((rule, index) => ({ ...rule, id: V2_RULE_IDS[index]! })),
+  ...HISTORICAL_V2_RULES.slice(SPOKEN_ATOM_RULE_COUNT).flatMap((rule, index) => {
+    const id = V2_RULE_IDS[SPOKEN_ATOM_RULE_COUNT + index]!;
+    return [
+      ...(V4_ATOMIC_INSERTIONS.get(id) ?? []),
+      { ...v4AtomicRule(v3AtomicRule(rule, id), id), id },
+    ];
+  }),
+];
+
+const V4_ADDITIONAL_STRUCTURED_RULES: IdentifiedRule[] = [
+  {
+    id: "structured-exponential-negative-digits",
+    pattern: `${NOT_WORD_BEFORE}exponentielle\\s+de\\s+moins\\s+(?<argument>\\d+)${NOT_WORD_AFTER}`,
+    replacement: `$$e^{-$<argument>}$$`,
+    flags: "i",
+  },
+  {
+    id: "structured-exponential-digits",
+    pattern: `${NOT_WORD_BEFORE}exponentielle\\s+de\\s+(?<argument>\\d+)${NOT_WORD_AFTER}`,
+    replacement: `$$e^{$<argument>}$$`,
+    flags: "i",
+  },
+  {
+    id: "function-sine-degrees-digits",
+    pattern: `${NOT_WORD_BEFORE}sinus\\s+de\\s+${operandBare("1")}\\s+degrés?${NOT_WORD_AFTER}`,
+    replacement: `$$\\sin(${refBare("1")}^{\\circ})$$`,
+    flags: "i",
+  },
+  {
+    id: "function-cosine-degrees-digits",
+    pattern: `${NOT_WORD_BEFORE}cosinus\\s+de\\s+${operandBare("1")}\\s+degrés?${NOT_WORD_AFTER}`,
+    replacement: `$$\\cos(${refBare("1")}^{\\circ})$$`,
+    flags: "i",
+  },
+  {
+    id: "structured-theta-degrees-digits",
+    pattern:
+      `${NOT_WORD_BEFORE}theta\\s+(?:est\\s+)?[ée]gale?(?:\\s+à)?\\s+` +
+      `(?<angle>-?\\d+)\\s+degrés?${NOT_WORD_AFTER}`,
+    replacement: `$$\\theta = $<angle>^{\\circ}$$`,
+    flags: "i",
+  },
+];
+
+function v4StructuredRule(rule: IdentifiedRule): IdentifiedRule {
+  if (rule.id === "structured-limit-reciprocal-at-positive-infinity") {
+    return {
+      ...rule,
+      pattern:
+        `${NOT_WORD_BEFORE}limite\\s+de\\s+(?:un|1)\\s+sur\\s+(?<denominator>\\p{L})\\s+` +
+        `quand\\s+(?<variable>\\p{L})\\s+tend\\s+vers\\s+plus\\s+l['’]infini${NOT_WORD_AFTER}`,
+    };
+  }
+  return rule;
+}
+
+const V4_STRUCTURED_RULES = [
+  ...V4_ADDITIONAL_STRUCTURED_RULES,
+  ...V3_STRUCTURED_RULES.map(v4StructuredRule),
+];
+
+const V3_FUNCTION_APPLICATION_END = V2_RULE_IDS.indexOf("function-application") + 1;
 const PREPARATION_RULES = buildStructuredPreparationRules();
 const EQUALITY_RIGHT_RULES = buildStructuredEqualityRightRules();
-const EARLY_ATOMIC_RULES = V3_ATOMIC_RULES.slice(0, FUNCTION_APPLICATION_END);
-const LATE_ATOMIC_RULES = V3_ATOMIC_RULES.slice(FUNCTION_APPLICATION_END);
+const V3_EARLY_ATOMIC_RULES = V3_ATOMIC_RULES.slice(0, V3_FUNCTION_APPLICATION_END);
+const V3_LATE_ATOMIC_RULES = V3_ATOMIC_RULES.slice(V3_FUNCTION_APPLICATION_END);
+const V4_FUNCTION_APPLICATION_END = V4_ATOMIC_RULES.findIndex((rule) => rule.id === "function-application") + 1;
+const V4_EARLY_ATOMIC_RULES = V4_ATOMIC_RULES.slice(0, V4_FUNCTION_APPLICATION_END);
+const V4_LATE_ATOMIC_RULES = V4_ATOMIC_RULES.slice(V4_FUNCTION_APPLICATION_END);
+
+const V3_DEFAULT_RULES: RuleEntry[] = [
+  ...PREPARATION_RULES,
+  ...V3_STRUCTURED_RULES,
+  ...V3_EARLY_ATOMIC_RULES,
+  ...EQUALITY_RIGHT_RULES,
+  ...V3_LATE_ATOMIC_RULES,
+];
+
+const V3_DEFAULT_RULE_IDS = [
+  ...PREPARATION_RULES.map((rule) => rule.id),
+  ...V3_STRUCTURED_RULES.map((rule) => rule.id),
+  ...V2_RULE_IDS.slice(0, V3_FUNCTION_APPLICATION_END),
+  ...EQUALITY_RIGHT_RULES.map((rule) => rule.id),
+  ...V2_RULE_IDS.slice(V3_FUNCTION_APPLICATION_END),
+];
 
 export const DEFAULT_RULES: RuleEntry[] = [
   ...PREPARATION_RULES,
-  ...STRUCTURED_RULES,
-  ...EARLY_ATOMIC_RULES,
+  ...V4_STRUCTURED_RULES,
+  ...V4_EARLY_ATOMIC_RULES,
   ...EQUALITY_RIGHT_RULES,
-  ...LATE_ATOMIC_RULES,
+  ...V4_LATE_ATOMIC_RULES,
 ];
 
 const DEFAULT_RULE_IDS = [
   ...PREPARATION_RULES.map((rule) => rule.id),
-  ...STRUCTURED_RULES.map((rule) => rule.id),
-  ...V2_RULE_IDS.slice(0, FUNCTION_APPLICATION_END),
+  ...V4_STRUCTURED_RULES.map((rule) => rule.id),
+  ...V4_EARLY_ATOMIC_RULES.map((rule) => rule.id),
   ...EQUALITY_RIGHT_RULES.map((rule) => rule.id),
-  ...V2_RULE_IDS.slice(FUNCTION_APPLICATION_END),
+  ...V4_LATE_ATOMIC_RULES.map((rule) => rule.id),
 ];
 
 if (DEFAULT_RULE_IDS.length !== DEFAULT_RULES.length) {
@@ -1317,7 +1439,7 @@ function buildHistoricalV1Rules(): RuleEntry[] {
 export const HISTORICAL_BUNDLED_RULE_SETS = [
   { version: 1, rules: buildHistoricalV1Rules() },
   { version: 2, rules: HISTORICAL_V2_RULES },
-  { version: 3, rules: DEFAULT_RULES },
+  { version: 3, rules: V3_DEFAULT_RULES },
 ] as const;
 
 // Bounds re-applying a single rule to its own output. A global replace only
@@ -1410,7 +1532,7 @@ function historicalRulesWithIds(): Array<{ version: number; id: string; rule: Ru
         ? HISTORICAL_V1_RULE_IDS[index]!
         : set.version === 2
           ? V2_RULE_IDS[index]!
-          : BUNDLED_RULES[index]!.id,
+          : V3_DEFAULT_RULE_IDS[index]!,
       rule,
       signature: normalizedRuleSignature(rule),
     })),

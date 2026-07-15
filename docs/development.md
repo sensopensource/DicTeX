@@ -1512,7 +1512,7 @@ data/normalizer/rules-overlay.json
 ```json
 {
   "version": 1,
-  "bundled_rules_version": 3,
+  "bundled_rules_version": 4,
   "disabled_rule_ids": ["addition"],
   "replacements": [
     {"rule_id":"equality","pattern":"...","replacement":"...","flags":"i"}

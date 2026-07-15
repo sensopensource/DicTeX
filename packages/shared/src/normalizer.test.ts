@@ -49,6 +49,8 @@ const RULE_CASES: { name: string; input: string; expected: string }[] = [
   { name: "racine carrée de", input: "racine carrée de x", expected: "$\\sqrt{x}$" },
   { name: "égale", input: "x égale y", expected: "$x = y$" },
   { name: "égal (masculine spelling)", input: "x égal y", expected: "$x = y$" },
+  { name: "égale à", input: "x égale à y", expected: "$x = y$" },
+  { name: "est égal à", input: "x est égal à y", expected: "$x = y$" },
   { name: "plus grand que", input: "x plus grand que y", expected: "$x > y$" },
   { name: "plus petit que", input: "x plus petit que y", expected: "$x < y$" },
   { name: "plus", input: "x plus y", expected: "$x + y$" },
@@ -317,6 +319,53 @@ test("unary moins is converted only when the signed number is consumed as an ope
   assert.equal(await regexLayerOutput("sinus de moins trois"), "$\\sin(-3)$");
   assert.equal(await regexLayerOutput("il reste moins trois minutes"), "il reste moins trois minutes");
   assert.equal(await regexLayerOutput("moins trois"), "moins trois");
+});
+
+test("explicit equalities consume 'à' and compose with negative operands", async () => {
+  const cases = [
+    ["exponentielle de 0 égale à 0", "$e^{0} = 0$"],
+    ["logarithme naturel de 1 égale à 0", "$\\ln(1) = 0$"],
+    ["f de 0 est égal à moins 2", "$f(0) = -2$"],
+    ["f de moins 1 est égal à moins 5", "$f(-1) = -5$"],
+    ["x est égal à moins 1", "$x = -1$"],
+  ] as const;
+
+  for (const [input, expected] of cases) {
+    assert.equal(await regexLayerOutput(input), expected, input);
+  }
+});
+
+test("bounded daily-use rules cover digit STT output without inventing missing context", async () => {
+  const cases = [
+    [
+      "exponentielle de moins 2 inférieure à exponentielle de 0 inférieure à exponentielle de 1 inférieure à exponentielle de 4",
+      "$e^{-2} < e^{0} < e^{1} < e^{4}$",
+    ],
+    ["logarithme de 7", "$\\log(7)$"],
+    ["logarithme de 0", "$\\log(0)$"],
+    ["logarithme de sept", "$\\log(7)$"],
+    ["logarithme de zéro", "$\\log(0)$"],
+    ["sinus de 90 degrés est égal à 1", "$\\sin(90^{\\circ}) = 1$"],
+    ["cosinus de 90 degrés est égal à 0", "$\\cos(90^{\\circ}) = 0$"],
+    ["sinus de 270 degrés est égal à moins 1", "$\\sin(270^{\\circ}) = -1$"],
+    ["theta est égal à 180 degrés", "$\\theta = 180^{\\circ}$"],
+    [
+      "limite de 1 sur x quand x tend vers plus l'infini est égal à 0",
+      "$\\lim_{x\\to+\\infty}\\frac{1}{x} = 0$",
+    ],
+  ] as const;
+
+  for (const [input, expected] of cases) {
+    const output = await regexLayerOutput(input);
+    assert.equal(output, expected, input);
+    assert.equal(canonicalizeLatex(output), output, input);
+  }
+
+  assert.equal(
+    await regexLayerOutput("il existe un réel x tel que exponentielle x égale à moins 5"),
+    "il existe un réel x tel que exponentielle $x = -5$",
+  );
+  assert.equal(await regexLayerOutput("la situation est égale à celle d'hier"), "la situation est égale à celle d'hier");
 });
 
 test("Greek names stay literal outside recognized atomic math constructs", async () => {

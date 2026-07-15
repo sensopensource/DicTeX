@@ -50,6 +50,12 @@ test("extractCommands: spoken command becomes its sentinel", () => {
   assert.equal(extractCommands("nouveau paragraphe donc"), `${PARA} donc`);
 });
 
+test("extractCommands consumes only an STT sentence period attached to a command", () => {
+  assert.equal(extractCommands("A. retour à la ligne. B."), `A. ${NL} B.`);
+  assert.equal(extractCommands("retour à la ligne ?"), `${NL} ?`);
+  assert.equal(extractCommands("retour à la ligne, puis"), `${NL}, puis`);
+});
+
 test("extractCommands: matches case-insensitively and tolerates whitespace runs", () => {
   assert.equal(extractCommands("RETOUR À LA LIGNE x"), `${NL} x`);
   assert.equal(extractCommands("Retour   à\tla\nligne x"), `${NL} x`);

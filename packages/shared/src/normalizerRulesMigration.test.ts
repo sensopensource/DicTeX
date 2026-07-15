@@ -36,7 +36,7 @@ test("bundled rules have stable unique ids and an old empty overlay automaticall
   const paths = makePaths("dictex-rules-overlay-");
   try {
     assert.equal(new Set(BUNDLED_RULES.map((rule) => rule.id)).size, BUNDLED_RULES.length);
-    assert.equal(BUNDLED_RULES.length, 226);
+    assert.equal(BUNDLED_RULES.length, 232);
     assert.equal(BUNDLED_RULES.every((rule, order) => rule.order === order), true);
 
     const options = {
@@ -46,10 +46,10 @@ test("bundled rules have stable unique ids and an old empty overlay automaticall
     };
     const bundled = await createTranscriptNormalizer(options);
     assert.equal(bundled.rulesConfiguration.state, "bundled");
-    assert.equal(bundled.rulesConfiguration.bundledVersion, 3);
+    assert.equal(bundled.rulesConfiguration.bundledVersion, 4);
     assert.equal(
       bundled.rulesConfiguration.bundledHash,
-      "8686d68c18668b5c1e5edd72598f235410aac49ca411710ba7e9dfc77f81170f",
+      "9827105541440f074202db1eb4b5aaf6650172a349e1096ae2e0ccb59b9b57a1",
     );
     assert.equal(bundled.rulesConfiguration.effectiveRuleCount, BUNDLED_RULES.length);
     assert.equal((await bundled.normalize("un sur x")).output, "$\\frac{1}{x}$");
@@ -85,10 +85,10 @@ test("the legacy classifier distinguishes shipped, personal, ambiguous and inval
   const historicalV3 = HISTORICAL_BUNDLED_RULE_SETS.find((set) => set.version === 3);
   assert.ok(historicalV3);
   const exactV3 = analyzeLegacyRulesSource(JSON.stringify({ version: 3, rules: historicalV3.rules }));
-  assert.equal(exactV3.classifications.length, BUNDLED_RULES.length);
+  assert.equal(exactV3.classifications.length, 226);
   assert.equal(exactV3.classifications.every((entry) => entry.kind === "bundled"), true);
 
-  const equality = BUNDLED_RULES.find((rule) => rule.id === "equality");
+  const equality = historicalV3.rules.find((rule) => rule.replacement.includes(" = "));
   assert.ok(equality);
   const mixed = analyzeLegacyRulesSource(JSON.stringify({
     version: 2,
@@ -197,7 +197,9 @@ test("migration keeps the legacy source byte-identical, backs it up, activates a
 test("an ambiguous edited shipped rule requires an explicit decision and keep_personal preserves its behavior", async () => {
   const paths = makePaths("dictex-rules-ambiguous-");
   try {
-    const equality = BUNDLED_RULES.find((rule) => rule.id === "equality");
+    const historicalV3 = HISTORICAL_BUNDLED_RULE_SETS.find((set) => set.version === 3);
+    assert.ok(historicalV3);
+    const equality = historicalV3.rules.find((rule) => rule.replacement.includes(" = "));
     assert.ok(equality);
     writeJson(paths.legacyRulesPath, {
       version: 2,
