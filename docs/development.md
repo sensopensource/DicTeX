@@ -155,7 +155,17 @@ scripts\npm.cmd run dev
 10. Click `Open data folder` and confirm the stored audio file exists under `data/audio/session_.../`.
 11. Click `Open events log` and confirm `audio_segment`, `stt_result`, and `normalization_result` events were appended. (DicTeX no longer writes corrections or benchmark events — those live in DicTeX Lab.)
 12. Click `Open dictionary`, add an entry like `{"from":"dic tex","to":"DicTeX"}`, save the file, then dictate a phrase containing "dic tex". Confirm the clipboard/pasted text and the `Inserted (normalized)` line show `DicTeX`, the `Last transcript (raw)` textarea still shows the raw STT output, and a `normalization_result` event was appended while `stt_result.stt_output` kept the raw transcript. Break the JSON on purpose and confirm the next dictation still inserts the raw text with a quiet `Normalizer:` diagnostic instead of failing.
-13. Without touching `rules.json`, dictate "deux plus trois" spoken as digits (e.g. "2 plus 3") and confirm the inserted text shows `$2 + 3$` (canonical LaTeX wrapped in `$…$`, #107) from the shipped default rules alone. Then dictate an ordinary sentence containing "plus" or "moins" outside a math context (e.g. "je suis de plus en plus fatigué") and confirm it is inserted unchanged. Click `Open rules`, break the JSON on purpose, and confirm the next dictation inserts the (still dictionary-normalized) text unchanged by regex rules with a quiet `Normalizer:` diagnostic instead of failing.
+13. Sans toucher `rules.json`, dicter « un sur x », « v égal d sur t »,
+    « cosinus de theta » et « x supérieur à zéro ». Vérifier respectivement
+    `$\frac{1}{x}$`, `$v = \frac{d}{t}$`, `$\cos(\theta)$` et `$x > 0$`, déjà
+    points fixes de `canonicalizeLatex`. Dicter ensuite « il reste trois
+    exemples », « je suis de plus en plus fatigué » et « je suis moins fatigué
+    que toi » : la prose doit rester identique. Cliquer sur `Open rules`, casser
+    volontairement le JSON et confirmer que la dictée suivante insère le texte
+    encore normalisé par le dictionnaire mais inchangé par les regex, avec un
+    diagnostic `Normalizer:` discret au lieu d'échouer. Pour une installation
+    possédant un fichier antérieur à la version 2, appliquer d'abord la procédure
+    de migration non destructive décrite sous « Normalization Pipeline ».
 14. Placer l'interrupteur `Normalizer` sur **Off**, dicter « retour à la ligne x au carré », puis vérifier que le texte copié ou inséré est identique octet par octet à `Last transcript` : les mots de commande restent littéraux et aucun LaTeX n'est produit. Vérifier que le nouvel événement `normalization_result` contient `disabled: true`, aucun champ `passthrough` et des `layers` vides. Redémarrer DicTeX, confirmer que l'état Off persiste, puis repasser sur On et vérifier que règles et commandes s'appliquent à nouveau.
 15. Dans le sélecteur `STT model`, choisir un autre modèle. Vérifier le diagnostic `Model`, dicter une phrase et confirmer que l'événement `stt_result` contient le modèle choisi. Redémarrer l'application et vérifier la persistance dans `data/settings.json`. Corrompre ce fichier et confirmer que DicTeX redémarre avec la variable d'environnement ou `base`, et avec le normaliseur activé.
 16. Cliquer sur **Open Lab**. Avec un Lab construit (`scripts\npm.cmd run build`), vérifier son ouverture ; sans construction, vérifier que DicTeX affiche une erreur explicite sans planter.
@@ -1479,67 +1489,81 @@ Entries are literal, case-sensitive substring replacements applied in file
 order. Malformed individual entries are skipped (with a diagnostic) while valid
 entries still apply.
 
-The regex rules layer runs after the dictionary. Unlike the dictionary, it
-ships a small default set of conservative French math-verbalization rules that
-applies out of the box, even before the rules file exists. Use the `Open
-rules` button to create/open it; the seeded file contains the shipped
-defaults, editable in place.
+La couche de règles regex s'exécute après le dictionnaire. Contrairement à ce
+dernier, elle fournit un jeu conservateur de verbalisation mathématique française
+qui s'applique même en l'absence de fichier. Le bouton `Open rules` crée ou ouvre
+le fichier ; lors de sa création, il reçoit les règles livrées, modifiables sur
+place. Ce jeu porte `version: 2` depuis #148.
 
 ```text
 data/normalizer/rules.json
 ```
 
 ```json
-{"version":1,"rules":[{"pattern":"...","replacement":"$$$<p1>^{2}$$","flags":"i"}]}
+{"version":2,"rules":[{"pattern":"...","replacement":"$$$<p1>^{2}$$","flags":"i"}]}
 ```
 
-Each rule's `pattern` is a Unicode-aware JS regex source (always matched with
-forced `g`/`u` flags, plus any `flags` given); `replacement` may reference
-capture groups (`$1`, `$2`, ... or `$<name>` for named groups), and a literal
-`$` is written as `$$` (needed to emit the delimiters below). Rules apply in
-file order. Every default rule requires a real operand (a run of digits, or a
-single Unicode letter standing for a variable) on both sides of the keyword,
-and rejects a match where that operand is glued to a surrounding letter/digit
-— this is what keeps prose like "de plus en plus" or "je suis moins fatigué"
-untouched, since "plus"/"moins" only convert between two such operands.
+Le `pattern` d'une règle est une source regex JavaScript compatible Unicode
+(drapeaux `g`/`u` imposés, plus les éventuels `flags`) ; `replacement` peut
+référencer les groupes de capture (`$1`, `$2`, ... ou `$<name>`), et un dollar
+littéral s'écrit `$$`. Les règles s'appliquent dans l'ordre du fichier. Chaque
+règle structurelle exige un opérande atomique réel : entier signé ou non, lettre
+Unicode unique ou nom grec explicitement mappé. Les nombres français de zéro à
+vingt et `moins N` ne sont convertis que si la construction complète prouve
+qu'ils sont consommés comme opérandes. Un opérande collé à une lettre ou un
+chiffre voisin est refusé ; la prose « de plus en plus », « je suis moins
+fatigué » ou « il reste trois exemples » reste ainsi intacte.
 
-**The rules emit canonical LaTeX, not Unicode** (issue #107, following the
-LaTeX decision in `docs/dataset-and-normalization-design.md` §8): inline maths
-is wrapped in `$…$` (the same delimiter convention `canonicalizeLatex` and
-DicTeX Lab use), prose stays bare. The default set covers: "x au carré" ->
+**Les règles produisent du LaTeX canonique, pas de l'Unicode** (#107 et #148,
+selon `docs/dataset-and-normalization-design.md` §8) : les mathématiques en ligne
+sont délimitées par `$…$`, tandis que la prose reste nue. Le jeu couvre :
+"x au carré" ->
 `$x^{2}$`, "x au cube" -> `$x^{3}$`, "x puissance n" -> `$x^{n}$`, "racine
 (carrée) de x" -> `$\sqrt{x}$`, "x égal(e) y" -> `$x = y$`, "plus grand/petit
 que" -> `$x > y$`/`$x < y$`, "plus"/"moins"/"fois" -> `$x + y$`/`$x - y$`/`$x
-\times y$`, and "divisé par" -> `$\frac{x}{y}$`. Each rule's output is already
-a fixed point of `canonicalizeLatex` (`packages/shared/src/latex.ts`), so
-scoring/export never treat it as needing repair.
+\times y$`, et « divisé par »/« sur » -> `$\frac{x}{y}$`. #148 ajoute
+« multiplié par », « supérieur/inférieur à », les fonctions atomiques `\sin`,
+`\cos`, `\ln`, `f(x)`, `theta`/`rho`, ainsi que les nombres français de zéro à
+vingt seulement comme opérandes reconnus. Chaque sortie est déjà un point fixe de
+`canonicalizeLatex` (`packages/shared/src/latex.ts`) ; mesure et export ne la
+traitent donc jamais comme une réparation.
 
-A regex cannot group or scope, so "au carré"/"au cube"/"puissance"/"racine
-(carrée) de"/"divisé par" — the rules that introduce a NEW brace around their
-operand — stay restricted to a single bare digit run or letter on every
-operand, exactly as before: `\frac{a}{b}` needs both operands unambiguous, so
-"a divisé par b plus un" cannot compose "b plus un" into one denominator
-("un" spelled out is not a single-token operand). The remaining rules ("x
-égale y", "plus/petit que", "plus", "moins", "fois") never add a new brace, so
-they MAY also accept an already-`$…$`-wrapped fragment as an operand — this is
-what keeps the chaining property alive under LaTeX: "x au carré plus y" first
-becomes "$x^{2}$ plus y" (the bracing "au carré" rule, bare operand "x"), then
-"plus" matches the whole wrapped fragment "$x^{2}$" as its left operand and
-merges it with "y" into one span, "$x^{2} + y$". Adopting LaTeX therefore
-*grows* what the rules cannot reach (grouping/scoping stays out of reach by
-design) — that residual is exactly what normalizer layer 3 is for (§7).
+Une regex ne sait ni grouper ni décider une portée. Les règles « au carré »,
+« au cube », « puissance », « racine (carrée) de », les fractions et les
+fonctions — qui introduisent une nouvelle accolade ou un argument — restent donc
+limitées aux opérandes atomiques. `\frac{a}{b}` exige deux opérandes non ambigus :
+« a divisé par b plus un » peut devenir `$\frac{a}{b} + 1$`, mais jamais
+`\frac{a}{b+1}`. Les autres règles (égalité, comparaisons, addition,
+soustraction et multiplication) n'ajoutent pas d'accolade et peuvent accepter un
+fragment déjà délimité par `$…$`. C'est ce qui permet à « x au carré plus y » de
+devenir d'abord « `$x^{2}$ plus y` », puis `$x^{2} + y$`. La composition et la
+portée générales restent le résidu prévu pour la couche 3 (§7).
 
-A malformed rules file (bad JSON or shape) disables the whole layer with a
-passthrough and a quiet diagnostic; a malformed individual rule (e.g. invalid
-regex) is skipped the same way individual dictionary entries are.
+Un fichier de règles mal formé désactive toute la couche avec un passthrough et
+un diagnostic discret ; une règle individuelle invalide est ignorée comme une
+entrée individuelle invalide du dictionnaire.
 
-**Migration d'un `rules.json` antérieur à #107 :** ce fichier est modifiable par
-l'utilisateur et DicTeX ne le réécrit jamais. Une ancienne installation continue
-donc à produire ses règles Unicode. Avant les essais quotidiens, fermer DicTeX,
-copier le fichier sous un nom horodaté, puis renommer l'original et laisser
-DicTeX créer les nouvelles règles LaTeX au prochain démarrage. Vérifier ensuite
-les éventuelles règles personnelles et les reporter volontairement. Ne jamais
-supprimer l'unique copie ni mélanger silencieusement les deux conventions.
+**Migration non destructive d'un `rules.json` antérieur à la version 2 :** ce
+fichier est modifiable par l'utilisateur et DicTeX ne le réécrit jamais. Une
+installation existante continue donc volontairement d'utiliser exactement sa
+source et son SHA-256 ; les nouvelles règles ne sont jamais injectées au risque
+d'écraser une règle personnelle. Pour les activer :
+
+1. fermer DicTeX et le Lab ;
+2. copier `rules.json` sous un nom horodaté dans un autre dossier sûr ;
+3. renommer l'original local en `rules.pre-v2.json` ;
+4. rouvrir DicTeX, cliquer `Open rules` et laisser l'application générer le jeu
+   `version: 2` ;
+5. comparer la sauvegarde au nouveau fichier et ajouter volontairement les
+   règles personnelles à la fin de `rules` ;
+6. relancer un run Normalizer : son identité doit annoncer la version
+   sémantique `dictex-deterministic-pipeline-v3`, le nouveau SHA-256 des règles
+   et les définitions effectives dans leur ordre.
+
+Ne jamais supprimer l'unique sauvegarde ni remplacer automatiquement le fichier
+utilisateur. Cette procédure couvre aussi les anciens fichiers Unicode
+antérieurs à #107 : leurs règles personnelles doivent être adaptées
+volontairement au contrat LaTeX avant réintégration.
 
 The raw `stt_result` event is left untouched. Each dictation appends a separate
 append-only `normalization_result` event recording the input, the final output,

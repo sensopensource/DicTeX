@@ -167,7 +167,8 @@ export type NormalizerPipelineSnapshot = {
 };
 
 export const NORMALIZER_PIPELINE_CONTRACT_VERSION = 2;
-export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v2";
+export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v3";
+export const DEFAULT_RULES_CONFIG_VERSION = 2;
 
 type LayerApplication = {
   output: string;
@@ -609,16 +610,17 @@ type CompiledRule = {
  * different treatment of "what may stand as that token":
  *
  *   - BRACING rules — "au carré/cube" (`^{2}`/`^{3}`), "puissance n" (`^{n}`),
- *     "racine (carrée) de" (`\sqrt{}`), "divisé par" (`\frac{}{}`) — introduce a
+ *     "racine (carrée) de" (`\sqrt{}`), atomic functions, "sur" and
+ *     "divisé par" (`\frac{}{}`) — introduce a
  *     NEW brace around their operand(s). Accepting an already-composed fragment
  *     here would require deciding where that fragment's scope ends inside the
  *     new braces (exactly the grouping problem regex cannot solve), so these
  *     stay OPERAND_BARE-only: one digit run or one letter, full stop. This is
- *     why, per the issue, "a divisé par b plus un" does not compose into a
- *     single fraction: "un" is two letters, not a valid bare operand, so
- *     "divisé par" only ever sees "a" and "b".
- *   - FLAT rules — "égale" (`=`), "plus/petit que" (`>`/`<`), "plus"/"moins"
- *     (`+`/`-`), "fois" (`\times`) — never add a brace; they splice two operands
+ *     why "a divisé par b plus un" can become `a / b + 1` but never
+ *     `a / (b + 1)`: the fraction rule only ever sees the atomic "a" and "b".
+ *   - FLAT rules — "égale" (`=`), comparison synonyms (`>`/`<`),
+ *     "plus"/"moins" (`+`/`-`), "fois"/"multiplié par" (`\times`) — never add
+ *     a brace; they splice two operands
  *     and an operator at the SAME brace depth (0) as their inputs. Because no
  *     new nesting is introduced, an operand here may ALSO be an entire
  *     `$…$`-wrapped fragment an earlier rule already produced (OPERAND_ANY):
@@ -629,17 +631,23 @@ type CompiledRule = {
  *     "plus" rule matches operand1 = the whole wrapped fragment "$x^{2}$" and
  *     operand2 = bare "y", emitting one merged span "$x^{2} + y$".
  *
- * Every rule still requires NOT_WORD_BEFORE/NOT_WORD_AFTER around the operand,
- * unchanged from the original design: this is what keeps ordinary prose like
- * "de plus en plus" untouched ("plus" only turns into "+" between two real
- * operands), and it holds for both operand grammars since a wrapped fragment
- * always starts/ends with "$", never a letter or digit.
+ * The bare atom now also admits signed digit runs and the two explicitly mapped
+ * Greek names (`\theta`, `\rho`). Their spoken aliases, and French number words
+ * zero through twenty, are converted only while another operand and a known
+ * construction are present; the generated contextual rules below never rewrite
+ * a standalone word. Every structural rule still requires
+ * NOT_WORD_BEFORE/NOT_WORD_AFTER around the operand: this keeps ordinary prose
+ * like "de plus en plus" untouched.
  */
-const OPERAND_BARE = "\\d+|\\p{L}";
+const GREEK_LATEX_NAMES = "theta|rho";
+const OPERAND_BARE = `-?\\d+|\\\\(?:${GREEK_LATEX_NAMES})|\\p{L}`;
 const NOT_WORD_BEFORE = "(?<![\\p{L}\\p{N}])";
 const NOT_WORD_AFTER = "(?![\\p{L}\\p{N}])";
+const NOT_SPOKEN_ALIAS_BEFORE = `${NOT_WORD_BEFORE}(?<!\\\\)`;
+const NOT_SPOKEN_ALIAS_AFTER = "(?![-\\p{L}\\p{N}])";
 
-/** A single bracing-rule operand: one digit run or one letter. No `$…$`
+/** A single bracing-rule operand: one signed digit run, one letter, or one
+ * explicitly mapped Greek macro. No `$…$`
  * fragment may stand here (see header comment — bracing rules stay bare-only). */
 function operandBare(tag: string): string {
   return `(?<p${tag}>${OPERAND_BARE})`;
@@ -664,7 +672,124 @@ function refAny(tag: string): string {
   return `$<i${tag}>$<p${tag}>`;
 }
 
+const FRENCH_NUMBER_ATOMS = [
+  ["zéro", "0"],
+  ["un", "1"],
+  ["deux", "2"],
+  ["trois", "3"],
+  ["quatre", "4"],
+  ["cinq", "5"],
+  ["six", "6"],
+  ["sept", "7"],
+  ["huit", "8"],
+  ["neuf", "9"],
+  ["dix", "10"],
+  ["onze", "11"],
+  ["douze", "12"],
+  ["treize", "13"],
+  ["quatorze", "14"],
+  ["quinze", "15"],
+  ["seize", "16"],
+  ["dix-sept", "17"],
+  ["dix-huit", "18"],
+  ["dix-neuf", "19"],
+  ["vingt", "20"],
+] as const;
+
+const GREEK_ATOMS = [
+  ["theta", "\\theta"],
+  ["rho", "\\rho"],
+] as const;
+
+const SPOKEN_ATOM_ALIASES = [...FRENCH_NUMBER_ATOMS, ...GREEK_ATOMS] as const;
+const SPOKEN_ATOM_PATTERN = SPOKEN_ATOM_ALIASES
+  .map(([spoken]) => escapeRegex(spoken))
+  .sort((left, right) => right.length - left.length)
+  .join("|");
+const PENDING_ATOM = `(?:moins\\s+)?(?:${SPOKEN_ATOM_PATTERN})|(?:${OPERAND_BARE})|\\$[^$]+\\$`;
+const BINARY_SPOKEN_OPERATOR = [
+  "divis[ée]e?\\s+par",
+  "multipli[ée]e?\\s+par",
+  "plus\\s+grand\\s+que",
+  "plus\\s+petit\\s+que",
+  "supérieur\\s+à",
+  "inférieur\\s+à",
+  "[ée]gale?",
+  "sur",
+  "plus",
+  "moins",
+  "fois",
+].join("|");
+const FUNCTION_SPOKEN_PREFIX = `(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)`;
+const PRESERVED_OPERAND = `(?:\\$[^$]+\\$|(?:${OPERAND_BARE}))`;
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Spoken atom aliases are converted only when the whole surrounding construct
+ * already has another valid (or pending) atomic operand. This is what keeps
+ * ordinary prose such as "il reste trois exemples" byte-identical: a number
+ * word is never normalized on its own.
+ *
+ * The left-side pass accepts a pending spoken atom on the right, then the
+ * right-side pass resolves it once the left side is valid. Thus "un sur deux"
+ * composes without a general number parser or a combinatorial rule table.
+ */
+function buildSpokenAtomRules(): RuleEntry[] {
+  const leftRules = SPOKEN_ATOM_ALIASES.map(([spoken, latex]) => ({
+    pattern:
+      `${NOT_SPOKEN_ALIAS_BEFORE}${escapeRegex(spoken)}\\s+` +
+      `(?<spokenOperator>${BINARY_SPOKEN_OPERATOR})\\s+` +
+      `(?<followingAtom>${PENDING_ATOM})${NOT_WORD_AFTER}`,
+    replacement: `${latex} $<spokenOperator> $<followingAtom>`,
+    flags: "i",
+  }));
+
+  const rightRules = SPOKEN_ATOM_ALIASES.map(([spoken, latex]) => ({
+    pattern:
+      `${NOT_WORD_BEFORE}(?:(?<binaryPrefix>${PRESERVED_OPERAND}\\s+(?:${BINARY_SPOKEN_OPERATOR}))|` +
+      `(?<functionPrefix>${FUNCTION_SPOKEN_PREFIX}))\\s+` +
+      `(?<unaryMinus>moins\\s+)?${escapeRegex(spoken)}${NOT_SPOKEN_ALIAS_AFTER}`,
+    replacement: `$<binaryPrefix>$<functionPrefix> $<unaryMinus>${latex}`,
+    flags: "i",
+  }));
+
+  return [
+    ...leftRules,
+    ...rightRules,
+    {
+      // "moins trois sur x" -> "-3 sur x", but "moins trois" alone stays prose.
+      pattern:
+        `${NOT_WORD_BEFORE}moins\\s+(?<negativeAtom>\\d+)\\s+` +
+        `(?<spokenOperator>${BINARY_SPOKEN_OPERATOR})\\s+` +
+        `(?<followingAtom>${PRESERVED_OPERAND})${NOT_WORD_AFTER}`,
+      replacement: `-$<negativeAtom> $<spokenOperator> $<followingAtom>`,
+      flags: "i",
+    },
+    {
+      // "x supérieur à moins trois" -> "x supérieur à -3".
+      pattern:
+        `${NOT_WORD_BEFORE}(?<precedingAtom>${PRESERVED_OPERAND})\\s+` +
+        `(?<spokenOperator>${BINARY_SPOKEN_OPERATOR})\\s+moins\\s+` +
+        `(?<negativeAtom>\\d+)${NOT_WORD_AFTER}`,
+      replacement: `$<precedingAtom> $<spokenOperator> -$<negativeAtom>`,
+      flags: "i",
+    },
+    {
+      // "sinus de moins trois" -> "sinus de -3".
+      pattern:
+        `${NOT_WORD_BEFORE}(?<functionPrefix>${FUNCTION_SPOKEN_PREFIX})\\s+moins\\s+` +
+        `(?<negativeAtom>\\d+)${NOT_WORD_AFTER}`,
+      replacement: `$<functionPrefix> -$<negativeAtom>`,
+      flags: "i",
+    },
+  ];
+}
+
 export const DEFAULT_RULES: RuleEntry[] = [
+  ...buildSpokenAtomRules(),
   {
     // "x au carré" -> "$x^{2}$" (bracing: bare operand only).
     pattern: `${NOT_WORD_BEFORE}${operandBare("1")}\\s+au\\s+carr(?:é|ée)${NOT_WORD_AFTER}`,
@@ -690,46 +815,85 @@ export const DEFAULT_RULES: RuleEntry[] = [
     flags: "i",
   },
   {
-    // "x égale y" -> "$x = y$" (flat: either operand may already be a "$…$" fragment).
-    pattern: `${NOT_WORD_BEFORE}${operandAny("1")}\\s+[ée]gale?\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
-    replacement: `$$${refAny("1")} = ${refAny("2")}$$`,
+    // "sinus de x" -> "$\sin(x)$" (atomic argument only).
+    pattern: `${NOT_WORD_BEFORE}sinus\\s+de\\s+${operandBare("1")}${NOT_WORD_AFTER}`,
+    replacement: `$$\\sin(${refBare("1")})$$`,
     flags: "i",
   },
   {
-    // "x plus grand que y" -> "$x > y$" (flat).
-    pattern: `${NOT_WORD_BEFORE}${operandAny("1")}\\s+plus\\s+grand\\s+que\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
-    replacement: `$$${refAny("1")} > ${refAny("2")}$$`,
+    // "cosinus de x" -> "$\cos(x)$" (atomic argument only).
+    pattern: `${NOT_WORD_BEFORE}cosinus\\s+de\\s+${operandBare("1")}${NOT_WORD_AFTER}`,
+    replacement: `$$\\cos(${refBare("1")})$$`,
     flags: "i",
   },
   {
-    // "x plus petit que y" -> "$x < y$" (flat).
-    pattern: `${NOT_WORD_BEFORE}${operandAny("1")}\\s+plus\\s+petit\\s+que\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
-    replacement: `$$${refAny("1")} < ${refAny("2")}$$`,
+    // "logarithme naturel de x" -> "$\ln(x)$" (atomic argument only).
+    pattern: `${NOT_WORD_BEFORE}logarithme\\s+naturel\\s+de\\s+${operandBare("1")}${NOT_WORD_AFTER}`,
+    replacement: `$$\\ln(${refBare("1")})$$`,
     flags: "i",
   },
   {
-    // "x plus y" -> "$x + y$" (flat).
-    pattern: `${NOT_WORD_BEFORE}${operandAny("1")}\\s+plus\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
-    replacement: `$$${refAny("1")} + ${refAny("2")}$$`,
+    // "f de x" -> "$f(x)$" (one-letter function and atomic argument only).
+    pattern:
+      `${NOT_WORD_BEFORE}(?<functionName>\\p{L})\\s+de\\s+${operandBare("1")}${NOT_WORD_AFTER}`,
+    replacement: `$$$<functionName>(${refBare("1")})$$`,
     flags: "i",
   },
   {
-    // "x moins y" -> "$x - y$" (flat).
-    pattern: `${NOT_WORD_BEFORE}${operandAny("1")}\\s+moins\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
-    replacement: `$$${refAny("1")} - ${refAny("2")}$$`,
+    // "x sur y" -> "$\frac{x}{y}$" (bracing: atomic operands only).
+    pattern: `${NOT_WORD_BEFORE}${operandBare("1")}\\s+sur\\s+${operandBare("2")}${NOT_WORD_AFTER}`,
+    replacement: `$$\\frac{${refBare("1")}}{${refBare("2")}}$$`,
     flags: "i",
   },
   {
-    // "x fois y" -> "$x \times y$" (flat).
+    // "x divisé par y" -> "$\frac{x}{y}$" (bracing: atomic operands only).
+    pattern: `${NOT_WORD_BEFORE}${operandBare("1")}\\s+divis[ée]e?\\s+par\\s+${operandBare("2")}${NOT_WORD_AFTER}`,
+    replacement: `$$\\frac{${refBare("1")}}{${refBare("2")}}$$`,
+    flags: "i",
+  },
+  {
+    // "x multiplié par y" -> "$x \times y$" (flat, before comparisons/equality).
+    pattern: `${NOT_WORD_BEFORE}${operandAny("1")}\\s+multipli[ée]e?\\s+par\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
+    replacement: `$$${refAny("1")} \\times ${refAny("2")}$$`,
+    flags: "i",
+  },
+  {
+    // "x fois y" -> "$x \times y$" (flat, before comparisons/equality).
     pattern: `${NOT_WORD_BEFORE}${operandAny("1")}\\s+fois\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
     replacement: `$$${refAny("1")} \\times ${refAny("2")}$$`,
     flags: "i",
   },
   {
-    // "x divisé par y" -> "$\frac{x}{y}$" (bracing: bare operands only — this is
-    // why "a divisé par b plus un" cannot compose into one fraction, per the issue).
-    pattern: `${NOT_WORD_BEFORE}${operandBare("1")}\\s+divis[ée]e?\\s+par\\s+${operandBare("2")}${NOT_WORD_AFTER}`,
-    replacement: `$$\\frac{${refBare("1")}}{${refBare("2")}}$$`,
+    // Addition/subtraction are internal operations and therefore run before
+    // equality/comparison, allowing "v égal d plus t" to compose locally.
+    pattern: `${NOT_WORD_BEFORE}${operandAny("1")}\\s+plus\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
+    replacement: `$$${refAny("1")} + ${refAny("2")}$$`,
+    flags: "i",
+  },
+  {
+    pattern: `${NOT_WORD_BEFORE}${operandAny("1")}\\s+moins\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
+    replacement: `$$${refAny("1")} - ${refAny("2")}$$`,
+    flags: "i",
+  },
+  {
+    // "x égale y" -> "$x = y$" (flat, after internal operations).
+    pattern: `${NOT_WORD_BEFORE}${operandAny("1")}\\s+[ée]gale?\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
+    replacement: `$$${refAny("1")} = ${refAny("2")}$$`,
+    flags: "i",
+  },
+  {
+    // Historical and new synonyms for strict comparisons.
+    pattern:
+      `${NOT_WORD_BEFORE}${operandAny("1")}\\s+` +
+      `(?:plus\\s+grand\\s+que|supérieur\\s+à)\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
+    replacement: `$$${refAny("1")} > ${refAny("2")}$$`,
+    flags: "i",
+  },
+  {
+    pattern:
+      `${NOT_WORD_BEFORE}${operandAny("1")}\\s+` +
+      `(?:plus\\s+petit\\s+que|inférieur\\s+à)\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
+    replacement: `$$${refAny("1")} < ${refAny("2")}$$`,
     flags: "i",
   },
 ];
@@ -807,7 +971,9 @@ async function loadRules(
     const compiled = compileRules(DEFAULT_RULES);
     return {
       ...compiled,
-      sourceHash: hashNormalizerSource(JSON.stringify({ version: 1, rules: DEFAULT_RULES })),
+      sourceHash: hashNormalizerSource(
+        JSON.stringify({ version: DEFAULT_RULES_CONFIG_VERSION, rules: DEFAULT_RULES }),
+      ),
       sourceState: "default_absent",
       sourceContent: null,
     };

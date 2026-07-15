@@ -183,6 +183,34 @@ traces détaillées est refusé et doit être relancé ; sa provenance n'est jam
 reconstituée. Le manifeste contient volontairement le dictionnaire personnel et
 l'interface l'annonce. DicTeX ne téléverse rien.
 
+## DEC-NORM-001 — Les nouvelles expressions restent atomiques — 15 juillet 2026
+
+**Statut : active.** Le jeu livré de règles du normaliseur passe à la version 2
+et couvre davantage de formulations locales sans devenir un parseur. Un atome
+reste une lettre, un entier signé ou non, ou l'un des noms grecs explicitement
+pris en charge (`theta`, `rho`). Les nombres français de zéro à vingt et la forme
+`moins N` ne deviennent des chiffres que lorsqu'ils occupent effectivement la
+place d'un opérande dans une construction reconnue ; les mêmes mots en prose
+restent inchangés.
+
+Les fonctions `sinus de A`, `cosinus de A`, `logarithme naturel de A` et
+`f de A` consomment exactement un atome. Les fractions `A sur B` et
+`A divisé par B` font de même. Les opérations internes — fractions, fonctions,
+multiplications, additions et soustractions — passent avant les égalités et les
+comparaisons afin que `v égal d sur t` devienne `$v = \frac{d}{t}$`. Cette
+priorité ne donne aucune portée arbitraire aux regex : elles ne construisent ni
+parenthèses implicites, ni argument composé, ni arbre mathématique.
+
+La version sémantique du pipeline devient
+`dictex-deterministic-pipeline-v3`. Le snapshot des runs continue de conserver
+les définitions effectives ordonnées, la source complète et son SHA-256 ; le
+jeu absent par défaut et un fichier `rules.json` existant restent donc
+distinguables. DicTeX ne modifie jamais automatiquement un fichier utilisateur.
+Pour activer la version 2 sur une installation existante, l'utilisateur ferme
+l'application, sauvegarde le fichier, le renomme, laisse DicTeX générer le
+nouveau jeu, puis réintègre volontairement ses règles personnelles. La procédure
+détaillée vit dans `docs/development.md`.
+
 ## DicTeX / Lab split (monorepo)
 
 DicTeX est séparé en deux applications Electron dans un même monorepo npm
