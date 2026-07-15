@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { buildSttDatasetExport, type BuildSttDatasetExportOptions } from "./datasetExport.js";
-import { normalizeTranscript } from "./normalizer.js";
+import { createTranscriptNormalizer, normalizeTranscript } from "./normalizer.js";
+import { buildNormalizerBenchmarkCandidate, parseNormalizerBenchmarkVariant } from "./normalizerBenchmark.js";
 import { containsSentinel } from "./commands.js";
 import type { LocalEvent } from "./localEvents.js";
 
@@ -111,6 +112,39 @@ test("INVARIANT: the exported input equals what apps/dictex would feed layer 3",
   assert.equal(exportedInput, dictexServes);
 });
 
+test("overlay parity: DicTeX, Lab export and benchmark identity share one effective output and hash", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "dictex-overlay-parity-"));
+  try {
+    const options: BuildSttDatasetExportOptions = {
+      dictionaryPath: path.join(directory, "dictionary.json"),
+      rulesPath: path.join(directory, "rules.json"),
+      rulesOverlayPath: path.join(directory, "rules-overlay.json"),
+    };
+    writeFileSync(options.rulesOverlayPath!, JSON.stringify({
+      version: 1,
+      bundled_rules_version: 2,
+      disabled_rule_ids: ["power-square"],
+      replacements: [],
+      personal_rules: [{ id: "personal-two", order: 1, pattern: "\\bdeux\\b", replacement: "2", flags: "i" }],
+    }), "utf8");
+    const normalizer = await createTranscriptNormalizer(options);
+    const served = (await normalizer.normalize(LITERAL)).output;
+    const exported = await recordsOf(baseEvents(), options);
+    assert.equal(exported.mathTransform[0].rawTranscript, served);
+
+    const dataset = await buildSttDatasetExport(baseEvents(), "2026-07-10T00:00:00.000Z", options);
+    assert.equal(dataset.normalizerVersion.rulesHash, normalizer.version.rulesHash);
+    assert.equal(dataset.normalizerVersion.overlayHash, normalizer.version.overlayHash);
+    assert.equal(dataset.normalizerVersion.localRulesHash, normalizer.version.localRulesHash);
+    const benchmarkVersion = parseNormalizerBenchmarkVariant(
+      buildNormalizerBenchmarkCandidate(normalizer.version).candidate.variant,
+    );
+    assert.deepEqual(benchmarkVersion, normalizer.version);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("export NEVER touches an acoustic pair (Layer 1 stays verbatim for STT)", async () => {
   const { acoustic } = await recordsOf(baseEvents());
   assert.equal(acoustic.length, 1);
@@ -143,11 +177,14 @@ test("regenerating the export is deterministic (retroactive correctness by rebui
   assert.equal(first, second);
 });
 
-test("normalizerVersion records a content hash of the config that built the inputs", async () => {
-  // Absent config: both hashes are null (empty dictionary / built-in DEFAULT_RULES).
+test("normalizerVersion records bundled, local and effective provenance from the loaded pipeline", async () => {
+  // Absent config still has effective hashes; it has no local source hash.
   const absent = await buildSttDatasetExport(baseEvents(), "2026-07-10T00:00:00.000Z", ABSENT_CONFIG);
-  assert.equal(absent.normalizerVersion.dictionaryHash, null);
-  assert.equal(absent.normalizerVersion.rulesHash, null);
+  assert.match(absent.normalizerVersion.dictionaryHash ?? "", /^[0-9a-f]{64}$/u);
+  assert.match(absent.normalizerVersion.rulesHash ?? "", /^[0-9a-f]{64}$/u);
+  assert.equal(absent.normalizerVersion.rulesHash, absent.normalizerVersion.bundledRulesHash);
+  assert.equal(absent.normalizerVersion.rulesMode, "bundled");
+  assert.equal(absent.normalizerVersion.localRulesHash, null);
 
   // Present config: each hash is the sha256 of the file's bytes, so the dataset is
   // traceable to the exact pipeline version that produced its inputs.
@@ -167,5 +204,7 @@ test("normalizerVersion records a content hash of the config that built the inpu
     present.normalizerVersion.dictionaryHash,
     createHash("sha256").update(dictionaryBytes).digest("hex"),
   );
-  assert.equal(present.normalizerVersion.rulesHash, createHash("sha256").update(rulesBytes).digest("hex"));
+  assert.equal(present.normalizerVersion.localRulesHash, createHash("sha256").update(rulesBytes).digest("hex"));
+  assert.match(present.normalizerVersion.rulesHash ?? "", /^[0-9a-f]{64}$/u);
+  assert.equal(present.normalizerVersion.rulesMode, "legacy");
 });

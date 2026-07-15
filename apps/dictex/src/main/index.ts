@@ -5,7 +5,9 @@ import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  DEFAULT_RULES,
+  DEFAULT_RULES_CONFIG_VERSION,
+  PERSONAL_RULES_OVERLAY_FILENAME,
+  PERSONAL_RULES_OVERLAY_VERSION,
   normalizeTranscript,
   readLocalEvents,
   reconstructRecentSegments,
@@ -248,6 +250,10 @@ function getRulesPath(): string {
   return path.join(getNormalizerDir(), "rules.json");
 }
 
+function getRulesOverlayPath(): string {
+  return path.join(getNormalizerDir(), PERSONAL_RULES_OVERLAY_FILENAME);
+}
+
 // Seeded on first open. Empty `entries` keeps dictation byte-identical (empty by
 // default); the ignored `_comment`/`_example` keys document the format in place.
 const emptyDictionaryTemplate = `${JSON.stringify(
@@ -261,15 +267,15 @@ const emptyDictionaryTemplate = `${JSON.stringify(
   2,
 )}\n`;
 
-// Seeded on first open with the shipped default rule set (unlike the empty
-// dictionary template) so regex normalization is useful out of the box. Rules
-// apply in file order; the ignored `_comment` key documents the format in place.
-const defaultRulesTemplate = `${JSON.stringify(
+const emptyRulesOverlayTemplate = `${JSON.stringify(
   {
-    version: 1,
+    version: PERSONAL_RULES_OVERLAY_VERSION,
+    bundled_rules_version: DEFAULT_RULES_CONFIG_VERSION,
     _comment:
-      'Ordered regex rules applied after the personal dictionary. "pattern" is a Unicode-aware JS regex source (matched with forced "g"/"u" flags plus any "flags" given here); "replacement" may reference capture groups via $1, $2, ... or $<name>, $<name>... for named groups, and a literal "$" is written as "$$" (needed to emit the "$…$" inline-math delimiters DicTeX Lab expects). A pattern that does not match leaves the text untouched.',
-    rules: DEFAULT_RULES,
+      "Personal overlay over the versioned bundled rules. Disable or replace a bundled rule by its stable id; personal rules run afterwards in numeric order.",
+    disabled_rule_ids: [],
+    replacements: [],
+    personal_rules: [],
   },
   null,
   2,
@@ -481,6 +487,7 @@ ipcMain.handle(
           normalizeTranscript(rawTranscript, {
             dictionaryPath: getDictionaryPath(),
             rulesPath: getRulesPath(),
+            rulesOverlayPath: getRulesOverlayPath(),
           }),
         writeClipboard: (text) => clipboard.writeText(text),
         pasteActiveApp: pasteClipboardIntoActiveApp,
@@ -560,13 +567,17 @@ ipcMain.handle("diagnostics:open-dictionary", async (): Promise<boolean> => {
 ipcMain.handle("diagnostics:open-rules", async (): Promise<boolean> => {
   const normalizerDir = getNormalizerDir();
   await mkdir(normalizerDir, { recursive: true });
-  const rulesPath = getRulesPath();
-  if (!existsSync(rulesPath)) {
-    // Seed with the shipped default rule set, not an empty file, so the layer
-    // is useful out of the box and the user can see/edit the starter rules.
-    await writeFile(rulesPath, defaultRulesTemplate, { encoding: "utf8" });
+  const overlayPath = getRulesOverlayPath();
+  if (!existsSync(overlayPath) && existsSync(getRulesPath())) {
+    // A legacy monolithic file must be reviewed in the Lab before an overlay
+    // activates. Opening settings never performs that migration implicitly.
+    const error = await shell.openPath(normalizerDir);
+    return error.length === 0;
   }
-  const error = await shell.openPath(rulesPath);
+  if (!existsSync(overlayPath)) {
+    await writeFile(overlayPath, emptyRulesOverlayTemplate, { encoding: "utf8" });
+  }
+  const error = await shell.openPath(overlayPath);
   return error.length === 0;
 });
 

@@ -3,6 +3,9 @@
 // Cross-app TypeScript contracts shared by `apps/dictex` and `apps/lab` main
 // processes: the JSONL event schema + append-only derivations (localEvents),
 // CER/WER scoring (sttScoring), STT candidate summarization (benchmarkSummary),
+// the read-only projection of one tracked run (benchmarkRunDetail),
+// the stage-aware append-only run contract + common Results projection
+// (benchmarkContract),
 // portable per-run LLM export construction (benchmarkRunExport),
 // the text-to-text normalization pipeline (normalizer — imports node:fs; the ONE
 // dictionary -> command extraction -> regex fold DicTeX serves and the dataset
@@ -15,6 +18,7 @@
 // Renderer-only (browser-safe) helpers live in dedicated subpath exports so
 // they never pull node built-ins into a renderer bundle:
 //   `@dictex/shared/commands`       — command table + sentinel extract/expand
+//   `@dictex/shared/normalizerBenchmark` — pure benchmark provenance + summaries
 //   `@dictex/shared/latex`          — LaTeX canonicalizer (#106)
 //   `@dictex/shared/formatting`     — presentation string formatting
 //   `@dictex/shared/errorAnalysis`  — heuristic benchmark error analysis
@@ -28,8 +32,13 @@ export * from "./latex.js";
 export * from "./localEvents.js";
 export * from "./sttScoring.js";
 export * from "./benchmarkSummary.js";
+export * from "./benchmarkRunDetail.js";
+export * from "./benchmarkContract.js";
+export * from "./normalizerBenchmark.js";
 export * from "./benchmarkRunExport.js";
+export * from "./normalizerBenchmarkRunExport.js";
 export * from "./normalizer.js";
+export * from "./normalizerRulesMigration.js";
 export * from "./datasetExport.js";
 export * from "./sttEngine.js";
 export * from "./benchmarkTypes.js";

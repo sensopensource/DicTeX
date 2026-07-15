@@ -4,20 +4,25 @@ import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  getLatestAudioSegment as getLatestAudioSegmentFromEvents,
   getLatestSttCandidateSelection,
   getLatestSttCorrection,
   getSttPromptVariantDefinitions,
   isCorrectionKind,
   readLocalEvents,
   reconstructRecentSegments,
+  buildSttBenchmarkRunDetail,
   buildSttBenchmarkRunSnapshot,
-  getSttBenchmarkRuns,
+  getBenchmarkRunProjection,
+  getBenchmarkRunProjections,
   summarizeLegacySttBenchmarkResultsByCandidate,
-  summarizeSttBenchmarkRun,
   buildSttBenchmarkRunExport,
+  buildNormalizerBenchmarkRunExport,
   buildSttDatasetExport,
+  createTranscriptNormalizer,
+  migrateLegacyRules,
   normalizeTranscript,
+  PERSONAL_RULES_OVERLAY_FILENAME,
+  previewLegacyRulesMigration,
   restoreCommandWords,
   transcribeWithPython,
   ProviderUnavailableError,
@@ -40,17 +45,34 @@ import {
   type SttCandidateSelectionRequest,
   type SttCandidateSelectionResponse,
   type SttBenchmarkSetRunRequest,
+  type SttBenchmarkSetSplitRequest,
+  type SttBenchmarkSetPreview,
   type SttBenchmarkSetSegmentOutcome,
   type SttBenchmarkSetRunResponse,
   type SttBenchmarkSetProgress,
-  type SttBenchmarkRunListEntry,
-  type SttBenchmarkRunSummaryResponse,
+  type SttBenchmarkRunDetail,
+  type BenchmarkMathTransformRunProjection,
+  type BenchmarkRunListEntry,
   type SttBenchmarkRunExportSummary,
+  type NormalizerBenchmarkRunExportSummary,
+  type LegacyRuleResolution,
+  type LegacyRulesMigrationPreview,
+  type RulesMigrationReceipt,
+  type RulesMigrationConfirmation,
   type SttDatasetExportFileSummary,
   type SttDatasetExportSplitSummary,
   type SttDatasetExportSummary,
 } from "@dictex/shared";
 import { writeSttBenchmarkRunExport } from "./benchmarkRunExportWriter.js";
+import { writeNormalizerBenchmarkRunExport } from "./normalizerBenchmarkRunExportWriter.js";
+import { requireNonEmptySttBenchmarkSnapshot, requireSttBenchmarkOutput } from "./benchmarkExecution.js";
+import {
+  buildNormalizerBenchmarkSetPreview,
+  runNormalizerBenchmark,
+  type NormalizerBenchmarkRunRequest,
+  type NormalizerBenchmarkRunResponse,
+  type NormalizerBenchmarkSetPreview,
+} from "./normalizerBenchmark.js";
 import {
   scoreSttBenchmarkTranscript,
   type SttBenchmarkReference,
@@ -79,15 +101,14 @@ import {
 } from "./promptVariants.js";
 
 /**
- * DicTeX Lab main process (pivot Phase 2, issue #76). No microphone, no
- * hotkey, no clipboard/paste, no normalizer: the Lab only benchmarks,
- * corrects, splits, selects candidates, and exports datasets, reading
- * DicTeX's data folder READ-ONLY and keeping its OWN store for everything it
- * writes. See pivot_dictex_lab_split.md and AGENTS.md "Current Direction".
- *
- * Read-only contract: every `readFile`/`existsSync` against the source data
- * folder is a read; every `writeFile`/`appendFile`/`mkdir` in this file
- * targets a path under `getOwnDataRoot()`, never `getSourceDataRoot()`.
+ * DicTeX Lab main process (pivot Phase 2, issue #76). No microphone, hotkey or
+ * clipboard/paste. It never normalizes dictation for insertion, but it replays
+ * the shared deterministic pipeline for dataset export and the tracked
+ * normalizer benchmark. The Lab benchmarks, corrects, splits, selects
+ * candidates, and exports datasets. Audio and events in DicTeX's data folder
+ * stay read-only; the sole explicit source write is the confirmed, backed-up
+ * and atomic legacy-rules migration. Every other artifact goes to the Lab's
+ * own store. See pivot_dictex_lab_split.md and AGENTS.md "Current Direction".
  */
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -115,7 +136,8 @@ const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
 const enginePath = path.join(repoRoot, "packages", "engine", "transcribe.py");
 
 let mainWindow: BrowserWindow | null = null;
-// Configured DicTeX data folder (SOURCE root, read-only). Null = use default.
+// Configured DicTeX data folder (SOURCE root). Audio/events are read-only;
+// confirmed legacy-rules migration is the sole write exception.
 let sourceDataFolderOverride: string | null = null;
 
 /** Default DicTeX data folder per docs/development.md / AGENTS.md
@@ -135,9 +157,9 @@ function getSourceEventsPath(): string {
 }
 
 // The SOURCE (DicTeX) normalizer config, resolved exactly as apps/dictex lays it
-// out under its data root (`<data>/normalizer/{dictionary,rules}.json`). Read
-// READ-ONLY when the export replays the pipeline to build the `math_transform`
-// training input (issue #100); the Lab never writes into DicTeX's folder. A
+// out under its data root. Export, prefill and benchmark read it. Issue #150's
+// explicit migration may write only backups, a personal overlay and a receipt
+// below this normalizer directory after confirmation. A
 // missing file degrades gracefully inside the normalizer (empty dictionary /
 // built-in DEFAULT_RULES), so no existence check is needed here.
 function getSourceNormalizerDir(): string {
@@ -150,6 +172,10 @@ function getSourceDictionaryPath(): string {
 
 function getSourceRulesPath(): string {
   return path.join(getSourceNormalizerDir(), "rules.json");
+}
+
+function getSourceRulesOverlayPath(): string {
+  return path.join(getSourceNormalizerDir(), PERSONAL_RULES_OVERLAY_FILENAME);
 }
 
 /**
@@ -254,17 +280,21 @@ function isSttBenchmarkSetSplit(value: unknown): value is SttBenchmarkSetSplit {
 }
 
 /**
- * Runs every STT benchmark candidate over one DicTeX-recorded segment. Reads
- * the audio from the SOURCE data root (read-only); appends each result to the
- * Lab's OWN event log (never DicTeX's) — matches apps/dictex's
- * `runSttBenchmarkForAudioSegment`, adapted for the two-root split.
+ * Runs the given STT benchmark candidates over one DicTeX-recorded segment of a
+ * tracked run. Reads the audio from the SOURCE data root (read-only); appends
+ * each result to the Lab's OWN event log (never DicTeX's).
+ *
+ * Since issue #138 a benchmark result only ever exists inside a run: there is no
+ * ad-hoc, run-less replay path left, so the run id, the launched candidates and
+ * the run's frozen reference are all required — a result can no longer be
+ * appended without the snapshot that explains it.
  */
 async function runSttBenchmarkForAudioSegment(
   audioSegment: AudioSegmentRecord,
-  events?: LocalEvent[],
-  candidateFilter?: SttBenchmarkCandidateConfig[],
-  runId?: string,
-  frozenReference?: SttBenchmarkReference,
+  loadedEvents: LocalEvent[],
+  candidates: SttBenchmarkCandidateConfig[],
+  runId: string,
+  frozenReference: SttBenchmarkReference,
 ): Promise<SttBenchmarkResponse> {
   const audioPath = resolveSourceAudioRef(audioSegment.audioRef);
   if (!existsSync(audioPath)) {
@@ -273,10 +303,6 @@ async function runSttBenchmarkForAudioSegment(
 
   const results: SttBenchmarkResult[] = [];
   const diagnostics: string[] = [];
-  const loadedEvents = events ?? (await readAllEvents());
-  const candidates =
-    candidateFilter ??
-    buildSttBenchmarkCandidateCatalog(getSttBenchmarkRuntimes(), getSttPromptVariantDefinitions(loadedEvents));
 
   for (const candidate of candidates) {
     // Build the sidecar config from the candidate's OWN structured runtime
@@ -332,14 +358,14 @@ async function runSttBenchmarkForAudioSegment(
     };
 
     // Appended to the Lab's OWN event log — never DicTeX's events.jsonl.
-    // `run_id` binds the result to its tracked run (issue #122); it is only
-    // omitted by the unfiltered single-segment endpoints, which are not runs.
+    // `run_id` binds the result to its tracked run (issue #122); every result
+    // written since #138 carries one.
     await appendOwnEvent({
       event_type: "stt_benchmark_result",
       session_id: result.sessionId,
       segment_id: result.segmentId,
       created_at: new Date().toISOString(),
-      ...(runId ? { run_id: runId } : {}),
+      run_id: runId,
       audio_ref: result.audioRef,
       stage: result.stage,
       provider: result.provider,
@@ -367,6 +393,7 @@ async function runSttBenchmarkForAudioSegment(
     results.push(result);
   }
 
+  requireSttBenchmarkOutput(results, diagnostics);
   return { source: audioSegment, results, diagnostics };
 }
 
@@ -702,28 +729,82 @@ ipcMain.handle(
 
 // ---- benchmark runs ----
 
-ipcMain.handle("benchmark:run-latest-stt", async (): Promise<SttBenchmarkResponse> => {
-  const events = await readAllEvents();
-  const latestAudioSegment = getLatestAudioSegmentFromEvents(events);
-  if (!latestAudioSegment) {
-    throw new Error("No stored audio segment found in the DicTeX data folder");
-  }
+/**
+ * What a run over this split would freeze (issue #138), so the Experiments view
+ * can announce the split, the evaluable member count and the scorable count
+ * BEFORE launching. Built from `buildSttBenchmarkRunSnapshot`, the very function
+ * the launch calls, so the announced protocol and the executed run cannot drift
+ * apart. Read-only: no event is written.
+ */
+ipcMain.handle(
+  "benchmark-set:preview",
+  async (_event, request: SttBenchmarkSetSplitRequest): Promise<SttBenchmarkSetPreview> => {
+    if (!request || !isSttBenchmarkSetSplit(request.split)) {
+      throw new Error("Invalid STT benchmark set split");
+    }
 
-  return runSttBenchmarkForAudioSegment(latestAudioSegment, events);
-});
+    const snapshot = buildSttBenchmarkRunSnapshot(await readAllEvents(), request.split);
+    return {
+      split: request.split,
+      evaluableSegments: snapshot.length,
+      scorableSegments: snapshot.filter((member) => member.referenceTranscript !== null).length,
+    };
+  },
+);
 
-ipcMain.handle("benchmark:run-segment-stt", async (_event, audioSegment: AudioSegmentRecord): Promise<SttBenchmarkResponse> => {
-  if (
-    !audioSegment ||
-    typeof audioSegment.sessionId !== "string" ||
-    typeof audioSegment.segmentId !== "string" ||
-    typeof audioSegment.audioRef !== "string"
-  ) {
-    throw new Error("Invalid benchmark segment");
-  }
+ipcMain.handle(
+  "benchmark-set:preview-normalizer",
+  async (_event, request: SttBenchmarkSetSplitRequest): Promise<NormalizerBenchmarkSetPreview> => {
+    if (!request || !isSttBenchmarkSetSplit(request.split)) {
+      throw new Error("Invalid normalizer benchmark split");
+    }
 
-  return runSttBenchmarkForAudioSegment(audioSegment);
-});
+    const [events, normalizer] = await Promise.all([
+      readAllEvents(),
+      createTranscriptNormalizer({
+        dictionaryPath: getSourceDictionaryPath(),
+        rulesPath: getSourceRulesPath(),
+        rulesOverlayPath: getSourceRulesOverlayPath(),
+      }),
+    ]);
+    return buildNormalizerBenchmarkSetPreview(events, request.split, normalizer);
+  },
+);
+
+ipcMain.handle(
+  "normalizer-rules:preview-migration",
+  async (_event, resolutions?: LegacyRuleResolution[]): Promise<LegacyRulesMigrationPreview> => {
+    if (resolutions !== undefined && !Array.isArray(resolutions)) {
+      throw new Error("Migration resolutions must be an array");
+    }
+    return previewLegacyRulesMigration(
+      { legacyRulesPath: getSourceRulesPath(), overlayPath: getSourceRulesOverlayPath() },
+      resolutions ?? [],
+    );
+  },
+);
+
+ipcMain.handle(
+  "normalizer-rules:migrate",
+  async (_event, confirmation: RulesMigrationConfirmation): Promise<RulesMigrationReceipt> => {
+    if (
+      typeof confirmation !== "object" || confirmation === null ||
+      !Array.isArray(confirmation.resolutions) ||
+      !/^[0-9a-f]{64}$/u.test(confirmation.expectedLegacyHash) ||
+      !/^[0-9a-f]{64}$/u.test(confirmation.expectedEffectiveHash)
+    ) {
+      throw new Error("Migration confirmation must carry the reviewed resolutions and SHA-256 fingerprints");
+    }
+    return migrateLegacyRules(
+      { legacyRulesPath: getSourceRulesPath(), overlayPath: getSourceRulesOverlayPath() },
+      confirmation.resolutions,
+      {
+        expectedLegacyHash: confirmation.expectedLegacyHash,
+        expectedEffectiveHash: confirmation.expectedEffectiveHash,
+      },
+    );
+  },
+);
 
 ipcMain.handle(
   "benchmark:run-set-stt",
@@ -738,20 +819,21 @@ ipcMain.handle(
     // later lookups within this run.
     const events = await readAllEvents();
 
-    // The candidates actually launched: the validated checkbox selection, or
-    // the full catalog for the (unfiltered) legacy path. Both feed the run
-    // manifest so the run records exactly which candidates it ran.
+    // The candidates actually launched: the identities the Experiments view
+    // announced, always revalidated against this process's own catalog — never
+    // an implicit "whole catalog" fallback, so a run can only ever execute what
+    // its protocol announced (issue #138). They feed the run manifest, so the
+    // run records exactly which candidates it ran.
     const catalog = buildSttBenchmarkCandidateCatalog(getSttBenchmarkRuntimes(), getSttPromptVariantDefinitions(events));
-    let candidateFilter: SttBenchmarkCandidateConfig[] | undefined;
-    const runCandidates =
-      request.candidates !== undefined
-        ? (candidateFilter = validateRequestedCandidates(request.candidates, catalog))
-        : catalog;
+    const runCandidates = validateRequestedCandidates(request.candidates, catalog);
 
     // Freeze the acoustic input snapshot at run start (issue #122): only
     // real-audio segments, with the reference and correction timestamp used by
     // this run. A later re-correction or membership change cannot alter it.
     const snapshot = buildSttBenchmarkRunSnapshot(events, split);
+    // The renderer preview is advisory. This authoritative guard runs before a
+    // run id or event exists, so a stale click can never append an empty run.
+    requireNonEmptySttBenchmarkSnapshot(snapshot);
     const total = snapshot.length;
     const runId = mintBenchmarkRunId();
     const startedAt = new Date().toISOString();
@@ -828,7 +910,7 @@ ipcMain.handle(
         const response = await runSttBenchmarkForAudioSegment(
           { sessionId: member.sessionId, segmentId: member.segmentId, audioRef: member.audioRef },
           events,
-          candidateFilter,
+          runCandidates,
           runId,
           {
             referenceTranscript: member.referenceTranscript,
@@ -910,50 +992,110 @@ ipcMain.handle(
 );
 
 ipcMain.handle(
-  "benchmark-set:summarize-run",
-  async (_event, request: { runId?: unknown }): Promise<SttBenchmarkRunSummaryResponse | null> => {
+  "benchmark:run-set-normalizer",
+  async (_event, request: NormalizerBenchmarkRunRequest): Promise<NormalizerBenchmarkRunResponse> => {
+    const candidate = request?.candidate;
+    if (
+      !request ||
+      !isSttBenchmarkSetSplit(request.split) ||
+      !candidate ||
+      candidate.stage !== "math_transform" ||
+      candidate.provider !== "dictex" ||
+      candidate.model !== "deterministic-pipeline" ||
+      typeof candidate.variant !== "string"
+    ) {
+      throw new Error("Invalid normalizer benchmark protocol");
+    }
+
+    const [events, normalizer] = await Promise.all([
+      readAllEvents(),
+      createTranscriptNormalizer({
+        dictionaryPath: getSourceDictionaryPath(),
+        rulesPath: getSourceRulesPath(),
+        rulesOverlayPath: getSourceRulesOverlayPath(),
+      }),
+    ]);
+    return runNormalizerBenchmark({
+      events,
+      split: request.split,
+      requestedCandidate: candidate,
+      normalizer,
+      runId: mintBenchmarkRunId(),
+      appendEvent: (event) => appendOwnEvent(event as unknown as Record<string, JsonValue>),
+      onProgress: sendBatchBenchmarkProgress,
+    });
+  },
+);
+
+/**
+ * Everything the Results view shows about ONE run (issue #138): its status, its
+ * frozen snapshot, the candidates it launched, their outputs, its failures and
+ * its per-candidate summary — derived only from that run's own events, so
+ * reopening an old run can never render it against another run's snapshot.
+ */
+ipcMain.handle(
+  "benchmark-run:detail",
+  async (
+    _event,
+    request: { runId?: unknown },
+  ): Promise<SttBenchmarkRunDetail | BenchmarkMathTransformRunProjection | null> => {
     if (!request || typeof request.runId !== "string" || request.runId.length === 0) {
       throw new Error("A run id is required");
     }
 
     const events = await readAllEvents();
-    return summarizeSttBenchmarkRun(events, request.runId);
+    const projection = getBenchmarkRunProjection(events, request.runId);
+    return projection?.stage === "math_transform"
+      ? projection
+      : buildSttBenchmarkRunDetail(events, request.runId);
   },
 );
 
 ipcMain.handle(
   "benchmark-set:list-runs",
-  async (_event, request: SttBenchmarkSetRunRequest): Promise<SttBenchmarkRunListEntry[]> => {
+  async (_event, request: SttBenchmarkSetSplitRequest): Promise<BenchmarkRunListEntry[]> => {
     if (!request || !isSttBenchmarkSetSplit(request.split)) {
       throw new Error("Invalid STT benchmark set split");
     }
 
     const events = await readAllEvents();
-    return getSttBenchmarkRuns(events)
-      .filter((run) => run.split === request.split)
-      .map((run) => ({
-        runId: run.runId,
-        createdAt: run.createdAt,
-        split: run.split,
-        datasetKind: run.datasetKind,
-        snapshotSize: run.snapshot.length,
-        candidateCount: run.candidates.length,
-        done: run.finished ? run.finished.done : null,
-        failed: run.finished ? run.finished.failed : null,
-        finished: run.finished !== null,
-      }))
-      .reverse();
+    return getBenchmarkRunProjections(events, request.split).flatMap((run) =>
+      run.runId === null
+        ? []
+        : [
+            {
+              runId: run.runId,
+              createdAt: run.createdAt,
+              stage: run.stage,
+              datasetKind: run.datasetKind,
+              split: run.split,
+              snapshotSize: run.members.length,
+              candidateCount: run.candidates.length,
+              done: run.terminal?.done ?? null,
+              failed: run.terminal?.failed ?? null,
+              finished: run.terminal !== null,
+            },
+          ],
+    );
   },
 );
 
 ipcMain.handle(
   "benchmark-run:export-llm",
-  async (_event, request: { runId?: unknown }): Promise<SttBenchmarkRunExportSummary> => {
+  async (
+    _event,
+    request: { runId?: unknown },
+  ): Promise<SttBenchmarkRunExportSummary | NormalizerBenchmarkRunExportSummary> => {
     if (!request || typeof request.runId !== "string" || request.runId.length === 0) {
       throw new Error("A run id is required");
     }
 
     const events = await readAllEvents();
+    const projection = getBenchmarkRunProjection(events, request.runId);
+    if (projection?.stage === "math_transform") {
+      const runExport = buildNormalizerBenchmarkRunExport(events, request.runId, new Date().toISOString());
+      return writeNormalizerBenchmarkRunExport(getOwnExportsRoot(), runExport);
+    }
     const promptDefinitions = listPromptVariants(events)
       .filter((definition) => definition.source === "external" || !definition.shadowedByExternal)
       .map((definition) => ({
@@ -972,7 +1114,7 @@ ipcMain.handle(
 
 ipcMain.handle(
   "benchmark-set:summarize-legacy-stt",
-  async (_event, request: SttBenchmarkSetRunRequest): Promise<SttBenchmarkCandidateSummaryResponse> => {
+  async (_event, request: SttBenchmarkSetSplitRequest): Promise<SttBenchmarkCandidateSummaryResponse> => {
     if (!request || !isSttBenchmarkSetSplit(request.split)) {
       throw new Error("Invalid STT benchmark set split");
     }
@@ -1142,6 +1284,7 @@ ipcMain.handle("dataset-builder:prefill-layer2", async (_event, literalTranscrip
   const result = await normalizeTranscript(trimmed, {
     dictionaryPath: getSourceDictionaryPath(),
     rulesPath: getSourceRulesPath(),
+    rulesOverlayPath: getSourceRulesOverlayPath(),
   });
 
   return restoreCommandWords(result.output);
@@ -1156,6 +1299,7 @@ ipcMain.handle("dataset:export-stt", async (): Promise<SttDatasetExportSummary> 
   const datasetExport = await buildSttDatasetExport(events, new Date().toISOString(), {
     dictionaryPath: getSourceDictionaryPath(),
     rulesPath: getSourceRulesPath(),
+    rulesOverlayPath: getSourceRulesOverlayPath(),
   });
   return writeSttDatasetExport(datasetExport);
 });
@@ -1196,6 +1340,15 @@ ipcMain.handle("diagnostics:open-source-data-folder", async (): Promise<boolean>
     return false;
   }
   const error = await shell.openPath(sourceRoot);
+  return error.length === 0;
+});
+
+ipcMain.handle("diagnostics:open-source-rules-folder", async (): Promise<boolean> => {
+  const normalizerDir = getSourceNormalizerDir();
+  if (!existsSync(normalizerDir)) {
+    return false;
+  }
+  const error = await shell.openPath(normalizerDir);
   return error.length === 0;
 });
 

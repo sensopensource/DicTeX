@@ -3,8 +3,15 @@ import path from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { normalizeTranscript, type NormalizeOptions } from "./normalizer.js";
+import {
+  createTranscriptNormalizer,
+  NORMALIZER_PIPELINE_SEMANTIC_VERSION,
+  normalizeTranscript,
+  type NormalizeOptions,
+} from "./normalizer.js";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { canonicalizeLatex } from "./latex.js";
+import { restoreCommandWords } from "./commands.js";
 
 // Points the normalizer at a directory that does not exist: the personal
 // dictionary degrades to passthrough (empty) and the rules degrade to the
@@ -52,6 +59,15 @@ const RULE_CASES: { name: string; input: string; expected: string }[] = [
   // Digit operands, not just letters.
   { name: "plus, digit operands", input: "2 plus 3", expected: "$2 + 3$" },
   { name: "divisé par, digit operands", input: "12 divisé par 4", expected: "$\\frac{12}{4}$" },
+  { name: "sur", input: "1 sur x", expected: "$\\frac{1}{x}$" },
+  { name: "multiplié par", input: "x multiplié par y", expected: "$x \\times y$" },
+  { name: "multipliée par", input: "x multipliée par y", expected: "$x \\times y$" },
+  { name: "supérieur à", input: "x supérieur à 0", expected: "$x > 0$" },
+  { name: "inférieur à", input: "x inférieur à 0", expected: "$x < 0$" },
+  { name: "sinus de", input: "sinus de x", expected: "$\\sin(x)$" },
+  { name: "cosinus de", input: "cosinus de x", expected: "$\\cos(x)$" },
+  { name: "logarithme naturel de", input: "logarithme naturel de x", expected: "$\\ln(x)$" },
+  { name: "function application", input: "f de x", expected: "$f(x)$" },
 ];
 
 for (const { name, input, expected } of RULE_CASES) {
@@ -108,16 +124,219 @@ test("bracing rules do not compose with an already-wrapped operand: divisé par"
   assert.equal(output, "a divisé par $x^{2}$");
 });
 
-test("bracing rules only ever see a single-token operand: 'a divisé par b plus un'", async () => {
-  // Matches the issue's own worked example: "divisé par" needs BOTH operands to
-  // be a single digit/letter, and "un" (spelled out) is two letters, not one —
-  // so "un" can never join the denominator. What DOES happen is the flat
-  // "divisé par" pattern still finds its own two single-token operands ("a",
-  // "b") earlier in the string and fires on just that span, leaving "plus un"
-  // as untouched prose beside it — the regex never attempts (and cannot
-  // attempt) the grouping that would be needed for "a / (b+1)".
+test("bracing rules keep atomic scope when a word-number operation follows", async () => {
+  // The new word-number atom makes the trailing addition recognizable, but the
+  // bracing fraction still consumes only "a" and "b". It therefore produces
+  // (a / b) + 1, never the unrequested a / (b + 1) grouping.
   const output = await regexLayerOutput("a divisé par b plus un");
-  assert.equal(output, "$\\frac{a}{b}$ plus un");
+  assert.equal(output, "$\\frac{a}{b} + 1$");
+  assert.equal(canonicalizeLatex(output), output);
+});
+
+// ── Issue #148: atomic aliases, local composition, and prose safety ──────────
+test("fractions are constructed before equality", async () => {
+  const output = await regexLayerOutput("v égal d sur t");
+  assert.equal(output, "$v = \\frac{d}{t}$");
+  assert.equal(canonicalizeLatex(output), output);
+});
+
+test("the acceptance examples compose without changing surrounding prose", async () => {
+  const cases = [
+    ["un sur x", "$\\frac{1}{x}$"],
+    ["un sur deux", "$\\frac{1}{2}$"],
+    ["x multiplié par y", "$x \\times y$"],
+    ["x supérieur à zéro", "$x > 0$"],
+    ["x inférieur à zéro", "$x < 0$"],
+    ["sinus de x", "$\\sin(x)$"],
+    ["cosinus de theta", "$\\cos(\\theta)$"],
+    ["logarithme naturel de x", "$\\ln(x)$"],
+    ["f de x", "$f(x)$"],
+    ["la masse est égale à rho multiplié par v", "la masse est égale à $\\rho \\times v$"],
+    [
+      "pour x supérieur à zéro la fonction est logarithme naturel de x",
+      "pour $x > 0$ la fonction est $\\ln(x)$",
+    ],
+  ] as const;
+
+  for (const [input, expected] of cases) {
+    const output = await regexLayerOutput(input);
+    assert.equal(output, expected, input);
+    assert.equal(canonicalizeLatex(output), output, input);
+    assert.doesNotMatch(output, /[\uE000-\uE00F]/u, input);
+  }
+});
+
+test("validation snapshot run_20260715131235469_r1xsgn7a reproduces 20 of 21 references", async () => {
+  const cases = [
+    ["seg_0025", "racine carrée de a plus b", "$\\sqrt{a+b}$"],
+    [
+      "seg_0026",
+      "parenthèse ouvrante x plus deux parenthèse fermante multiplié par y",
+      "$(x + 2) \\times y$",
+    ],
+    [
+      "seg_0028",
+      "x multiplié par parenthèse ouvrante y moins trois parenthèse fermante",
+      "$x \\times (y - 3)$",
+    ],
+    ["seg_0029", "f de g de x", "$f(g(x))$"],
+    [
+      "seg_0030",
+      "parenthèse ouvrante x plus un parenthèse fermante au carré",
+      "$(x + 1)^{2}$",
+    ],
+    ["seg_0031", "sinus de x", "$\\sin(x)$"],
+    ["seg_0032", "cosinus de theta plus un", "$\\cos(\\theta) + 1$"],
+    [
+      "seg_0036",
+      "limite quand x tend vers zéro de sinus de x sur x",
+      "$\\lim_{x\\to0}\\frac{\\sin(x)}{x}$",
+    ],
+    [
+      "seg_0037",
+      "dérivée de f par rapport à x",
+      "$\\frac{\\mathrm{d}f}{\\mathrm{d}x}$",
+    ],
+    [
+      "seg_0038",
+      "intégrale de zéro à un de x au carré d x",
+      "$\\int_{0}^{1}x^{2} \\, dx$",
+    ],
+    ["seg_0039", "la vitesse vaut v égal d sur t.", "la vitesse vaut $v = \\frac{d}{t}$."],
+    [
+      "seg_0040",
+      "la masse est égale à rho multiplié par v",
+      "la masse est égale à $\\rho \\times v$",
+    ],
+    [
+      "seg_0041",
+      "pour x supérieur à zéro la fonction est logarithme naturel de x",
+      "pour $x > 0$ la fonction est $\\ln(x)$",
+    ],
+    [
+      "seg_0005",
+      "exponentielle de moins trois inférieur à exponentielle de moins un inférieur à exponentielle de zéro inférieur à exponentielle de deux",
+      "$e^{-3} < e^{-1} < e^{0} < e^{2}$",
+    ],
+    [
+      "seg_0006",
+      "exponentielle de cinq supérieure à exponentielle de trois exponentielle de moins dix inférieure à exponentielle de moins deux exponentielle de x ne peut pas être négatif exponentielle de x est égale à zéro pour une certaine valeur de x est impossible",
+      "$e^{5} > e^{3}$ $e^{-10} < e^{-2}$ $e^{x}$ ne peut pas être négatif $e^{x} = 0$ pour une certaine valeur de $x$ est impossible",
+    ],
+    [
+      "seg_0009",
+      "le logarithme n'existe que pour x supérieur à zéro",
+      "le logarithme n'existe que pour $x > 0$",
+    ],
+    [
+      "seg_0015",
+      "soit f de x est égal à deux x plus trois",
+      "soit $f(x) = 2x + 3$",
+    ],
+    [
+      "seg_0016",
+      "f de zéro est égal trois retour à la ligne f de deux est égal à sept retour à la ligne f de moins un est égal à un retour à la ligne soit g de x est égal à x au carré retour à la ligne calculons g de trois retour à la ligne g de trois est égal à neuf retour à la ligne g de moins deux est égal à quatre retour à la ligne g de zéro est égal à zéro retour à la ligne f de cinq est égal à treize cela signifie que treize est l'image de la fonction f quand x est égal à cinq",
+      "$f(0) = 3$ retour à la ligne $f(2) = 7$ retour à la ligne $f(-1) = 1$ retour à la ligne soit $g(x) = x^{2}$ retour à la ligne calculons $g(3)$ retour à la ligne $g(3) = 9$ retour à la ligne $g(-2) = 4$ retour à la ligne $g(0) = 0$ retour à la ligne $f(5) = 13$ cela signifie que $13$ est l'image de la fonction $f$ quand $x = 5$",
+    ],
+    [
+      "seg_0017",
+      "une limite décrit vers quoi tend une fonction lorsqu'on s'approche d'une valeur sans forcément l'atteindre",
+      "une limite décrit vers quoi tend une fonction lorsqu'on s'approche d'une valeur sans forcément l'atteindre",
+    ],
+    [
+      "seg_0018",
+      "exemple retour à la ligne f de x est égal à un sur x",
+      "exemple retour à la ligne $f(x) = \\frac{1}{x}$",
+    ],
+    [
+      "seg_0020",
+      "limite de un sur x quand x tend vers plus l'infini",
+      "$\\lim_{x\\to+\\infty}\\frac{1}{x}$",
+    ],
+  ] as const;
+  const baselineExactSegments = new Set([
+    "seg_0031", "seg_0032", "seg_0039", "seg_0040", "seg_0041", "seg_0009", "seg_0017",
+  ]);
+  let exact = 0;
+
+  for (const [segmentId, input, expected] of cases) {
+    const result = await normalizeTranscript(input, ABSENT_CONFIG);
+    const restoredOutput = restoreCommandWords(result.output);
+    const output = canonicalizeLatex(restoredOutput);
+    const target = canonicalizeLatex(expected);
+    assert.equal(output, restoredOutput, `${segmentId} output is already canonical`);
+    if (segmentId === "seg_0025") {
+      assert.equal(output, "$\\sqrt{a} + b$", "ambiguous root scope stays atomic");
+      assert.notEqual(output, target, "ambiguous scope is not guessed by regex");
+      continue;
+    }
+    assert.equal(output, target, segmentId);
+    if (baselineExactSegments.has(segmentId)) {
+      assert.equal(output, target, `${segmentId} baseline regression`);
+    }
+    exact += 1;
+  }
+
+  assert.equal(exact, 20);
+  assert.equal(baselineExactSegments.size, 7);
+});
+
+test("structured rules stay bounded to explicit mathematical utterances", async () => {
+  const prose = [
+    "une parenthèse ouvrante montre une précision",
+    "la fonction fabrique une image",
+    "la valeur de xylophone reste stable",
+    "il reste deux xylophones plus trois exemples",
+    "une limite décrit un comportement",
+  ];
+  for (const input of prose) {
+    assert.equal(await regexLayerOutput(input), input);
+  }
+  assert.equal(await regexLayerOutput("x supérieure à zéro"), "$x > 0$");
+  assert.equal(await regexLayerOutput("x inférieure à zéro"), "$x < 0$");
+});
+
+test("French number words zero through twenty normalize only as math operands", async () => {
+  const numbers = [
+    ["zéro", "0"], ["un", "1"], ["deux", "2"], ["trois", "3"], ["quatre", "4"],
+    ["cinq", "5"], ["six", "6"], ["sept", "7"], ["huit", "8"], ["neuf", "9"],
+    ["dix", "10"], ["onze", "11"], ["douze", "12"], ["treize", "13"],
+    ["quatorze", "14"], ["quinze", "15"], ["seize", "16"], ["dix-sept", "17"],
+    ["dix-huit", "18"], ["dix-neuf", "19"], ["vingt", "20"],
+  ] as const;
+
+  for (const [spoken, digit] of numbers) {
+    assert.equal(await regexLayerOutput(`x plus ${spoken}`), `$x + ${digit}$`, spoken);
+    assert.equal(await regexLayerOutput(`il reste ${spoken} exemples`), `il reste ${spoken} exemples`, spoken);
+  }
+});
+
+test("unary moins is converted only when the signed number is consumed as an operand", async () => {
+  assert.equal(await regexLayerOutput("x supérieur à moins trois"), "$x > -3$");
+  assert.equal(await regexLayerOutput("moins trois sur x"), "$\\frac{-3}{x}$");
+  assert.equal(await regexLayerOutput("sinus de moins trois"), "$\\sin(-3)$");
+  assert.equal(await regexLayerOutput("il reste moins trois minutes"), "il reste moins trois minutes");
+  assert.equal(await regexLayerOutput("moins trois"), "moins trois");
+});
+
+test("Greek names stay literal outside recognized atomic math constructs", async () => {
+  assert.equal(await regexLayerOutput("theta et rho sont des noms"), "theta et rho sont des noms");
+  assert.equal(await regexLayerOutput("theta plus rho"), "$\\theta + \\rho$");
+});
+
+test("new atomic conversions keep ordered, versioned regex traces", async () => {
+  const normalizer = await createTranscriptNormalizer(ABSENT_CONFIG);
+  const result = await normalizer.normalize("x supérieur à zéro", { detailedTrace: true });
+  assert.equal(result.output, "$x > 0$");
+
+  const regexOperations = result.operations?.filter((operation) => operation.operation === "regex") ?? [];
+  assert.ok(regexOperations.length >= 2, "the contextual number conversion and comparison are both traced");
+  const effectiveIds = new Set(
+    normalizer.pipelineSnapshot.regex_rules.effective_rules.map((rule) => rule.id),
+  );
+  assert.equal(regexOperations.every((operation) => effectiveIds.has(operation.definition_id)), true);
+  assert.equal(normalizer.pipelineSnapshot.semantic_version, NORMALIZER_PIPELINE_SEMANTIC_VERSION);
+  assert.doesNotMatch(JSON.stringify(result), /[\uE000-\uE00F]/u);
 });
 
 // ── Prose guards are unaffected by the LaTeX rewrite ─────────────────────────
@@ -160,4 +379,47 @@ test("the full reserved sentinel block survives the regex layer untouched", asyn
   // No rule fires ("end" is not a valid operand either), so the whole string,
   // sentinels included, is byte-identical to the input.
   assert.equal(output, all);
+});
+
+test("pipeline snapshot distinguishes invalid and unreadable sources without rebuilding provenance", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "dictex-normalizer-snapshot-"));
+  try {
+    const dictionaryPath = path.join(directory, "dictionary.json");
+    const rulesPath = path.join(directory, "rules.json");
+    writeFileSync(dictionaryPath, "{ invalid", "utf8");
+    mkdirSync(rulesPath);
+    const normalizer = await createTranscriptNormalizer({ dictionaryPath, rulesPath });
+    assert.equal(normalizer.pipelineSnapshot.dictionary.source_state, "invalid");
+    assert.equal(normalizer.pipelineSnapshot.dictionary.source_content, "{ invalid");
+    assert.equal(normalizer.pipelineSnapshot.dictionary.ignored_entries.length, 1);
+    assert.equal(normalizer.pipelineSnapshot.regex_rules.source_state, "unreadable");
+    assert.equal(normalizer.pipelineSnapshot.regex_rules.source_content, null);
+    assert.equal(normalizer.pipelineSnapshot.regex_rules.effective_rules.length, 0);
+    assert.match(normalizer.pipelineSnapshot.dictionary.sha256, /^[0-9a-f]{64}$/);
+    assert.match(normalizer.pipelineSnapshot.regex_rules.sha256, /^[0-9a-f]{64}$/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("an existing rules.json remains an explicitly reported legacy baseline until migration", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "dictex-rules-migration-"));
+  try {
+    const dictionaryPath = path.join(directory, "dictionary.json");
+    const rulesPath = path.join(directory, "rules.json");
+    const personalRule = { pattern: "\\bbonjour\\b", replacement: "salut", flags: "i" };
+    const legacySource = JSON.stringify({ version: 1, rules: [personalRule] }, null, 2);
+    writeFileSync(rulesPath, legacySource, "utf8");
+
+    const legacy = await createTranscriptNormalizer({ dictionaryPath, rulesPath });
+    assert.equal((await legacy.normalize("bonjour et un sur x")).output, "salut et un sur x");
+    assert.equal(legacy.pipelineSnapshot.regex_rules.source_content, legacySource);
+    assert.equal(legacy.pipelineSnapshot.regex_rules.effective_rules.length, 1);
+    assert.equal(legacy.rulesConfiguration.mode, "legacy");
+    assert.equal(legacy.rulesConfiguration.state, "migration_required");
+    assert.equal(legacy.pipelineSnapshot.regex_rules.legacy_source_sha256, legacy.rulesConfiguration.legacyHash);
+    assert.equal(readFileSync(rulesPath, "utf8"), legacySource);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

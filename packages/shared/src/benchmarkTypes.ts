@@ -102,11 +102,31 @@ export type SttCandidateSelectionResponse = {
 export type SttBenchmarkSetRunRequest = {
   split: SttBenchmarkSetSplit;
   /**
-   * 1 to 3 full candidate identities to run (see issue #94). Omitted means
-   * "every catalog candidate" — used by the unfiltered single-segment
-   * benchmark endpoints, never by the checkbox-driven set run.
+   * The 1 to 3 full candidate identities to run (see issue #94). Required since
+   * issue #138: a run always launches exactly the candidates its protocol
+   * announced, so there is no implicit "every catalog candidate" fallback that
+   * could execute an identity the human never saw.
    */
-  candidates?: BenchmarkCandidateIdentity[];
+  candidates: BenchmarkCandidateIdentity[];
+};
+
+/** The split alone, for the read-only endpoints that browse or preview a split. */
+export type SttBenchmarkSetSplitRequest = {
+  split: SttBenchmarkSetSplit;
+};
+
+/**
+ * What an STT run over `split` WOULD freeze if launched now (issue #138), built
+ * from the very snapshot function the launch uses, so the count the Experiments
+ * view announces before launching cannot disagree with the run that follows.
+ * Read-only: computing a preview writes nothing.
+ */
+export type SttBenchmarkSetPreview = {
+  split: SttBenchmarkSetSplit;
+  /** Acoustic members: split segments with real audio (a no-audio, math_transform-only entry is never one). */
+  evaluableSegments: number;
+  /** Of those, how many carry an acoustic reference (#130) and can therefore be scored. */
+  scorableSegments: number;
 };
 
 export type SttBenchmarkSetSegmentOutcome = {
@@ -137,6 +157,20 @@ export type SttBenchmarkRunListEntry = {
   createdAt: string | null;
   split: SttBenchmarkSetSplit;
   datasetKind: string;
+  snapshotSize: number;
+  candidateCount: number;
+  done: number | null;
+  failed: number | null;
+  finished: boolean;
+};
+
+/** Lightweight selector entry across tracked STT and stage-aware runs. */
+export type BenchmarkRunListEntry = {
+  runId: string;
+  createdAt: string | null;
+  stage: "stt" | "math_transform";
+  datasetKind: "acoustic" | "math_transform";
+  split: SttBenchmarkSetSplit;
   snapshotSize: number;
   candidateCount: number;
   done: number | null;

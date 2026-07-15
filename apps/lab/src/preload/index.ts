@@ -5,12 +5,18 @@ import type {
   BenchmarkCandidateIdentity,
   ReconstructedSegment,
   SttBenchmarkSetSplit,
-  SttBenchmarkResponse,
+  SttBenchmarkSetPreview,
   SttBenchmarkSetRunResponse,
   SttBenchmarkSetProgress,
-  SttBenchmarkRunListEntry,
-  SttBenchmarkRunSummaryResponse,
+  SttBenchmarkRunDetail,
+  BenchmarkMathTransformRunProjection,
+  BenchmarkRunListEntry,
   SttBenchmarkRunExportSummary,
+  NormalizerBenchmarkRunExportSummary,
+  LegacyRuleResolution,
+  LegacyRulesMigrationPreview,
+  RulesMigrationReceipt,
+  RulesMigrationConfirmation,
   SttBenchmarkCandidateSummaryResponse,
   SttCandidateSelectionRequest,
   SttCandidateSelectionResponse,
@@ -23,6 +29,10 @@ import type {
 import type { DatasetBuilderSaveRequest, DatasetBuilderSaveResponse } from "../main/datasetBuilder.js";
 import type { SttBenchmarkCandidateOption } from "../main/candidateCatalog.js";
 import type { SttPromptVariantCreateRequest, SttPromptVariantListEntry } from "../main/promptVariants.js";
+import type {
+  NormalizerBenchmarkRunResponse,
+  NormalizerBenchmarkSetPreview,
+} from "../main/normalizerBenchmark.js";
 
 type AudioSegmentPlayback = {
   audioBytes: Uint8Array;
@@ -60,20 +70,33 @@ contextBridge.exposeInMainWorld("dictexLab", {
   markSttBenchmarkSetMembership: (membership: SttBenchmarkSetMembershipRequest) =>
     ipcRenderer.invoke("benchmark-set:mark-stt", membership) as Promise<SttBenchmarkSetMembershipResponse>,
 
-  // Benchmark runs.
-  runLatestSttBenchmark: () => ipcRenderer.invoke("benchmark:run-latest-stt") as Promise<SttBenchmarkResponse>,
-  runSegmentSttBenchmark: (audioSegment: AudioSegmentRecord) =>
-    ipcRenderer.invoke("benchmark:run-segment-stt", audioSegment) as Promise<SttBenchmarkResponse>,
-  runSetSttBenchmark: (split: SttBenchmarkSetSplit, candidates?: BenchmarkCandidateIdentity[]) =>
+  // Experiments: what a run over this split would freeze, then the launch
+  // itself (issue #138). A benchmark result only ever exists inside a run.
+  previewSttBenchmarkSet: (split: SttBenchmarkSetSplit) =>
+    ipcRenderer.invoke("benchmark-set:preview", { split }) as Promise<SttBenchmarkSetPreview>,
+  previewNormalizerBenchmarkSet: (split: SttBenchmarkSetSplit) =>
+    ipcRenderer.invoke("benchmark-set:preview-normalizer", { split }) as Promise<NormalizerBenchmarkSetPreview>,
+  runSetSttBenchmark: (split: SttBenchmarkSetSplit, candidates: BenchmarkCandidateIdentity[]) =>
     ipcRenderer.invoke("benchmark:run-set-stt", { split, candidates }) as Promise<SttBenchmarkSetRunResponse>,
-  // Per-run summary + run listing (issue #122): two runs of the same split stay
-  // separate. The legacy summary reads only pre-#122 results (no run_id).
-  summarizeSttBenchmarkRun: (runId: string) =>
-    ipcRenderer.invoke("benchmark-set:summarize-run", { runId }) as Promise<SttBenchmarkRunSummaryResponse | null>,
-  listSttBenchmarkRuns: (split: SttBenchmarkSetSplit) =>
-    ipcRenderer.invoke("benchmark-set:list-runs", { split }) as Promise<SttBenchmarkRunListEntry[]>,
-  exportSttBenchmarkRun: (runId: string) =>
-    ipcRenderer.invoke("benchmark-run:export-llm", { runId }) as Promise<SttBenchmarkRunExportSummary>,
+  runSetNormalizerBenchmark: (split: SttBenchmarkSetSplit, candidate: BenchmarkCandidateIdentity) =>
+    ipcRenderer.invoke("benchmark:run-set-normalizer", { split, candidate }) as Promise<NormalizerBenchmarkRunResponse>,
+  previewRulesMigration: (resolutions: LegacyRuleResolution[] = []) =>
+    ipcRenderer.invoke("normalizer-rules:preview-migration", resolutions) as Promise<LegacyRulesMigrationPreview>,
+  migrateRules: (confirmation: RulesMigrationConfirmation) =>
+    ipcRenderer.invoke("normalizer-rules:migrate", confirmation) as Promise<RulesMigrationReceipt>,
+  // Results: the run list of a split, then one run's own snapshot, outputs,
+  // failures and summary (issues #122/#138). The legacy summary reads only
+  // pre-#122 results (no run_id).
+  getBenchmarkRunDetail: (runId: string) =>
+    ipcRenderer.invoke("benchmark-run:detail", { runId }) as Promise<
+      SttBenchmarkRunDetail | BenchmarkMathTransformRunProjection | null
+    >,
+  listBenchmarkRuns: (split: SttBenchmarkSetSplit) =>
+    ipcRenderer.invoke("benchmark-set:list-runs", { split }) as Promise<BenchmarkRunListEntry[]>,
+  exportBenchmarkRun: (runId: string) =>
+    ipcRenderer.invoke("benchmark-run:export-llm", { runId }) as Promise<
+      SttBenchmarkRunExportSummary | NormalizerBenchmarkRunExportSummary
+    >,
   summarizeLegacySttBenchmarkSet: (split: SttBenchmarkSetSplit) =>
     ipcRenderer.invoke("benchmark-set:summarize-legacy-stt", { split }) as Promise<SttBenchmarkCandidateSummaryResponse>,
 
@@ -105,6 +128,7 @@ contextBridge.exposeInMainWorld("dictexLab", {
     ipcRenderer.invoke("prompt-variants:create", request) as Promise<SttPromptVariantListEntry>,
   openLabDataFolder: () => ipcRenderer.invoke("diagnostics:open-lab-data-folder") as Promise<boolean>,
   openSourceDataFolder: () => ipcRenderer.invoke("diagnostics:open-source-data-folder") as Promise<boolean>,
+  openSourceRulesFolder: () => ipcRenderer.invoke("diagnostics:open-source-rules-folder") as Promise<boolean>,
   openLabEventsLog: () => ipcRenderer.invoke("diagnostics:open-lab-events-log") as Promise<boolean>,
 
   onBatchBenchmarkProgress: (callback: (progress: SttBenchmarkSetProgress) => void) => {

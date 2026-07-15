@@ -31,7 +31,8 @@ apps/
   dictex/      # the Electron + React consumer dictation app (has a microphone)
   lab/         # DicTeX Lab — Electron + React tooling app (NO microphone):
                # benchmark + dataset export + corrections/splits over DicTeX's
-               # data folder, read-only, with its own store
+               # audio/events read-only; confirmed rules migration is the sole
+               # source-write exception; every other artifact uses its own store
 packages/
   engine/      # the Python STT sidecar (faster-whisper + Vosk) — shared
   shared/      # shared TS used by both apps: JSONL event schema + derivations,
@@ -155,7 +156,20 @@ scripts\npm.cmd run dev
 10. Click `Open data folder` and confirm the stored audio file exists under `data/audio/session_.../`.
 11. Click `Open events log` and confirm `audio_segment`, `stt_result`, and `normalization_result` events were appended. (DicTeX no longer writes corrections or benchmark events — those live in DicTeX Lab.)
 12. Click `Open dictionary`, add an entry like `{"from":"dic tex","to":"DicTeX"}`, save the file, then dictate a phrase containing "dic tex". Confirm the clipboard/pasted text and the `Inserted (normalized)` line show `DicTeX`, the `Last transcript (raw)` textarea still shows the raw STT output, and a `normalization_result` event was appended while `stt_result.stt_output` kept the raw transcript. Break the JSON on purpose and confirm the next dictation still inserts the raw text with a quiet `Normalizer:` diagnostic instead of failing.
-13. Without touching `rules.json`, dictate "deux plus trois" spoken as digits (e.g. "2 plus 3") and confirm the inserted text shows `$2 + 3$` (canonical LaTeX wrapped in `$…$`, #107) from the shipped default rules alone. Then dictate an ordinary sentence containing "plus" or "moins" outside a math context (e.g. "je suis de plus en plus fatigué") and confirm it is inserted unchanged. Click `Open rules`, break the JSON on purpose, and confirm the next dictation inserts the (still dictionary-normalized) text unchanged by regex rules with a quiet `Normalizer:` diagnostic instead of failing.
+13. Sans créer de surcouche, dicter « un sur x », « v égal d sur t »,
+    « cosinus de theta », « x supérieure à zéro » et « f de g de x ». Vérifier
+    respectivement `$\frac{1}{x}$`, `$v = \frac{d}{t}$`, `$\cos(\theta)$`,
+    `$x > 0$` et `$f(g(x))$`, déjà
+    points fixes de `canonicalizeLatex`. Dicter ensuite « il reste trois
+    exemples », « je suis de plus en plus fatigué » et « je suis moins fatigué
+    que toi » : la prose doit rester identique. Cliquer sur `Open rule overlay`,
+    casser volontairement le JSON et confirmer que le jeu livré reste actif avec
+    un diagnostic `Normalizer:` discret. Avec un ancien `rules.json` v1, ouvrir
+    `Experiments -> Normalizer` dans le Lab : vérifier `Migration required`, les
+    versions locale/livrée, les SHA-256 et les nombres de règles. Lancer une fois
+    `Run legacy baseline`, puis `Review migration`. Vérifier la prévisualisation,
+    confirmer, contrôler le chemin de sauvegarde et la nouvelle empreinte, puis
+    relancer : l'état doit être `Current overlay` et les 226 règles v3 actives.
 14. Placer l'interrupteur `Normalizer` sur **Off**, dicter « retour à la ligne x au carré », puis vérifier que le texte copié ou inséré est identique octet par octet à `Last transcript` : les mots de commande restent littéraux et aucun LaTeX n'est produit. Vérifier que le nouvel événement `normalization_result` contient `disabled: true`, aucun champ `passthrough` et des `layers` vides. Redémarrer DicTeX, confirmer que l'état Off persiste, puis repasser sur On et vérifier que règles et commandes s'appliquent à nouveau.
 15. Dans le sélecteur `STT model`, choisir un autre modèle. Vérifier le diagnostic `Model`, dicter une phrase et confirmer que l'événement `stt_result` contient le modèle choisi. Redémarrer l'application et vérifier la persistance dans `data/settings.json`. Corrompre ce fichier et confirmer que DicTeX redémarre avec la variable d'environnement ou `base`, et avec le normaliseur activé.
 16. Cliquer sur **Open Lab**. Avec un Lab construit (`scripts\npm.cmd run build`), vérifier son ouverture ; sans construction, vérifier que DicTeX affiche une erreur explicite sans planter.
@@ -192,14 +206,14 @@ The app uses a Python sidecar with faster-whisper for local transcription.
 
 ## DicTeX Lab (tooling app)
 
-`apps/lab` is the separate **DicTeX Lab** app (pivot Phase 2, see
-`pivot_dictex_lab_split.md`). It has **no microphone, no hotkey, no
-clipboard/paste, and no normalizer**: it is where the ML tooling lives —
-STT benchmark (segment/batch, candidate summary, error analysis, candidate
-selection), typed corrections, benchmark-set split membership, and the
-test_frozen-compatible dataset export. It reuses `packages/engine`
-(faster-whisper + Vosk) for STT and `packages/shared` for all derivation /
-scoring / export logic, so DicTeX and the Lab cannot diverge.
+`apps/lab` est l'application séparée **DicTeX Lab** (pivot phase 2, voir
+`pivot_dictex_lab_split.md`). Elle n'a **ni microphone, ni raccourci global, ni
+presse-papiers/collage** : elle héberge les outils de mesure et de données —
+benchmarks STT et Normalizer, corrections typées, appartenance aux splits et
+export compatible avec `test_frozen`. Elle réutilise `packages/engine`
+(faster-whisper + Vosk) pour le STT et le normaliseur déterministe de
+`packages/shared` pour le stage textuel ; les dérivations, scores et exports
+partagés empêchent DicTeX et le Lab de diverger.
 
 Run it (from the repository root):
 
@@ -211,11 +225,54 @@ scripts\npm.cmd run dev:lab
 scripts/npm.sh run dev:lab
 ```
 
-### DicTeX data folder (read-only source) + the Lab's own store
+### Lancer une expérience et lire son résultat (issue #138)
+
+Le Lab sépare strictement le protocole à lancer du run déjà figé :
+
+- **`Experiments` est un formulaire de lancement.** Cinq étapes ordonnées —
+  étape expérimentale, dataset/split, candidats, protocole, lancement — et rien
+  d'autre : aucun résumé, aucun résultat historique. `STT` et `Normalizer` sont
+  exécutables ; le bout en bout reste annoncé désactivé avec sa raison plutôt
+  que doté d'un contrôle sans effet. Le protocole annonce avant tout lancement
+  l'entrée, la cible et la transformation propres au stage (`audio -> Layer 1`
+  ou `Layer 1 -> Normalizer -> Layer 2`), le split, le nombre de membres
+  évaluables et l'identité complète de chaque candidat, ainsi
+  que le fait que le snapshot est **figé automatiquement au lancement** — il n'y
+  a aucune action manuelle de création de snapshot.
+- **`Results` est la lecture d'un run immuable.** La liste des runs du split
+  parcouru, puis le détail du run choisi : statut, snapshot figé, candidats
+  lancés, résumé par candidat, sorties de chaque candidat pour chaque membre,
+  erreurs et provenance. La sélection du candidat de base reste propre aux runs
+  STT. `Export for LLM` existe pour les deux stages : le paquet STT conserve son
+  format historique, tandis que le paquet Normalizer fige le pipeline complet,
+  l'exact match et les traces détaillées. Aucun contrôle de lancement n'y figure.
+- **Un lancement réussi devient son résultat** : le run créé est immédiatement
+  sélectionné et la vue bascule sur `Results`.
+
+Le nombre de membres évaluables annoncé avant le lancement provient de la même
+fonction qui fige le snapshot au démarrage : `buildSttBenchmarkRunSnapshot`
+pour STT, `buildMathTransformBenchmarkRunSnapshot` pour Normalizer. Le détail
+d'un run STT reste construit par `buildSttBenchmarkRunDetail`; celui d'un run
+Normalizer vient de la projection stage-aware commune. Dans les deux cas,
+l'appartenance courante à un split et les corrections actuelles ne sont jamais
+relues. Le split de `Results` est un filtre de lecture, distinct de celui du
+protocole.
+
+Depuis #138, **un résultat STT n'existe qu'à l'intérieur d'un run**. Le rejeu
+ad hoc (`Benchmark latest` / benchmark d'un segment) est retiré : il écrivait des
+`stt_benchmark_result` sans `run_id`, donc sans snapshot ni référence explicable,
+qui réapparaissaient ensuite comme de faux résultats « legacy ». Les anciens
+résultats sans `run_id` restent lisibles sous `Legacy (pre-run results)` ; aucun
+événement n'est réécrit.
+
+### DicTeX data folder + the Lab's own store
 
 The Lab reads DicTeX's local data folder — `audio/` + `events.jsonl`
 (`audio_segment` / `stt_result` / `normalization_result`) — **read-only**.
-It never writes into DicTeX's folder. Everything the Lab produces
+It never writes into those audio/event sources. The sole exception in DicTeX's
+folder is a user-confirmed legacy-rules migration, restricted to
+`normalizer/rules-overlay.json`, `rules-backups/` and `rules-migrations/` after
+the original has been backed up. Everything else the Lab produces
 (corrections, splits, benchmark results, candidate selections, dataset
 exports, and its own settings) goes into the **Lab's own** store under its
 own Electron `userData` (`%APPDATA%/dictex-lab-app/data`), a separate folder
@@ -279,7 +336,7 @@ filled —
 
 The entry is also marked into the chosen benchmark-set split (train pool /
 validation / test frozen) so it is immediately visible to `buildSttDatasetExport`
-and to the Benchmark view's set runner. A **paste**-sourced entry has no real
+and to the run launched from `Experiments`. A **paste**-sourced entry has no real
 audio: internally it is still assigned a string `audioRef` (not `null`) so the
 shared `getSttBenchmarkSetSegments` derivation picks it up, but the Lab's own
 `serializeDatasetRecord` maps that back to `audio_ref: null, audio_path: null`
@@ -324,15 +381,40 @@ whatever is left in the field, same as before this issue.
    with a `data folder ok` pill when DicTeX has recorded at least once.
 2. Confirm DicTeX segments recorded by `apps/dictex` appear in the list
    (read from the source folder), and `Play` plays their audio.
-3. `Correct` a segment (choose a correction kind), then set its split to
-   `Test frozen`; confirm both land only in the Lab's events log
-   (`Open Lab events log`) and DicTeX's `events.jsonl` is untouched.
-4. In `Benchmark`, click `Benchmark latest` (needs the venv or
-   `DICTEX_PYTHON`); confirm `tiny`/`base`/`small` transcripts + latency
-   appear. Confirm the split selector opens on `Validation` (the default).
-   Switch it to `Test frozen`, run `Run analysis`, `Summarize by candidate`,
-   and `Select` a candidate.
-4bis. Progressive candidate selector (issue #126). In `Benchmark set`, confirm
+3. Sélectionner un segment dans `Corpus`. Le type d'une correction n'est plus
+   choisi librement : il découle du bouton cliqué. `Edit Layer 1` écrit
+   toujours une correction `acoustic` dont le `raw_transcript` est la sortie STT
+   brute ; `Edit Layer 2` écrit toujours une correction `math_transform` dont le
+   `raw_transcript` est la dernière couche 1 (le bouton reste désactivé tant
+   qu'aucune couche 1 n'existe, la couche 1 étant l'entrée de la couche 2).
+   Vérifier dans `Open Lab events log` que l'événement `stt_correction` écrit
+   porte bien cette paire `correction_kind` / `raw_transcript`, et qu'aucune
+   paire incohérente — un `acoustic` dont le `raw_transcript` serait déjà une
+   couche 1, ou un `math_transform` chaîné sur le STT brut — n'est atteignable
+   depuis cette vue (`DEC-COUCHE1-001`, `docs/product-decisions.md`). Affecter
+   ensuite le split `Test frozen` ; confirmer que la correction et le split
+   n'atterrissent que dans le journal du Lab et que `events.jsonl` de DicTeX
+   reste intact.
+4. Lancement et résultat séparés (issue #138). Dans `Experiments`, parcourir le
+   flux en cinq étapes : étape, dataset, candidats, protocole, lancement.
+   Confirmer que `STT` et `Normalizer` sont lançables, que le bout en bout reste
+   affiché désactivé avec sa raison, et qu'aucun résumé ni résultat
+   historique n'apparaît dans ce formulaire. Vérifier que le protocole annonce
+   `audio -> Layer 1`, l'entrée `audio`, la cible `Layer 1 (acoustic)`, le split
+   choisi (`Validation` par défaut), le nombre de membres évaluables et
+   l'identité complète de chaque candidat, et qu'il indique que le snapshot est
+   figé automatiquement au lancement — aucune action manuelle de création de
+   snapshot n'existe. Cliquer sur `Run experiment` (nécessite le venv ou
+   `DICTEX_PYTHON`) : la progression s'affiche pendant l'exécution, puis le Lab
+   bascule sur `Results` avec le run tout juste créé déjà sélectionné. Dans
+   `Results`, vérifier le statut, le snapshot, les candidats lancés, le résumé,
+   les sorties par segment, les erreurs et `Export for LLM` — et qu'aucun
+   contrôle de lancement n'y figure. Lancer un second run, puis revenir au
+   premier depuis le sélecteur : confirmer qu'il affiche exclusivement son
+   propre snapshot, ses propres sorties et ses propres scores. Sélectionner
+   enfin `Legacy (pre-run results)` et confirmer qu'il ne montre que les
+   résultats sans `run_id`.
+4bis. Progressive candidate selector (issue #126). In `Candidates`, confirm
    there is a compact list of the 1-3 currently-selected candidates (each with
    its model, runtime variant and prompt), with `Replace` and `Remove`
    actions, and an `Add a candidate` button — no flat grid of checkboxes.
@@ -352,10 +434,10 @@ whatever is left in the field, same as before this issue.
    faster-whisper model now offers a `baseline` prompt plus one prompt per
    variant in the `Prompt` control (labelled by display name, never a hash),
    and that the split selector is back on `Validation` by default. Build three
-   candidates from one model — baseline plus two variants — run `Run analysis`,
-   then `Summarize by candidate`; confirm the summary table shows three
-   distinct rows for that one model (not merged into one) and stays inside its
-   panel (it scrolls horizontally rather than widening the page). For a Vosk
+   candidates from one model — baseline plus two variants — click
+   `Run experiment`; in `Results`, confirm the summary table of that run shows
+   three distinct rows for that one model (not merged into one) and stays inside
+   its panel (it scrolls horizontally rather than widening the page). For a Vosk
    candidate, confirm the `Prompt` control is replaced by "No prompt — this
    provider has no initial_prompt." with no fake baseline text.
 4quater. Secondary prompt creation (issues #121/#126). With a faster-whisper
@@ -371,41 +453,40 @@ whatever is left in the field, same as before this issue.
    unchanged. Try an empty id, an id with a space, an empty display name, and an
    empty prompt text; confirm each is rejected. Confirm there is no edit/delete
    affordance anywhere.
-4quinquies. Overflow validation (issue #126). Resize the Lab window to roughly
-   320 px, 560 px and 760 px wide, with a deliberately long model name, a long
-   candidate identity and a long prompt text present. Confirm at each width the
-   page never gains a horizontal scrollbar: panels, prompt text, ids, controls,
-   batch outcomes and the dense summary table all stay within the `app-shell`,
-   choice lists scroll vertically inside their bounded height, and the summary
-   table scrolls inside its own panel. Check the `Candidate summary` panel in
-   both states: before any run — both empty states (`No base STT candidate
-   selected yet…` and `Run analysis above…`) and the `Summarize by candidate`
-   button — and after a summary, with the dense table present. At each width the
-   button, the empty states and every child stay inside the panel border and do
-   not push the page past the `app-shell` (regression check for B1: the panel
-   grid column is `minmax(0, 1fr)`, so the nowrap table can no longer inflate the
-   column and spill the panel's other children past its border). Confirm the
-   whole selector is usable by keyboard with a visible focus ring and that
-   expanded/collapsed controls are announced (aria-expanded / listbox roles).
-4sexies. Run tracking + acoustic snapshot (issue #122). With at least one
-   corrected `Validation` segment, run `Run analysis`; confirm the
-   `Candidate summary` run selector now lists the run just created
-   (`date · N seg · done/failed`) and is auto-selected. Run `Run analysis`
-   again: confirm a second, distinct run appears and that switching the selector
-   between the two shows each run's own numbers (they are not merged).
-   Then, in the Segments view, re-correct one of the run's segments with a
-   deliberately different transcript; go back to `Benchmark`, re-select the
-   earlier run from the selector, and confirm its CER/WER are unchanged (the
-   snapshot is frozen). Assign a paste-sourced (no-audio) `math_transform`-only
-   entry to `Validation`, run `Run analysis`, and confirm it is NOT counted in
-   the run's segment total (an STT run is acoustic-only) and never appears as a
+4quinquies. Overflow validation (issues #126 et #138). Resize the Lab window to
+   roughly 320 px, 560 px and 760 px wide, with a deliberately long model name, a
+   long candidate identity and a long prompt text present. Confirm at each width
+   the page never gains a horizontal scrollbar, in `Experiments` (the five steps,
+   the stage choices, the protocol summary, the candidate identities, the live
+   progress) as well as in `Results` (the run header, the snapshot members, the
+   per-candidate outputs and the dense summary table): every child stays within
+   the `app-shell`, choice lists scroll vertically inside their bounded height,
+   and the summary table scrolls inside its own panel (regression check for B1 of
+   #126: each content panel's grid column is `minmax(0, 1fr)`, so a nowrap table
+   can no longer inflate the column and spill the panel's other children past its
+   border). Check the empty states too: `Experiments` with no evaluable member in
+   the split, and `Results` with no run yet. Confirm the whole selector is usable
+   by keyboard with a visible focus ring and that expanded/collapsed controls are
+   announced (aria-expanded / listbox roles).
+4sexies. Run tracking + acoustic snapshot (issues #122 et #138). With at least
+   one corrected `Validation` segment, click `Run experiment`; confirm the Lab
+   moves to `Results` with the new run already selected in the run list
+   (`date · N seg · done/failed`). Launch a second run: confirm a second, distinct
+   run appears and that switching the selector between the two shows each run's
+   own snapshot, outputs and numbers (they are never merged).
+   Then, in `Corpus`, re-correct one of the run's segments with a deliberately
+   different Layer 1; go back to `Results`, re-select the earlier run, and confirm
+   its snapshot reference and its CER/WER are unchanged (the snapshot is frozen).
+   Assign a paste-sourced (no-audio) `math_transform`-only entry to `Validation`,
+   launch a run, and confirm it is NOT counted in the evaluable member count
+   announced before the launch, nor in the run's snapshot, and never appears as a
    failed segment. Confirm `Open Lab events log` shows one
    `stt_benchmark_run_started` (with the snapshot + `dataset_kind:"acoustic"`),
    the per-candidate `stt_benchmark_result` events carrying that `run_id`, and a
    terminal `stt_benchmark_run_finished`. Finally select `Legacy (pre-run
    results)` and confirm it only ever shows results with no `run_id`.
 4septies. Export LLM d'un run (issue #123). Sélectionner un run terminé dans
-   `Candidate summary`, cliquer sur `Export for LLM`, puis vérifier que le
+   `Results`, cliquer sur `Export for LLM` dans son détail, puis vérifier que le
    résumé affiche le nombre de segments, de candidats et de sorties manquantes.
    Ouvrir le dossier avec `Open export folder` et confirmer qu'il contient
    exactement `manifest.json`, `dataset.acoustic.jsonl` et `outputs.jsonl`.
@@ -416,6 +497,19 @@ whatever is left in the field, same as before this issue.
    le même run et confirmer que sa référence et ses scores ne changent pas.
    Enfin, exporter deux fois rapidement et confirmer que deux dossiers distincts
    sont conservés, sans fichier audio copié et sans modification des journaux.
+4octies. Export LLM d'un run Normalizer (issue #141). Lancer un nouveau run
+   Normalizer terminé, le sélectionner dans `Results`, puis cliquer sur `Export
+   for LLM`. Vérifier que le résumé annonce le dossier, les segments, les
+   candidats, les états `done` / `failed` / `missing` et si le dictionnaire
+   personnel est inclus. Le dossier ouvert doit contenir exactement
+   `manifest.json`, `dataset.math_transform.jsonl` et `outputs.jsonl`. Contrôler
+   dans le manifeste les sources, empreintes, entrées/règles effectives ou
+   ignorées et la table de commandes ; dans les sorties, rapprocher les lignes
+   par `session_id + segment_id` et vérifier que les opérations ne répètent pas
+   les définitions. Modifier ensuite correction, split, dictionnaire et règles,
+   puis réexporter le même run : seules la date et le dossier changent. Un run
+   antérieur à #141 doit être refusé avec une invitation à relancer le benchmark.
+   Aucun caractère PUA, audio ou chemin audio ne doit apparaître.
 5. In `Dataset`, use **Build a dataset entry**: paste a transcription (no
    segment) and type a Layer 1 literal transcript containing a rule the
    shipped default regex recognizes plus a word it does not (e.g.
@@ -439,10 +533,11 @@ whatever is left in the field, same as before this issue.
    `audio_path` under DicTeX's data folder, and that the math_transform-only
    (pasted) record has `audio_ref: null` and `audio_path: null`. Confirm
    DicTeX's `events.jsonl` is still unchanged.
-7. Back in `Benchmark`, with `Test frozen` selected, click `Run analysis`
-   (needs the venv or `DICTEX_PYTHON`); confirm the segment built in step 5
-   appears in the batch outcomes and candidate summary alongside any other
-   `Test frozen` segments.
+7. Back in `Experiments`, with `Test frozen` selected, confirm the announced
+   evaluable member count now includes the segment built in step 5, then click
+   `Run experiment` (needs the venv or `DICTEX_PYTHON`); in `Results`, confirm
+   that segment appears in the run's snapshot, outputs and candidate summary
+   alongside any other `Test frozen` segment.
 8. Point the data folder at a different directory (or reset it) and confirm
    the segment list refreshes from the new source.
 
@@ -730,7 +825,7 @@ name can never be mistaken for "prompt applied".
 
 ### Comparer les variantes de contexte dans le Lab (issue #94)
 
-Le Benchmark du Lab compare directement la baseline sans prompt et les
+Une expérience du Lab compare directement la baseline sans prompt et les
 variantes de `initial_prompt` configurées, sur les mêmes segments audio.
 
 #### Expérience de validation du 12–13 juillet 2026
@@ -790,19 +885,18 @@ que deux variantes du même modèle puissent être cochées et exécutées
 ensemble. Le processus principal revalide toujours la sélection reçue contre
 son propre catalogue avant de lancer quoi que ce soit.
 
-Dans la vue Benchmark, le panneau « Benchmark set » présente ce catalogue via
-un sélecteur progressif (issue #126, voir « Sélecteur progressif de candidats »
-ci-dessous), et non plus une grille plate de cases à cocher. Chaque libellé
-reste « baseline » ou le nom d'affichage de la variante — jamais la chaîne
-technique de variant (par ex. `cpu-int8-fr+prompt-v3-fr-math`). Le panneau
-« Candidate summary » filtre par identité complète de candidat, donc deux
-variantes du même modèle apparaissent comme deux lignes distinctes au lieu
-d'être fusionnées. Le sélecteur de split de la vue Benchmark — partagé avec le
-flux général hérité de #64, une seule variable d'état pilotant `Run analysis`
-et `Summarize by candidate` pour les deux usages — ouvre désormais par défaut
-sur `validation` ; `test_frozen` demeure sélectionnable explicitement mais
-n'est jamais implicite (voir « Discipline d'évaluation » dans
-`docs/roadmap.md`).
+Dans la vue `Experiments`, l'étape « Candidates » présente ce catalogue via un
+sélecteur progressif (issue #126, voir « Sélecteur progressif de candidats »
+ci-dessous), et non une grille plate de cases à cocher. Chaque libellé reste
+« baseline » ou le nom d'affichage de la variante — jamais la chaîne technique
+de variant (par ex. `cpu-int8-fr+prompt-v3-fr-math`). Le résumé par candidat,
+dans `Results`, filtre par identité complète de candidat : deux variantes du
+même modèle apparaissent comme deux lignes distinctes au lieu d'être fusionnées.
+Le split évalué est choisi à l'étape « Dataset » et ouvre par défaut sur
+`validation` ; `test_frozen` demeure sélectionnable explicitement mais n'est
+jamais implicite (voir « Discipline d'évaluation » dans `docs/roadmap.md`).
+Depuis #138, le split de `Results` est un filtre de lecture distinct : parcourir
+les runs d'un autre split ne modifie jamais le protocole prêt à être lancé.
 
 ### Plusieurs runtimes par modèle dans le benchmark (issue #131)
 
@@ -873,9 +967,9 @@ DICTEX_STT_BENCHMARK_RUNTIMES  liste "device:compute_type" séparée par des vir
 
 ### Sélecteur progressif de candidats (issue #126)
 
-La sélection des candidats dans « Benchmark set » est recomposée pour rester
-compacte et contenue dans la fenêtre (`CandidateSelector`,
-`apps/lab/src/renderer/src/main.tsx`). Le renderer ne fabrique jamais une
+La sélection des candidats — l'étape « Candidates » du flux de lancement
+d'`Experiments` depuis #138 — est recomposée pour rester compacte et contenue
+dans la fenêtre (`CandidateSelector`, `apps/lab/src/renderer/src/main.tsx`). Le renderer ne fabrique jamais une
 combinaison absente du catalogue : il ne fait que grouper et décomposer les
 `SttBenchmarkCandidateOption` réelles reçues de
 `diagnostics:get-stt-benchmark-candidates`.
@@ -909,7 +1003,7 @@ les scores et les résumés sont inchangés.
 
 Avant #121, une variante de `initial_prompt` ne pouvait être définie que par la
 variable d'environnement `DICTEX_STT_PROMPT_VARIANTS` au lancement du Lab. La
-vue Benchmark permet désormais de créer une variante directement dans
+vue `Experiments` permet désormais de créer une variante directement dans
 l'interface : un identifiant (`id`), un nom affiché et le texte complet du
 prompt. Depuis #126, ce n'est plus un panneau permanent mais l'action
 secondaire `New prompt`, placée près du choix de prompt du sélecteur de
@@ -945,8 +1039,8 @@ panneau de liste permanent a été retiré par #126.
 Chaque variante créée alimente directement le catalogue de candidats de #94
 (`buildSttBenchmarkCandidateCatalog`) : elle apparaît comme un choix de prompt
 supplémentaire sous chaque modèle faster-whisper configuré, au même titre
-qu'une variante externe, et peut être sélectionnée dans « Benchmark set » comme
-n'importe quel autre candidat. Comme le worker/sidecar ne connaît les
+qu'une variante externe, et peut être sélectionnée à l'étape « Candidates »
+comme n'importe quel autre candidat. Comme le worker/sidecar ne connaît les
 variantes externes que par `DICTEX_STT_PROMPT_VARIANTS`, une variante locale
 n'y figurant pas, son texte de prompt est transmis explicitement pour cet
 appel via `SttConfig.promptText` puis fusionné dans la table
@@ -988,7 +1082,10 @@ data/
       seg_0001.webm
   normalizer/
     dictionary.json
-    rules.json
+    rules-overlay.json
+    rules.json                     # legacy conservé, si présent
+    rules-backups/
+    rules-migrations/
   exports/
     stt-dataset-<timestamp>/
       manifest.json
@@ -996,6 +1093,10 @@ data/
     stt-benchmark-run-<timestamp>/
       manifest.json
       dataset.acoustic.jsonl
+      outputs.jsonl
+    normalizer-benchmark-run-<timestamp>/
+      manifest.json
+      dataset.math_transform.jsonl
       outputs.jsonl
 ```
 
@@ -1040,6 +1141,151 @@ legacy `stt_benchmark_result` recorded before #122 carries no `run_id`; it stays
 readable and is reported as legacy, never attached to a modern run. See
 `docs/dataset-and-normalization-design.md` §9.
 
+Le lancement refuse aussi dans le processus principal un snapshot sans segment
+audio évaluable, avant tout événement `stt_benchmark_run_started` : le preview
+du renderer est asynchrone et ne suffit donc pas comme garde d'intégrité. Un
+segment n'est compté `done` que lorsqu'au moins un candidat a produit une sortie
+enregistrée ; si tous les candidats sont indisponibles, le terminal le consigne
+comme `failed`. Un ancien run terminé qui annonce `done` sans aucune sortie est
+préservé mais affiché « completed without output », distinct de `missing` qui
+signifie bien qu'aucune exécution n'a été enregistrée. L'export LLM conserve la
+même distinction et ne compte pas cet état de compatibilité parmi les sorties
+manquantes.
+
+### Contrat stage-aware pour les futurs benchmarks (issue #139)
+
+Le writer STT reste volontairement inchangé : il continue d'écrire uniquement
+`stt_benchmark_run_started`, `stt_benchmark_result` et
+`stt_benchmark_run_finished`. Aucun double-write et aucune migration de journal
+ne sont autorisés. Les nouveaux stages utilisent les événements génériques
+`benchmark_run_started`, `benchmark_result` et `benchmark_run_finished`, dont
+les types, validations et projections pures vivent dans
+`packages/shared/src/benchmarkContract.ts`.
+
+Le contrat est une union discriminée, pas un objet rempli de champs optionnels :
+
+```text
+stage stt            + dataset_kind acoustic
+  snapshot           = audio_ref + référence Layer 1 + date acoustique
+  result             = transcript STT + métadonnées STT typées
+
+stage math_transform + dataset_kind math_transform
+  snapshot           = Layer 1 textuelle + cible Layer 2 + date math_transform
+  result             = sortie textuelle + durée + traces de couches typées
+```
+
+`end_to_end` appartient à `BenchmarkRunStage` comme nom réservé, mais n'apparaît
+dans aucune union d'événement implémentée. Une tentative de l'écrire échoue donc
+à la compilation et à la validation d'exécution au lieu de créer un snapshot
+incomplet.
+
+Le helper `buildMathTransformBenchmarkRunSnapshot(events, split)` sélectionne la
+dernière correction `math_transform` de chaque membre et copie **sa propre**
+paire : `raw_transcript` → couche 1, `corrected_transcript` → couche 2. Il ne
+relit pas la dernière correction acoustique pour fabriquer l'entrée ; une
+correction acoustique postérieure ne peut donc pas changer la paire. Un membre
+textuel peut porter `audio_ref: ""` dans les événements de corpus et reste
+évaluable : l'audio n'entre pas dans ce stage.
+
+Le terminal stage-aware compte des tentatives candidat × membre et ses failures
+portent aussi l'identité candidat complète. La projection applique ces règles :
+
+- premier `benchmark_run_started` valide d'un `run_id` faisant foi, à travers
+  les deux familles de starts ;
+- premier `benchmark_result` valide par candidat × membre faisant foi dans la
+  nouvelle famille ;
+- premier terminal valide faisant foi ;
+- résultat d'un autre run, stage, candidat ou membre ignoré ;
+- résultat après le terminal ignoré ;
+- `done` si une sortie existe, `failed` si le terminal porte une failure pour
+  le slot, `missing` sinon.
+
+`validateBenchmarkRunStartedEvent`, `validateBenchmarkResultEvent` et
+`validateBenchmarkRunFinishedEvent` contrôlent chaque forme. La validation
+croisée `validateStageAwareBenchmarkEvents` signale doublons, orphelins,
+stages incohérents et références à un candidat ou membre absent sans modifier le
+journal.
+
+Pour `Results`, `getBenchmarkRunProjections(events, split)` renvoie un modèle
+commun en adaptant séparément :
+
+1. les runs STT modernes de la famille `stt_benchmark_*` (`stt_tracked`) ;
+2. les nouveaux runs `benchmark_*` (`stage_aware`) ;
+3. les résultats STT sans `run_id` dans un seau virtuel explicite
+   (`stt_legacy`).
+
+La collision accidentelle d'un `run_id` entre familles ne fusionne jamais les
+résultats : le premier start possède l'identifiant. L'adaptateur STT conserve en
+plus `completed_without_output`, état historique de #138. Les fonctions
+`buildSttBenchmarkRunDetail`, `summarizeSttBenchmarkRun` et
+`buildSttBenchmarkRunExport` restent inchangées ; le résumé et l'export LLM STT
+gardent donc leur compatibilité historique et leur schéma 3.
+
+#139 n'ajoutait ni lancement Normalizer, ni contrôle renderer, ni nouveau format
+d'export. Le premier writer `math_transform` et son affichage sont désormais
+implémentés par #140 selon la procédure ci-dessous.
+
+### Référence du normaliseur déterministe (issue #140)
+
+Dans `Experiments`, l'étape visible `Normalizer` correspond au stage interne
+`math_transform`. Choisir un split affiche le nombre exact de paires évaluables :
+pour chaque membre, `buildMathTransformBenchmarkRunSnapshot` prend la dernière
+correction `math_transform` et copie sa propre couche 1, sa couche 2 et sa date.
+L'audio n'est ni requis ni relu.
+
+La prévisualisation charge une instance du normaliseur partagé depuis le dossier
+source en lecture seule. Elle annonce un seul candidat, affiché sous le nom
+`Current deterministic pipeline`, dont l'identité est :
+
+```text
+stage    = math_transform
+provider = dictex
+model    = deterministic-pipeline
+variant  = dictionary-sha256:<64 hex>;rules-sha256:<64 hex>
+```
+
+Les deux empreintes couvrent les sources complètes effectivement chargées par
+cette instance ; en l'absence de fichier, elles couvrent la configuration par
+défaut réellement appliquée. Le lancement recharge une seule instance, recalcule
+son identité et la compare à celle annoncée. Un changement entre prévisualisation
+et clic provoque un refus avant `benchmark_run_started`, jamais un run dont la
+provenance mentirait.
+
+Le run écrit dans le journal propre au Lab :
+
+1. un `benchmark_run_started` avec le snapshot textuel et le candidat figés ;
+2. un `benchmark_result` par paire, produit par
+   `createTranscriptNormalizer` — dictionnaire → extraction des commandes →
+   règles regex — avec sortie finale, durée et traces ordonnées ;
+3. un `benchmark_run_finished` dont les compteurs portent sur les tentatives
+   candidat × membre.
+
+Avant l'écriture d'un résultat, `restoreCommandWords` est appliqué à la sortie,
+à chaque entrée/sortie de trace et à chaque diagnostic. Les messages d'échec
+sont restaurés avant le terminal, puis une garde commune contrôle la
+sérialisation du start, de chaque résultat et du terminal immédiatement avant
+l'append. Une paire source contenant déjà une sentinelle PUA est refusée : le
+journal du benchmark ne peut donc en écrire aucune. `Results` canonicalise
+sortie et cible avec `canonicalizeLatex`, affiche l'exact match, le nombre exact
+de réussites sur le total, le diff de chaque membre et ses traces. Aucune
+équivalence sémantique n'est ajoutée : une prose inchangée peut réussir, tandis
+qu'une portée différente reste un échec visible.
+
+Procédure de référence :
+
+1. qualifier plusieurs paires `math_transform` dans `Corpus` et les placer dans
+   `Validation` ; inclure au moins une prose inchangée, une règle couverte et un
+   cas de portée non couvert ;
+2. ouvrir `Experiments`, choisir `Normalizer` puis `Validation`, contrôler le
+   nombre de paires et les deux SHA-256 complets ;
+3. lancer le run et vérifier le basculement vers `Results` ;
+4. contrôler `Layer 1 -> Normalizer -> Layer 2`, le résumé réussites/total, les
+   diffs et les traces de couches ;
+5. recorriger ensuite un membre dans `Corpus`, rouvrir le run précédent et
+   confirmer que son snapshot, son score et son détail n'ont pas changé ;
+6. ouvrir le journal du Lab et confirmer l'absence de caractères PUA dans les
+   trois familles d'événements du run.
+
 Depuis #130, la référence d'un benchmark STT est exclusivement la dernière
 correction `acoustic` disponible au démarrage. Une correction
 `math_transform`, `normalization` ou `rephrasing` plus récente n'est jamais un
@@ -1056,14 +1302,15 @@ acoustique valide avant toute comparaison ou sélection de candidat.
 
 ### Export local d'un run pour analyse par un LLM
 
-Un run STT **terminé** peut être exporté depuis `Candidate summary` avec
+Un run STT **terminé** peut être exporté depuis son détail dans `Results` avec
 `Export for LLM`. Cette action n'appelle aucun service distant : elle lit le
 run et ses résultats dans le journal propre au Lab, puis crée un nouveau dossier
 horodaté sous `data/exports/`. Une collision de timestamp ajoute un suffixe au
 nouveau dossier ; aucun export antérieur n'est écrasé. Le dossier contient
 exactement trois fichiers :
 
-- `manifest.json` : version du schéma (`2` depuis #134), dates, `run_id`, stage,
+- `manifest.json` : version du schéma (`3` depuis la correction de revue de
+  #138 ; `2` avait ajouté les deux CER dans #134), dates, `run_id`, stage,
   split, statut, référence au snapshot, description distincte des deux CER et du
   WER, identités complètes des candidats et définitions des prompts (`id`, nom
   affiché, texte complet) une seule fois ;
@@ -1071,8 +1318,9 @@ exactement trois fichiers :
   `session_id`, `segment_id`, `audio_ref`, `audio_path`, transcription de
   référence et date de correction utilisées au démarrage du run ;
 - `outputs.jsonl` : une ligne par même couple `session_id + segment_id`, avec
-  tous les candidats du run. Chaque sortie porte `done`, `failed` ou `missing`,
-  le transcript et la latence lorsqu'ils existent, ainsi que `strict_cer`,
+  tous les candidats du run. Chaque sortie porte `done`, `failed`, `missing` ou
+  `completed_without_output` pour un ancien terminal contradictoire, le
+  transcript et la latence lorsqu'ils existent, ainsi que `strict_cer`,
   `acoustic_cer` (#134) et `wer` lorsque le snapshot possède une référence.
 
 Les noms de fichiers du manifeste sont relatifs : le paquet peut donc être
@@ -1112,6 +1360,41 @@ chaque manifeste. Les deux CER sont dérivés à la lecture depuis le transcript
 la référence figée : aucun événement historique n'est réécrit, et un run
 antérieur reste lisible tant que son snapshot porte une référence.
 
+#### Export LLM d'un run Normalizer (issue #141)
+
+Un nouveau run `math_transform` fige dans son `benchmark_run_started` le
+snapshot textuel **et** le pipeline effectivement chargé. Le dictionnaire et les
+regex indiquent leur état (`file`, `default_absent`, `invalid`, `unreadable`),
+leur SHA-256 complet, la source lisible, les définitions effectives dans l'ordre,
+les définitions ignorées et leurs diagnostics. La table de commandes fournit
+version, empreinte, identifiants, phrases, labels de debug et effets décrits sans
+PUA. Les versions du pipeline et de `canonicalizeLatex` complètent la provenance.
+
+Le benchmark seul active `detailedTrace`. Chaque résultat conserve les couches
+ordonnées et une liste compacte d'opérations : identifiant de définition,
+occurrences, positions, texte capturé et fragment produit pour les regex. Les
+définitions statiques ne sont donc pas répétées par segment. Le chemin de dictée
+quotidienne n'active pas ce mode et ne grossit pas ses événements.
+
+L'export crée un dossier `normalizer-benchmark-run-<timestamp>/` sans écrasement :
+
+- `manifest.json` : run, candidat, pipeline complet, contrat de score, limites,
+  ordre de lecture, taxonomie suggérée et avertissement sur le dictionnaire ;
+- `dataset.math_transform.jsonl` : snapshot couche 1 / cible couche 2 dans son
+  ordre figé ;
+- `outputs.jsonl` : un enregistrement par même membre, avec tous les candidats,
+  états, sorties brute/canonique, cible canonique, exact match, durée, couches et
+  références d'opérations.
+
+Lire d'abord le manifeste, puis joindre les deux JSONL sur
+`session_id + segment_id`. Commencer par les sorties non exactes et utiliser les
+identifiants d'opération pour distinguer dictionnaire, commande, regex absente ou
+fausse, limite de portée/composition, convention humaine, diagnostic et échec
+d'exécution. Cette taxonomie est une aide d'analyse, jamais une classification
+calculée par DicTeX. Le lecteur local refuse un fichier supplémentaire, un ordre
+incohérent, une référence inconnue ou un caractère PUA. Un run historique sans
+provenance complète est refusé plutôt qu'enrichi avec l'état courant.
+
 STT corrections are append-only events linked to the original segment:
 
 ```json
@@ -1128,9 +1411,9 @@ read-only: it never appends events, it only reads and summarizes what a run
 already logged.
 
 Since issue #122 the summary is scoped to **one tracked run**, not to the whole
-split: the run selector lists each run of the current split (newest first,
-`date · N seg · done/failed`), and `Run analysis` auto-selects the run it just
-created. The numbers come from that run's frozen snapshot and its own
+split: the `Results` run selector lists each run of the browsed split (newest
+first, `date · N seg · done/failed`), and a launch from `Experiments` selects the
+run it just created (issue #138). The numbers come from that run's frozen snapshot and its own
 `run_id`-tagged results, so two runs of the same split stay separate and a later
 re-correction or membership change never moves a historical run's numbers. A
 final `Legacy (pre-run results)` option summarizes any pre-#122 results (no
@@ -1164,9 +1447,9 @@ Per candidate it reports:
   two (a snapshot segment absent from both results and `failures` was not
   executed — e.g. a partial stop). Re-run the set benchmark to fill gaps.
 
-Only the STT stage is scored today; the summary is STT-only by construction
-because it groups by `stage`, so a future `math_transform` or `normalization`
-candidate would summarize separately once that stage starts scoring results.
+Le résumé STT reste STT-only par construction. Le stage `math_transform` possède
+depuis #140 son propre résumé d'exact match canonique dans `Results` ; les deux
+stages ne sont jamais agrégés dans la même table.
 
 ## STT Candidate Selection
 
@@ -1216,67 +1499,102 @@ Entries are literal, case-sensitive substring replacements applied in file
 order. Malformed individual entries are skipped (with a diagnostic) while valid
 entries still apply.
 
-The regex rules layer runs after the dictionary. Unlike the dictionary, it
-ships a small default set of conservative French math-verbalization rules that
-applies out of the box, even before the rules file exists. Use the `Open
-rules` button to create/open it; the seeded file contains the shipped
-defaults, editable in place.
+La couche de règles regex s'exécute après le dictionnaire. Le jeu livré réside
+dans `packages/shared`, porte une version et donne à chaque règle un identifiant
+stable ainsi qu'un ordre explicite. Il s'applique donc automatiquement même en
+l'absence de configuration locale. `Open rule overlay` crée ou ouvre uniquement
+la surcouche personnelle ; il ne recopie jamais le jeu livré.
 
 ```text
-data/normalizer/rules.json
+data/normalizer/rules-overlay.json
 ```
 
 ```json
-{"version":1,"rules":[{"pattern":"...","replacement":"$$$<p1>^{2}$$","flags":"i"}]}
+{
+  "version": 1,
+  "bundled_rules_version": 3,
+  "disabled_rule_ids": ["addition"],
+  "replacements": [
+    {"rule_id":"equality","pattern":"...","replacement":"...","flags":"i"}
+  ],
+  "personal_rules": [
+    {"id":"personal-example","order":10,"pattern":"...","replacement":"...","flags":"i"}
+  ]
+}
 ```
 
-Each rule's `pattern` is a Unicode-aware JS regex source (always matched with
-forced `g`/`u` flags, plus any `flags` given); `replacement` may reference
-capture groups (`$1`, `$2`, ... or `$<name>` for named groups), and a literal
-`$` is written as `$$` (needed to emit the delimiters below). Rules apply in
-file order. Every default rule requires a real operand (a run of digits, or a
-single Unicode letter standing for a variable) on both sides of the keyword,
-and rejects a match where that operand is glued to a surrounding letter/digit
-— this is what keeps prose like "de plus en plus" or "je suis moins fatigué"
-untouched, since "plus"/"moins" only convert between two such operands.
+Le chargeur partagé construit les règles effectives dans cet ordre : jeu livré
+courant, désactivations et remplacements personnels à la position de
+l'identifiant ciblé, puis règles personnelles triées par `order` et `id`. Une
+future version livrée devient donc active sans recopier ni remigrer la
+surcouche.
 
-**The rules emit canonical LaTeX, not Unicode** (issue #107, following the
-LaTeX decision in `docs/dataset-and-normalization-design.md` §8): inline maths
-is wrapped in `$…$` (the same delimiter convention `canonicalizeLatex` and
-DicTeX Lab use), prose stays bare. The default set covers: "x au carré" ->
+Le `pattern` d'une règle est une source regex JavaScript compatible Unicode
+(drapeaux `g`/`u` imposés, plus les éventuels `flags`) ; `replacement` peut
+référencer les groupes de capture (`$1`, `$2`, ... ou `$<name>`), et un dollar
+littéral s'écrit `$$`. Les règles s'appliquent dans l'ordre du fichier. Chaque
+règle atomique exige un opérande réel : entier signé ou non, lettre
+Unicode unique ou nom grec explicitement mappé. Les nombres français de zéro à
+vingt et `moins N` ne sont convertis que si la construction complète prouve
+qu'ils sont consommés comme opérandes. Un opérande collé à une lettre ou un
+chiffre voisin est refusé ; la prose « de plus en plus », « je suis moins
+fatigué » ou « il reste trois exemples » reste ainsi intacte.
+
+**Les règles produisent du LaTeX canonique, pas de l'Unicode** (#107 et #148,
+selon `docs/dataset-and-normalization-design.md` §8) : les mathématiques en ligne
+sont délimitées par `$…$`, tandis que la prose reste nue. Le jeu couvre :
+"x au carré" ->
 `$x^{2}$`, "x au cube" -> `$x^{3}$`, "x puissance n" -> `$x^{n}$`, "racine
 (carrée) de x" -> `$\sqrt{x}$`, "x égal(e) y" -> `$x = y$`, "plus grand/petit
 que" -> `$x > y$`/`$x < y$`, "plus"/"moins"/"fois" -> `$x + y$`/`$x - y$`/`$x
-\times y$`, and "divisé par" -> `$\frac{x}{y}$`. Each rule's output is already
-a fixed point of `canonicalizeLatex` (`packages/shared/src/latex.ts`), so
-scoring/export never treat it as needing repair.
+\times y$`, et « divisé par »/« sur » -> `$\frac{x}{y}$`. #148 ajoute
+« multiplié par », « supérieur/inférieur à », les fonctions atomiques `\sin`,
+`\cos`, `\ln`, `f(x)`, `theta`/`rho`, ainsi que les nombres français de zéro à
+vingt seulement comme opérandes reconnus. La v3 ajoute les formulations
+structurées explicitement validées : parenthèses dictées pour trois gabarits
+simples, fonctions d'une lettre imbriquées, exponentielles atomiques,
+expressions affines, deux limites canoniques, une dérivée et une intégrale
+bornée. Elle accepte aussi `est égal à` entre deux fragments mathématiques et
+les formes féminines `supérieure/inférieure à`. Chaque sortie est déjà un point
+fixe de `canonicalizeLatex` (`packages/shared/src/latex.ts`) ; mesure et export
+ne la traitent donc jamais comme une réparation.
 
-A regex cannot group or scope, so "au carré"/"au cube"/"puissance"/"racine
-(carrée) de"/"divisé par" — the rules that introduce a NEW brace around their
-operand — stay restricted to a single bare digit run or letter on every
-operand, exactly as before: `\frac{a}{b}` needs both operands unambiguous, so
-"a divisé par b plus un" cannot compose "b plus un" into one denominator
-("un" spelled out is not a single-token operand). The remaining rules ("x
-égale y", "plus/petit que", "plus", "moins", "fois") never add a new brace, so
-they MAY also accept an already-`$…$`-wrapped fragment as an operand — this is
-what keeps the chaining property alive under LaTeX: "x au carré plus y" first
-becomes "$x^{2}$ plus y" (the bracing "au carré" rule, bare operand "x"), then
-"plus" matches the whole wrapped fragment "$x^{2}$" as its left operand and
-merges it with "y" into one span, "$x^{2} + y$". Adopting LaTeX therefore
-*grows* what the rules cannot reach (grouping/scoping stays out of reach by
-design) — that residual is exactly what normalizer layer 3 is for (§7).
+Une regex ne sait ni grouper ni décider une portée implicite. Les règles « au carré »,
+« au cube », « puissance », « racine (carrée) de », les fractions et les
+fonctions — qui introduisent une nouvelle accolade ou un argument — restent donc
+limitées aux opérandes atomiques. `\frac{a}{b}` exige deux opérandes non ambigus :
+« a divisé par b plus un » peut devenir `$\frac{a}{b} + 1$`, mais jamais
+`\frac{a}{b+1}`. Les autres règles (égalité, comparaisons, addition,
+soustraction et multiplication) n'ajoutent pas d'accolade et peuvent accepter un
+fragment déjà délimité par `$…$`. C'est ce qui permet à « x au carré plus y » de
+devenir d'abord « `$x^{2}$ plus y` », puis `$x^{2} + y$`. La composition et la
+portée générales restent le résidu prévu pour la couche 3 (§7). Les trois
+gabarits v3 avec parenthèses ne contredisent pas cette limite : les mots
+« parenthèse ouvrante » et « parenthèse fermante » donnent explicitement le
+groupe, et chaque contenu accepté reste une somme ou différence d'atomes. La
+portée non marquée de « racine carrée de a plus b » n'est donc pas devinée.
 
-A malformed rules file (bad JSON or shape) disables the whole layer with a
-passthrough and a quiet diagnostic; a malformed individual rule (e.g. invalid
-regex) is skipped the same way individual dictionary entries are.
+Une surcouche vide, invalide ou illisible est signalée et le jeu livré reste
+actif. Aucun démarrage ne migre automatiquement un ancien `rules.json` : sans
+surcouche, ce fichier reste exécutable tel quel comme baseline legacy et masque
+volontairement le jeu livré.
 
-**Migration d'un `rules.json` antérieur à #107 :** ce fichier est modifiable par
-l'utilisateur et DicTeX ne le réécrit jamais. Une ancienne installation continue
-donc à produire ses règles Unicode. Avant les essais quotidiens, fermer DicTeX,
-copier le fichier sous un nom horodaté, puis renommer l'original et laisser
-DicTeX créer les nouvelles règles LaTeX au prochain démarrage. Vérifier ensuite
-les éventuelles règles personnelles et les reporter volontairement. Ne jamais
-supprimer l'unique copie ni mélanger silencieusement les deux conventions.
+**Migration non destructive d'un ancien `rules.json` :** ouvrir
+`Experiments -> Normalizer`, puis utiliser `Review migration`. La prévisualisation
+affiche version et SHA-256 locaux, version livrée, copies livrées reconnues,
+règles personnelles, ambiguïtés, invalidités et empreinte effective attendue.
+Une règle identique à une signature historique v1/v2/v3 est reconnue comme copie
+livrée ; une règle inconnue reste personnelle ; une définition proche mais
+modifiée exige de choisir explicitement sa conservation personnelle ou le
+remplacement de l'identifiant livré proposé.
+
+Après confirmation, le Lab crée d'abord une sauvegarde horodatée sans
+écrasement dans `normalizer/rules-backups/`, écrit atomiquement
+`rules-overlay.json`, puis produit un reçu sans contenu personnel dans
+`normalizer/rules-migrations/`. L'original `rules.json` reste intact. Une
+collision, une écriture interrompue ou une relance réutilise l'état vérifié sans
+dupliquer la sauvegarde. Un fichier mal formé ou une ambiguïté non résolue est
+refusé avec diagnostic ; aucune règle n'est devinée ou supprimée.
 
 The raw `stt_result` event is left untouched. Each dictation appends a separate
 append-only `normalization_result` event recording the input, the final output,

@@ -381,22 +381,36 @@ No, and the question mistakes what the `math_transform` dataset is for.
 
 ### The regex layer is structurally bounded
 
-Layer 2's operand is a single token (`packages/shared/src/normalizer.ts`):
+Depuis #148, un opérande atomique de couche 2 est un entier signé ou non, une
+seule lettre, ou l'un des noms grecs explicitement convertis en LaTeX (`theta`
+et `rho`). Les nombres français simples de zéro à vingt deviennent des chiffres,
+et `moins N` un entier négatif, **uniquement** lorsqu'une autre partie de la
+regex prouve qu'ils sont consommés par une construction mathématique reconnue.
+Une phrase comme « il reste trois exemples » demeure donc identique.
 
-```js
-const OPERAND = "(\\d+[²³]?|\\p{L}[²³]?)";
-```
+Le jeu couvre désormais aussi les fractions atomiques avec « sur », les
+fonctions `sinus de A`, `cosinus de A`, `logarithme naturel de A`, l'application
+`f de A`, les synonymes de multiplication et de comparaison, puis compose les
+opérations internes avant égalité ou comparaison. La version 3 ajoute des
+gabarits fermés mesurés sur `validation` : trois groupes dont les parenthèses
+sont prononcées, deux fonctions d'une lettre imbriquées, une expression affine,
+des exponentielles atomiques, deux limites canoniques, une dérivée et une
+intégrale bornée. Elle passe de 7/21 à 20/21 correspondances exactes sur le run
+`run_20260715131235469_r1xsgn7a`, sans régression sur les sept succès initiaux.
 
-A run of digits, or **one** letter. Its own header calls it a "conservative
-starter set". So it handles `x au carré`, `x égale y`, `racine de x`,
-`x puissance n` — local, enumerable, unambiguous mappings — and it structurally
-cannot handle:
+Cette extension reste une collection de gabarits locaux, pas une grammaire. Les
+parenthèses ne sont produites que lorsque l'utilisateur dicte explicitement
+« parenthèse ouvrante » et « parenthèse fermante » autour d'une somme ou d'une
+différence atomique prise en charge. Le jeu peut traiter `v égal d sur t`, mais
+il reste structurellement incapable de traiter :
 
 - `racine de x plus 1` — the operand of `racine de` cannot be an expression;
 - `x plus y au carré` — is that `(x+y)²` or `x + y²`? No regex decides this; it
   needs context;
-- `f de x` → `f(x)`, `somme de i égale 1 à n`, `intégrale de zéro à un`;
-- any nesting or scoping. There is no parenthesis handling at all.
+- une application générale de fonction dont l'argument est une expression ;
+- `somme de i égale 1 à n` ou une intégrale hors du gabarit validé ;
+- toute imbrication ou portée qui n'est pas explicitement décrite par un gabarit
+  livré.
 
 Layer 3 exists for composition, scope, and disambiguation. The two are different
 regimes, not competing attempts at the same job.
@@ -747,8 +761,11 @@ membre acoustique du snapshot exactement dans son ordre, y ajoute seulement le
 chemin audio résolu comme provenance, et ne consulte jamais les corrections ou
 l'appartenance courantes au split. `outputs.jsonl` groupe tous les candidats
 pour cette même clé ; une sortie absente est distinguée d'un échec terminal au
-lieu d'être supprimée. Aucun enregistrement `math_transform`, segment sans audio
-ou fichier audio ne peut entrer dans le paquet.
+lieu d'être supprimée. Un ancien terminal qui comptait un segment `done` sans
+aucune sortie est exporté `completed_without_output`, jamais `missing`, sans
+réécrire le journal ; ce statut de compatibilité n'entre pas dans le décompte
+des sorties manquantes. Aucun enregistrement `math_transform`, segment sans
+audio ou fichier audio ne peut entrer dans le paquet.
 
 Le manifeste référence ses deux fichiers JSONL par des chemins relatifs et
 porte les limites des deux CER et du WER (voir « Deux CER » ci-dessous). Les
@@ -767,7 +784,8 @@ disponible et échoue explicitement sinon.
 > `calculateAcousticCharacterErrorRate` vit dans
 > `packages/shared/src/sttScoring.ts`, à côté du CER strict. Les résumés
 > (`benchmarkSummary.ts`), l'interface Benchmark et l'export LLM
-> (`benchmarkRunExport.ts`, schéma d'export porté à `2`) exposent les deux.
+> (`benchmarkRunExport.ts`, schéma d'export porté à `2`, puis à `3` pour l'état
+> de compatibilité `completed_without_output` de #138) exposent les deux.
 
 Le CER strict compare les caractères après canonicalisation LaTeX, normalisation
 de casse et des espaces de bord. Il **compte la ponctuation de phrase**, donc une
@@ -798,3 +816,244 @@ référence n'est pas acoustique reste identifié comme non comparable (voir
 « Compatibilité des runs antérieurs à #130 » ci-dessus) et n'est pas corrigé
 rétroactivement. Une projection WER acoustique n'est pas incluse ici ; elle
 pourra faire l'objet d'un ticket séparé si elle devient nécessaire.
+
+---
+
+## 10. Contrat de runs multi-étapes sans migration STT (issue #139)
+
+> **Statut : implémenté.** Les types d'événements, les validations, le snapshot
+> `math_transform` et la projection commune vivent dans
+> `packages/shared/src/benchmarkContract.ts`. Le writer STT historique et son
+> export LLM ne sont pas modifiés.
+
+Le contrat STT de §9 est correct pour l'audio, mais ses noms et ses champs sont
+spécifiques à cette étape. Lui ajouter une couche 1 textuelle, une cible couche
+2 et des traces du normaliseur sous forme de champs optionnels créerait un objet
+où des combinaisons incohérentes seraient représentables. Les nouveaux stages
+utilisent donc une famille parallèle et discriminée :
+
+```text
+benchmark_run_started
+  -> benchmark_result         (un candidat × un membre)
+  -> benchmark_run_finished   (terminal)
+```
+
+Cette famille ne remplace pas `stt_benchmark_*`. Un run n'est écrit que dans une
+famille ; aucun historique n'est renommé, réémis ou corrigé.
+
+### Stages, datasets et snapshots
+
+`BenchmarkRunStage` réserve trois noms : `stt`, `math_transform` et
+`end_to_end`. Seuls les deux premiers appartiennent aux unions d'événements
+implémentées. `end_to_end` ne possède ni snapshot, ni résultat writable : le
+nom peut être utilisé pour planifier sans prétendre que son contrat existe déjà.
+
+La paire `stage` / `dataset_kind` est fermée :
+
+| Stage | `dataset_kind` | Membre figé |
+| --- | --- | --- |
+| `stt` | `acoustic` | `audio_ref`, référence humaine de couche 1, date de correction acoustique |
+| `math_transform` | `math_transform` | entrée couche 1, cible couche 2, date de la correction `math_transform` |
+
+Chaque membre porte aussi son propre discriminant `stage`. TypeScript interdit
+donc d'insérer un membre textuel dans un start STT, ou un membre audio dans un
+start `math_transform`. Les validateurs reproduisent cette garde pour le JSONL
+lu depuis le disque.
+
+Le snapshot `math_transform` applique une règle de provenance plus forte qu'une
+jointure « dernière couche 1 + dernière couche 2 » : **les deux textes viennent
+du même `stt_correction` de type `math_transform`**.
+
+```text
+stt_correction(math_transform).raw_transcript       -> layer1_input
+stt_correction(math_transform).corrected_transcript -> layer2_target
+stt_correction(math_transform).created_at           -> date de la paire
+```
+
+Une correction `acoustic` postérieure peut contenir une meilleure couche 1 pour
+un futur exemple, mais elle ne réécrit ni ne recompose la paire déjà portée par
+la correction `math_transform`. `buildMathTransformBenchmarkRunSnapshot` prend
+la dernière correction **dans ce type**, copie sa paire et accepte les membres
+sans audio. Une recorrection effectuée après le start ne change ensuite jamais
+le snapshot stocké.
+
+### Candidats, résultats et métriques typées
+
+L'identité commune reste exactement :
+
+```text
+stage + provider + model + variant
+```
+
+Le `stage` du candidat doit être celui du run. Les résultats sont eux aussi une
+union discriminée : transcript et métadonnées STT pour `stt`, sortie textuelle,
+durée et traces `NormalizationLayerRecord[]` pour `math_transform`. Il n'existe
+pas d'objet libre `metrics: Record<string, unknown>`.
+
+La projection calcule des scores explicitement typés depuis le snapshot figé :
+
+- pour STT, CER strict, CER acoustique et WER contre la référence couche 1 ;
+- pour `math_transform`, exact match après `canonicalizeLatex` contre la cible
+  couche 2, en conservant aussi sortie et cible canoniques pour l'explication.
+
+Le résultat stocké reste la sortie du candidat et ses traces. La cible ne vient
+jamais d'une correction relue au moment de l'affichage.
+
+### Immuabilité et statut candidat × membre
+
+Le `run_id` forme un espace commun aux anciennes et nouvelles familles. Le
+premier start **valide** rencontré possède l'identifiant ; un start ultérieur,
+même d'une autre famille, ne peut ni remplacer le snapshot ni agréger ses
+résultats.
+
+Dans la nouvelle famille :
+
+1. le premier start valide fait foi ;
+2. le premier résultat valide de chaque candidat × membre fait foi ;
+3. le premier terminal valide fait foi ;
+4. seuls les résultats placés après le start et avant le terminal sont lus ;
+5. un résultat doit viser le même run, le même stage, un candidat annoncé et un
+   membre du snapshot ;
+6. les orphelins et doublons sont signalés par la validation mais jamais réparés
+   dans le journal.
+
+Pour chaque candidat × membre :
+
+- `done` : une sortie valide existe ;
+- `failed` : aucune sortie n'existe et le terminal porte une failure pour ce
+  slot ;
+- `missing` : ni sortie ni failure, par exemple après un arrêt partiel.
+
+Les compteurs `done` / `failed` du nouveau terminal comptent ces slots, pas les
+segments. Une failure contient donc aussi l'identité candidat. Si une sortie et
+une failure contradictoires existent pour le même slot, la sortie prouve que ce
+candidat a produit un résultat et le slot reste `done`; la validation permet de
+repérer le journal incohérent sans le réécrire.
+
+### Projection commune et compatibilité
+
+`getBenchmarkRunProjections(events, split)` produit le modèle de lecture que
+`Results` pourra consommer. Trois sources restent identifiées :
+
+- `stt_tracked` : adaptation des runs modernes `stt_benchmark_*`, avec leur
+  snapshot acoustique et leur règle historique latest-result-wins ;
+- `stage_aware` : nouvelle famille, avec les règles d'immuabilité ci-dessus ;
+- `stt_legacy` : seau virtuel explicite des `stt_benchmark_result` sans
+  `run_id`, limité aux membres et références encore observables.
+
+Le seau legacy n'acquiert pas rétroactivement un snapshot ou un terminal qu'il
+n'a jamais eus. L'adaptateur STT suivi conserve aussi
+`completed_without_output`, état de compatibilité introduit lors de #138 pour un
+ancien terminal affirmant `done` sans sortie ; les nouveaux stages n'émettent
+que `done`, `failed` ou `missing`.
+
+Les lecteurs STT existants ne passent pas automatiquement par cette projection :
+`buildSttBenchmarkRunDetail`, les résumés et l'export LLM gardent leur chemin
+actuel. Ainsi #139 rend les stages comparables dans une future vue `Results`
+sans modifier les événements historiques, le schéma 3 de l'export ou les octets
+produits à état égal.
+
+---
+
+## 11. Référence déterministe du normaliseur (issue #140)
+
+> **Statut : implémenté.** Le Lab lance le premier writer de la famille
+> stage-aware pour `math_transform` et l'affiche dans `Results` sans modifier le
+> writer, les lecteurs ou l'export LLM STT.
+
+Cette référence isole volontairement la transformation textuelle :
+
+```text
+couche 1 figée -> dictionnaire -> extraction des commandes -> regex
+-> restauration des mots de commande -> canonicalizeLatex -> couche 2 figée
+```
+
+Le snapshot est celui défini au §10 : les deux textes et la date proviennent du
+même dernier événement `stt_correction(math_transform)` de chaque membre. Une
+nouvelle correction après le lancement n'est jamais relue. Les entrées sans
+audio restent évaluables, car l'audio n'appartient pas à ce stage.
+
+Le candidat initial est unique : `math_transform / dictex /
+deterministic-pipeline`. Sa variante concatène la version de contrat, la version
+sémantique, les empreintes des commandes et du dictionnaire, puis la provenance
+des règles : version et SHA-256 du jeu livré, mode `bundled`/`overlay`/`legacy`,
+SHA-256 local éventuel et SHA-256 effectif. Les valeurs par défaut réellement
+appliquées sont elles aussi hachées lorsqu'un fichier manque. Une identité
+annoncée dans `Experiments` doit correspondre à l'instance chargée au lancement ;
+sinon aucun start n'est écrit. Les variantes historiques plus courtes restent
+lisibles sans reconstruction ni migration.
+
+Les commandes suivent toujours la règle de stockage du §4. Le normaliseur les
+extrait pour donner aux regex exactement leur entrée de production, puis le
+writer restaure les phrases canoniques dans la sortie, les entrées/sorties et
+les diagnostics de toutes les traces avant `benchmark_result`. Les messages
+d'échec subissent le même traitement avant le terminal. Enfin, une garde commune
+refuse tout événement qui contiendrait encore une sentinelle juste avant
+l'écriture. Une paire déjà corrompue par un PUA est refusée avant le start. La
+comparaison voit donc les mêmes mots que la cible humaine et le journal reste
+sans sentinelle.
+
+La métrique est fermée : exact match de
+`canonicalizeLatex(sortie)` contre `canonicalizeLatex(cible)`. Elle autorise les
+seules convergences orthographiques définies au §8 et aucune équivalence
+mathématique. Le résumé compte les réussites exactes sur tous les membres du
+snapshot ; un échec d'exécution ou un résultat manquant reste dans le
+dénominateur. Le détail conserve la sortie brute restaurée, les deux formes
+canoniques, le diff textuel et les traces ordonnées, de sorte qu'une règle de
+portée insuffisante reste un échec visible plutôt qu'un score artificiellement
+amélioré.
+
+---
+
+## 12. Vue dérivée du run Normalizer pour analyse LLM (issue #141)
+
+Le paquet LLM reste une vue régénérable, jamais une source de vérité. Pour la
+produire sans divergence train/serve, le start du run fige le snapshot de
+pipeline fourni par la **même instance** de `TranscriptNormalizer` qui traite
+les membres. Les fichiers courants ne sont plus consultés après ce start.
+
+```text
+benchmark_run_started
+  snapshot math_transform ordonné
+  candidat versionné
+  pipeline effectif (dictionnaire -> commandes -> regex -> canonicalisation)
+benchmark_result
+  couches ordonnées
+  opérations rencontrées -> identifiants du manifeste + deltas du segment
+benchmark_run_finished
+  -> manifest.json
+  -> dataset.math_transform.jsonl
+  -> outputs.jsonl
+```
+
+Le manifeste est la seule copie des définitions statiques. Les identifiants des
+entrées du dictionnaire restent dérivés de leur contenu ; ceux des regex livrées
+sont désormais stables et indépendants du contenu, tandis que les règles
+personnelles portent les identifiants de leur surcouche. Les identifiants des
+commandes appartiennent à la table partagée. Une sortie ne répète donc ni tout le
+dictionnaire ni toutes les règles. Elle conserve seulement les occurrences,
+positions, captures et fragments produits nécessaires pour attribuer l'effet.
+Cette déduplication réduit fortement le nombre de tokens sans perdre la
+provenance déterministe.
+
+Le snapshot distingue fichier lisible, défaut absent, source invalide et source
+illisible. Il ajoute la version et l'empreinte du jeu livré, l'état et
+l'empreinte de la surcouche, l'empreinte legacy éventuelle, le mode de
+configuration et les définitions effectives ordonnées. Les définitions valides,
+ignorées et diagnostics expliquent ainsi ce qui était réellement actif. La table
+de commandes et les versions sémantiques entrent dans l'identité du candidat :
+modifier une commande ou le contrat du pipeline ne peut plus conserver
+artificiellement la même candidature.
+
+Les deux JSONL portent exactement les mêmes membres, dans l'ordre du snapshot,
+et se joignent par `session_id + segment_id`. `failed` et `missing` restent
+explicites. L'exact match compare les formes canonicalisées, conserve aussi les
+textes bruts et n'établit aucune équivalence mathématique. Un ancien run sans la
+provenance ou les traces requises doit être relancé : relire le dictionnaire ou
+les règles du jour fabriquerait une histoire fausse.
+
+Le paquet ne contient ni audio ni chemin audio. Il contient en revanche le
+dictionnaire personnel effectif et peut contenir du texte dicté ; cette présence
+est annoncée dans le manifeste et l'interface. Aucun envoi n'est effectué par
+DicTeX. Comme dans les événements, tout PUA est éliminé ou représenté sous forme
+échappée avant sérialisation.

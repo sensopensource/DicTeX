@@ -13,7 +13,7 @@ import { writeSttBenchmarkRunExport } from "./benchmarkRunExportWriter.js";
 function fixture(): SttBenchmarkRunExport {
   return {
     manifest: {
-      schema_version: 2,
+      schema_version: 3,
       export_type: "stt_benchmark_run_llm",
       run_id: "run_1",
       exported_at: "2026-07-12T11:00:00.000Z",
@@ -98,4 +98,20 @@ test("writeSttBenchmarkRunExport: never overwrites an earlier export with the sa
 
   assert.notEqual(first.exportDir, second.exportDir);
   assert.equal((await readdir(root)).length, 2);
+});
+
+test("writeSttBenchmarkRunExport: does not count completed-without-output compatibility records as missing", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "dictex-run-export-"));
+  const runExport = fixture();
+  runExport.outputs[0].outputs[0].status = "completed_without_output";
+  runExport.outputs[0].outputs[0].transcript = null;
+  runExport.outputs[0].outputs[0].latency_ms = null;
+
+  const summary = await writeSttBenchmarkRunExport(root, runExport);
+  assert.equal(summary.missingOutputs, 0);
+
+  const outputs = JSON.parse(
+    (await readFile(path.join(summary.exportDir, STT_BENCHMARK_RUN_EXPORT_FILES.outputs), "utf8")).trim(),
+  ) as { outputs: { status: string }[] };
+  assert.equal(outputs.outputs[0].status, "completed_without_output");
 });

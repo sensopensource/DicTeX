@@ -63,6 +63,210 @@ deux », et un nombre compact perd souvent sa formulation orale exacte.
 L'orthographe des nombres composés, la ponctuation et les disfluences restent
 ouvertes dans `docs/questions-de-conventions.md`.
 
+## DEC-RUN-001 — Une mesure STT appartient toujours à un run — 13 juillet 2026
+
+**Statut : active.** Toute mesure STT du Lab naît d'un run tracé : un
+`stt_benchmark_run_started` qui fige le snapshot acoustique et les candidats
+lancés, des `stt_benchmark_result` portant son `run_id`, puis un
+`stt_benchmark_run_finished`. Un résultat sans run n'est plus produit.
+
+Conséquence, appliquée par #138 : le rejeu ad hoc du Lab (`Benchmark latest` et
+le benchmark d'un segment isolé) est **retiré**. Il écrivait des
+`stt_benchmark_result` sans `run_id`, donc sans snapshot ni référence
+explicables, qui se mélangeaient ensuite aux vrais résultats antérieurs à #122
+dans le seau « legacy ». Une mesure dont on ne peut pas dire contre quelle
+référence elle a été calculée ne sert ni à comparer des candidats, ni à choisir
+un `initial_prompt`.
+
+Les résultats sans `run_id` déjà enregistrés restent lisibles sous
+`Legacy (pre-run results)` : l'historique est à ajout uniquement et n'est jamais
+réécrit. Un futur besoin d'essai rapide devra passer par un run explicite — au
+besoin un run à un seul segment — plutôt que par un chemin d'écriture parallèle.
+
+Un run STT ne peut commencer sans segment audio évaluable : cette garde existe
+aussi dans le processus principal, avant tout événement `run_started`, car le
+preview de l'interface reste une lecture asynchrone. Un segment ne compte comme
+`done` que si au moins un candidat a produit une sortie ; si tous les candidats
+sont indisponibles, il est consigné dans `failures`. Les rares runs historiques
+dont le terminal annonce `done` sans sortie sont conservés tels quels et lus
+comme « terminé sans sortie », jamais comme « jamais exécuté », aussi bien dans
+`Results` que dans l'export LLM régénérable.
+
+## DEC-RUN-002 — Les nouveaux stages ont leur propre famille de runs — 13 juillet 2026
+
+**Statut : active.** Les événements historiques `stt_benchmark_run_started`,
+`stt_benchmark_result` et `stt_benchmark_run_finished` restent le contrat du
+writer STT actuel. Ils ne sont ni renommés, ni migrés, ni doublés. Les nouveaux
+stages utilisent la famille stage-aware `benchmark_run_started`,
+`benchmark_result` et `benchmark_run_finished`, définie dans
+`packages/shared/src/benchmarkContract.ts`.
+
+Le contrat n'efface pas les différences d'entrée : ses snapshots et ses
+résultats sont des unions discriminées par `stage`.
+
+- `stt` / `acoustic` fige l'audio et la référence humaine de couche 1 ;
+- `math_transform` fige une entrée couche 1 et une cible couche 2 textuelles,
+  sans audio obligatoire ;
+- `end_to_end` est un nom réservé, sans variante d'événement writable tant que
+  son entrée, sa cible et ses métriques n'ont pas fait l'objet d'un ticket.
+
+La paire d'un snapshot `math_transform` provient d'un seul événement de
+correction : `raw_transcript` devient la couche 1 et `corrected_transcript` la
+couche 2 de la dernière correction `math_transform`. Une correction acoustique
+postérieure ne reconstruit jamais cette couche 1. Chaque résultat et chaque
+failure terminale appartiennent à un couple candidat × membre ; l'identité
+candidat commune reste exactement `stage + provider + model + variant`.
+
+Le premier événement de début valide d'un `run_id` fait foi, y compris en cas de
+collision entre l'ancienne et la nouvelle famille. Dans la nouvelle famille, le
+premier résultat valide d'un couple candidat × membre et le premier terminal
+font également foi ; les événements orphelins, hors snapshot, hors candidats ou
+postérieurs au terminal ne réécrivent pas la projection. Les slots sans résultat
+ni failure restent `missing`, distincts de `done` et `failed`.
+
+Une projection commune de lecture adapte trois sources sans les confondre : les
+runs STT suivis existants, le seau virtuel des résultats STT antérieurs aux runs,
+et les nouveaux runs stage-aware. L'état historique
+`completed_without_output` de #138 reste réservé à l'adaptateur STT pour ne pas
+perdre cette contradiction ancienne. Les résumés, l'interface et l'export LLM
+STT existants gardent leurs lecteurs et leurs octets à état égal ; #139 ajoute
+un contrat de lecture, pas un nouveau writer STT.
+
+## DEC-RUN-003 — La référence du normaliseur mesure la paire textuelle figée — 13 juillet 2026
+
+**Statut : active.** Le premier run `math_transform` du Lab mesure exclusivement
+`couche 1 -> normaliseur déterministe -> couche 2`. Il ne relit aucun audio et
+ne mélange donc jamais une erreur STT à une erreur de règle. Son snapshot copie
+la paire et la date portées par la dernière correction `math_transform` de
+chaque membre du split au moment du lancement ; une recorrection ultérieure ne
+change ni le détail ni le score historique.
+
+Le candidat unique porte `stage=math_transform`, `provider=dictex`,
+`model=deterministic-pipeline`. Son `variant` contient les SHA-256 complets du
+dictionnaire et des règles chargés dans l'instance qui exécute le run. Le nom
+court affiché reste `Current deterministic pipeline` : les hash appartiennent à
+la provenance, pas au libellé principal. Si les fichiers changent après la
+prévisualisation du protocole, le lancement est refusé avant tout événement et
+doit être rafraîchi.
+
+Le pipeline exécuté est l'unique normaliseur partagé : dictionnaire, extraction
+des commandes, règles regex. Avant chaque `benchmark_result`, les sentinelles de
+commande sont restaurées en mots canoniques dans la sortie et dans toutes les
+traces ; aucun caractère PUA n'est écrit. La mesure est l'exact match après
+`canonicalizeLatex`, sans équivalence mathématique ou réparation sémantique.
+Une portée erronée reste donc un échec visible et explicable par le diff et les
+traces de couches dans `Results`.
+
+## DEC-RUN-004 — L'export LLM du normaliseur appartient entièrement au run — 13 juillet 2026
+
+**Statut : active.** Un futur `benchmark_run_started` de stage
+`math_transform` fige désormais la configuration effective chargée par
+l'instance de `TranscriptNormalizer` qui exécute le run : sources et empreintes
+du dictionnaire et des regex, définitions retenues ou ignorées, table de
+commandes, versions sémantiques du pipeline et de la canonicalisation LaTeX.
+L'identité du candidat inclut ces versions et l'empreinte des commandes en plus
+des empreintes du dictionnaire et des règles.
+
+Le mode de trace détaillé est demandé uniquement par ce benchmark. Les événements
+de dictée quotidienne gardent leurs traces de couches historiques, sans les
+occurrences par définition. Pour le run, chaque opération réellement rencontrée
+référence un identifiant défini une seule fois dans le snapshot et porte ses
+positions et fragments propres au segment. Les mots de commande sont restaurés
+avant l'écriture ; une source contenant un caractère PUA le représente sous une
+forme échappée, jamais comme caractère brut.
+
+`Export for LLM` construit exclusivement depuis le start, les résultats et le
+terminal de ce run un dossier contenant exactement `manifest.json`,
+`dataset.math_transform.jsonl` et `outputs.jsonl`. L'export ne relit ni corpus,
+ni split, ni fichier courant. Un run antérieur sans snapshot complet ou sans
+traces détaillées est refusé et doit être relancé ; sa provenance n'est jamais
+reconstituée. Le manifeste contient volontairement le dictionnaire personnel et
+l'interface l'annonce. DicTeX ne téléverse rien.
+
+## DEC-NORM-001 — Les nouvelles expressions restent atomiques — 15 juillet 2026
+
+**Statut : active pour la sémantique des règles ; stockage local remplacé par
+DEC-NORM-002.** Le jeu livré de règles du normaliseur passe à la version 2
+et couvre davantage de formulations locales sans devenir un parseur. Un atome
+reste une lettre, un entier signé ou non, ou l'un des noms grecs explicitement
+pris en charge (`theta`, `rho`). Les nombres français de zéro à vingt et la forme
+`moins N` ne deviennent des chiffres que lorsqu'ils occupent effectivement la
+place d'un opérande dans une construction reconnue ; les mêmes mots en prose
+restent inchangés.
+
+Les fonctions `sinus de A`, `cosinus de A`, `logarithme naturel de A` et
+`f de A` consomment exactement un atome. Les fractions `A sur B` et
+`A divisé par B` font de même. Les opérations internes — fractions, fonctions,
+multiplications, additions et soustractions — passent avant les égalités et les
+comparaisons afin que `v égal d sur t` devienne `$v = \frac{d}{t}$`. Cette
+priorité ne donne aucune portée arbitraire aux regex : elles ne construisent ni
+parenthèses implicites, ni argument composé, ni arbre mathématique.
+
+La version sémantique du pipeline devient
+`dictex-deterministic-pipeline-v3`. Le snapshot des runs continue de conserver
+les définitions effectives ordonnées, la source complète et son SHA-256 ; le
+jeu absent par défaut et un fichier `rules.json` existant restent donc
+distinguables. DicTeX ne modifie jamais automatiquement un fichier utilisateur.
+La procédure manuelle initiale est remplacée par la migration explicite et non
+destructive de DEC-NORM-002.
+
+## DEC-NORM-002 — Jeu livré versionné et surcouche personnelle — 15 juillet 2026
+
+**Statut : active.** Les règles livrées vivent uniquement dans le code partagé,
+avec une version de jeu, un identifiant stable indépendant du contenu et un
+ordre explicite. La configuration utilisateur `rules-overlay.json` ne recopie
+pas ce jeu : elle peut désactiver un identifiant, le remplacer à sa position ou
+ajouter des règles personnelles ordonnées. `packages/shared` est l'unique lieu
+où le jeu courant et cette surcouche sont composés, compilés, diagnostiqués et
+hachés. DicTeX, préremplissage, export et benchmark consomment le même chargeur.
+
+Un `rules.json` historique reste actif sans surcouche afin de préserver une
+baseline reproductible, mais le Lab l'annonce comme legacy et ne confond jamais
+la version sémantique du pipeline avec le jeu réellement exécuté. La migration
+n'a lieu qu'après prévisualisation, résolution explicite des ambiguïtés et
+confirmation. Elle reconnaît les signatures livrées v1/v2/v3, conserve toute règle
+inconnue comme personnelle, crée une sauvegarde horodatée sans écrasement, écrit
+la surcouche atomiquement et produit un reçu limité aux chemins, versions et
+empreintes. L'original n'est ni supprimé ni réécrit.
+
+La provenance distingue version et SHA-256 du jeu livré, SHA-256 de la source
+locale éventuelle et SHA-256 des définitions effectives. Un nouveau run fige
+aussi les définitions ordonnées ; les variantes historiques restent lisibles
+par leurs anciens schémas. Cette extension porte le contrat du pipeline à 3 et
+sa version sémantique à `dictex-deterministic-pipeline-v4`. Une mise à jour
+future du jeu livré devient ainsi
+effective automatiquement, tandis que désactivations et remplacements
+continuent de viser les mêmes identifiants stables.
+
+## DEC-NORM-003 — Promotion des motifs structurés validés — 15 juillet 2026
+
+**Statut : active.** Le jeu livré passe à la version 3 et la version sémantique
+du pipeline à `dictex-deterministic-pipeline-v5`. Son empreinte effective est
+`8686d68c18668b5c1e5edd72598f235410aac49ca411710ba7e9dfc77f81170f`. La
+variante expérimentale `combined-structured-feminine-comparisons-v3`,
+d'empreinte SHA-256
+`86204019a1bca8a0585400365b61cd49aa6a64f5bbf0e61ca88a88461a3959e9`, a été
+rejouée sur les 21 exemples figés de `validation` du run
+`run_20260715131235469_r1xsgn7a`. Elle passe de 7 à 20 correspondances exactes,
+sans régression sur les sept succès initiaux et sans diagnostic.
+
+Les nouveaux motifs restent déterministes et bornés. Ils reconnaissent quelques
+formulations explicites observées : parenthèses dictées autour d'une somme ou
+d'une différence simple, carré de ce groupe, deux fonctions d'une lettre
+imbriquées, deux limites canoniques, une dérivée, une intégrale bornée, une
+exponentielle atomique, une expression affine et certains identifiants annoncés
+par un contexte mathématique. Les nombres de zéro à vingt sont générés dans ces
+seuls contextes. Ce jeu n'est ni une grammaire générale ni un parseur : il ne
+déduit aucune parenthèse silencieuse et ne choisit aucune portée non dictée.
+
+Le résidu « racine carrée de a plus b » est volontairement conservé : la règle
+atomique produit `\sqrt{a} + b`, car décider `\sqrt{a+b}` sans marque de groupe
+serait une convention de portée, pas une substitution sûre. Les identifiants des
+66 règles v2 restent inchangés ; les 160 nouvelles définitions reçoivent leurs
+propres identifiants stables. Une surcouche ancienne continue donc à désactiver
+ou remplacer la même règle, tout en consommant automatiquement les nouvelles
+définitions livrées.
+
 ## DicTeX / Lab split (monorepo)
 
 DicTeX est séparé en deux applications Electron dans un même monorepo npm
@@ -71,15 +275,16 @@ DicTeX est séparé en deux applications Electron dans un même monorepo npm
 - **`apps/dictex`** — the consumer dictation tool (voice → STT → normalizer →
   insert). Has the microphone, hotkey, clipboard/paste, and normalizer.
 - **`apps/lab`** — **DicTeX Lab**, the ML tooling app (pivot Phase 2, #76). No
-  microphone: it hosts the STT benchmark (segment/batch, summary, error
-  analysis, candidate selection), typed corrections, benchmark-set split
-  membership, the Vosk provider, and the dataset export.
+  microphone: it hosts the STT benchmark (tracked runs, per-run summary, error
+  analysis, candidate selection — see DEC-RUN-001), typed corrections,
+  benchmark-set split membership, the Vosk provider, and the dataset export.
 
-Data contract (one-directional, file-based, zero code coupling): the Lab reads
-DicTeX's local data folder **read-only** (audio + `stt_result` /
-`normalization_result` events) and keeps its **own** store for everything it
-writes — corrections, splits, benchmark results, candidate selections, dataset
-exports, and its own settings — under its own Electron `userData`
+Data contract (file-based, zero code coupling): the Lab keeps DicTeX's audio and
+events **read-only** and uses its **own** store for corrections, splits,
+benchmark results, candidate selections, exports and settings. La seule
+exception d'écriture dans la source est la migration de règles confirmée par
+l'utilisateur, limitée à la surcouche, aux sauvegardes et au reçu sous
+`normalizer/`. Le store propre reste sous son Electron `userData`
 (`%APPDATA%/dictex-lab-app/data`), never DicTeX's `%APPDATA%/dictex-app/data`.
 The DicTeX data folder path is configurable in the Lab (default
 `%APPDATA%/dictex-app/data`). Both apps import all derivation/scoring/export

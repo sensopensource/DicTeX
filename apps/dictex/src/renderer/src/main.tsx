@@ -672,7 +672,7 @@ function App(): React.ReactElement {
           Open dictionary
         </button>
         <button className="secondary-button" onClick={() => void openRulesFile()}>
-          Open rules
+          Open rule overlay
         </button>
       </section>
 

@@ -4,16 +4,17 @@ import {
   type BenchmarkCandidateIdentity,
   type LocalEvent,
 } from "./localEvents.js";
+import { buildSttBenchmarkRunDetail } from "./benchmarkRunDetail.js";
 import {
   calculateAcousticCharacterErrorRate,
   calculateCharacterErrorRate,
   calculateWordErrorRate,
 } from "./sttScoring.js";
 
-// Bumped to 2 for issue #134: each candidate output now carries `strict_cer`
-// (formerly `cer`) plus a new `acoustic_cer`, and the manifest `scoring` block
-// documents the two CER metrics distinctly.
-export const STT_BENCHMARK_RUN_EXPORT_SCHEMA_VERSION = 2;
+// Version 2 added the distinct strict/acoustic CER metrics (#134). Version 3
+// adds `completed_without_output` so legacy terminal contradictions are not
+// exported as if the segment had never been executed (#138 review correction).
+export const STT_BENCHMARK_RUN_EXPORT_SCHEMA_VERSION = 3;
 export const STT_BENCHMARK_RUN_EXPORT_FILES = {
   manifest: "manifest.json",
   dataset: "dataset.acoustic.jsonl",
@@ -40,7 +41,7 @@ export type SttBenchmarkRunExportDatasetRecord = {
 export type SttBenchmarkRunExportCandidateOutput = {
   candidate: BenchmarkCandidateIdentity;
   prompt_variant_id: string | null;
-  status: "done" | "failed" | "missing";
+  status: "done" | "failed" | "missing" | "completed_without_output";
   transcript: string | null;
   latency_ms: number | null;
   /** Strict CER: exact fidelity, sentence punctuation counted (issue #134). */
@@ -172,6 +173,10 @@ export function buildSttBenchmarkRunExport(
   const failuresBySegment = new Map(
     run.finished.failures.map((failure) => [segmentKey(failure.sessionId, failure.segmentId), failure.error]),
   );
+  const runDetail = buildSttBenchmarkRunDetail(events, runId);
+  const segmentStatuses = new Map(
+    (runDetail?.segments ?? []).map((segment) => [segmentKey(segment.sessionId, segment.segmentId), segment.status]),
+  );
 
   const dataset = run.snapshot.map((member) => ({
     split: run.split,
@@ -185,7 +190,9 @@ export function buildSttBenchmarkRunExport(
   }));
 
   const outputs = run.snapshot.map((member) => {
-    const failure = failuresBySegment.get(segmentKey(member.sessionId, member.segmentId)) ?? null;
+    const key = segmentKey(member.sessionId, member.segmentId);
+    const failure = failuresBySegment.get(key) ?? null;
+    const segmentStatus = segmentStatuses.get(key);
     return {
       session_id: member.sessionId,
       segment_id: member.segmentId,
@@ -195,7 +202,11 @@ export function buildSttBenchmarkRunExport(
           return {
             candidate: toCandidateIdentity(candidate),
             prompt_variant_id: candidate.promptVariant,
-            status: failure ? ("failed" as const) : ("missing" as const),
+            status: failure
+              ? ("failed" as const)
+              : segmentStatus === "completed_without_output"
+                ? ("completed_without_output" as const)
+                : ("missing" as const),
             transcript: null,
             latency_ms: null,
             strict_cer: null,

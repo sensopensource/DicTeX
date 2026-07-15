@@ -74,12 +74,18 @@ Déjà disponible :
 - raccourci global `Win+Alt+Space` et collage automatique sous Windows ;
 - stockage local à ajout uniquement (`append-only`) de l'audio, du texte brut
   et de la normalisation ;
-- dictionnaire personnel, mots de commande et règles mathématiques regex ;
+- dictionnaire personnel, mots de commande et règles mathématiques regex
+  livrées versionnées, composées avec une surcouche personnelle ;
 - interrupteur persistant du normaliseur, avec sortie STT brute lorsqu'il est
   désactivé ;
 - convention LaTeX canonique et canonicalisation avant mesure ou export ;
 - historique de dictées avec copie et réécoute ;
 - Lab séparé pour les corrections, les comparaisons et les exports ;
+- référence du normaliseur déterministe sur les paires `math_transform`, avec
+  snapshot figé, version complète du pipeline, exact match canonique et traces
+  par couche dans `Results` ;
+- export local d'un run terminé du normaliseur en trois fichiers compacts pour
+  l'analyse LLM, avec provenance complète et traces détaillées sans envoi ;
 - passage d'un `initial_prompt` nommé à faster-whisper pour les expériences.
 
 Prochaines étapes :
