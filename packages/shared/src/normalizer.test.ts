@@ -5,13 +5,11 @@ import assert from "node:assert/strict";
 
 import {
   createTranscriptNormalizer,
-  DEFAULT_RULES,
-  DEFAULT_RULES_CONFIG_VERSION,
   NORMALIZER_PIPELINE_SEMANTIC_VERSION,
   normalizeTranscript,
   type NormalizeOptions,
 } from "./normalizer.js";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { canonicalizeLatex } from "./latex.js";
 
 // Points the normalizer at a directory that does not exist: the personal
@@ -273,7 +271,7 @@ test("pipeline snapshot distinguishes invalid and unreadable sources without reb
   }
 });
 
-test("an existing rules.json is never overwritten and can be migrated by explicit merge", async () => {
+test("an existing rules.json remains an explicitly reported legacy baseline until migration", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "dictex-rules-migration-"));
   try {
     const dictionaryPath = path.join(directory, "dictionary.json");
@@ -286,19 +284,10 @@ test("an existing rules.json is never overwritten and can be migrated by explici
     assert.equal((await legacy.normalize("bonjour et un sur x")).output, "salut et un sur x");
     assert.equal(legacy.pipelineSnapshot.regex_rules.source_content, legacySource);
     assert.equal(legacy.pipelineSnapshot.regex_rules.effective_rules.length, 1);
-
-    const migratedSource = JSON.stringify(
-      { version: DEFAULT_RULES_CONFIG_VERSION, rules: [...DEFAULT_RULES, personalRule] },
-      null,
-      2,
-    );
-    writeFileSync(rulesPath, migratedSource, "utf8");
-    const migrated = await createTranscriptNormalizer({ dictionaryPath, rulesPath });
-    assert.equal((await migrated.normalize("bonjour et un sur x")).output, "salut et $\\frac{1}{x}$");
-    assert.equal(migrated.pipelineSnapshot.regex_rules.source_content, migratedSource);
-    assert.equal(migrated.pipelineSnapshot.regex_rules.effective_rules.length, DEFAULT_RULES.length + 1);
-    assert.notEqual(migrated.version.rulesHash, legacy.version.rulesHash);
-    assert.equal(migrated.version.semanticVersion, NORMALIZER_PIPELINE_SEMANTIC_VERSION);
+    assert.equal(legacy.rulesConfiguration.mode, "legacy");
+    assert.equal(legacy.rulesConfiguration.state, "migration_required");
+    assert.equal(legacy.pipelineSnapshot.regex_rules.legacy_source_sha256, legacy.rulesConfiguration.legacyHash);
+    assert.equal(readFileSync(rulesPath, "utf8"), legacySource);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

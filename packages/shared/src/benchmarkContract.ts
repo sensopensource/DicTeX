@@ -411,8 +411,8 @@ function validatePipelineSnapshot(value: unknown, path: string, errors: string[]
     errors.push(`${path} must be an object`);
     return false;
   }
-  if (value.schema_version !== 1 || !isNonNegativeInteger(value.pipeline_contract_version)) {
-    errors.push(`${path} must carry schema_version 1 and an integer pipeline_contract_version`);
+  if ((value.schema_version !== 1 && value.schema_version !== 2) || !isNonNegativeInteger(value.pipeline_contract_version)) {
+    errors.push(`${path} must carry schema_version 1 or 2 and an integer pipeline_contract_version`);
   }
   if (!isNonEmptyString(value.semantic_version)) {
     errors.push(`${path}.semantic_version must be a non-empty string`);
@@ -424,6 +424,32 @@ function validatePipelineSnapshot(value: unknown, path: string, errors: string[]
 
   validateSourceSnapshot(value.dictionary, `${path}.dictionary`, "effective_entries", "ignored_entries", errors);
   validateSourceSnapshot(value.regex_rules, `${path}.regex_rules`, "effective_rules", "ignored_rules", errors);
+  if (value.schema_version === 2 && isRecord(value.regex_rules)) {
+    if (!isNonNegativeInteger(value.regex_rules.bundled_version) || !isSha256(value.regex_rules.bundled_sha256)) {
+      errors.push(`${path}.regex_rules must carry the bundled version and SHA-256 in schema 2`);
+    }
+    if (
+      value.regex_rules.overlay_source_state !== "absent" &&
+      value.regex_rules.overlay_source_state !== "file" &&
+      value.regex_rules.overlay_source_state !== "invalid" &&
+      value.regex_rules.overlay_source_state !== "unreadable"
+    ) {
+      errors.push(`${path}.regex_rules.overlay_source_state is invalid`);
+    }
+    if (value.regex_rules.overlay_sha256 !== null && !isSha256(value.regex_rules.overlay_sha256)) {
+      errors.push(`${path}.regex_rules.overlay_sha256 must be null or a full SHA-256`);
+    }
+    if (value.regex_rules.legacy_source_sha256 !== null && !isSha256(value.regex_rules.legacy_source_sha256)) {
+      errors.push(`${path}.regex_rules.legacy_source_sha256 must be null or a full SHA-256`);
+    }
+    if (
+      value.regex_rules.configuration_mode !== "bundled" &&
+      value.regex_rules.configuration_mode !== "overlay" &&
+      value.regex_rules.configuration_mode !== "legacy"
+    ) {
+      errors.push(`${path}.regex_rules.configuration_mode is invalid`);
+    }
+  }
   if (!isRecord(value.commands)) {
     errors.push(`${path}.commands must be an object`);
   } else {

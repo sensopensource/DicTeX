@@ -185,7 +185,8 @@ l'interface l'annonce. DicTeX ne téléverse rien.
 
 ## DEC-NORM-001 — Les nouvelles expressions restent atomiques — 15 juillet 2026
 
-**Statut : active.** Le jeu livré de règles du normaliseur passe à la version 2
+**Statut : active pour la sémantique des règles ; stockage local remplacé par
+DEC-NORM-002.** Le jeu livré de règles du normaliseur passe à la version 2
 et couvre davantage de formulations locales sans devenir un parseur. Un atome
 reste une lettre, un entier signé ou non, ou l'un des noms grecs explicitement
 pris en charge (`theta`, `rho`). Les nombres français de zéro à vingt et la forme
@@ -206,10 +207,36 @@ La version sémantique du pipeline devient
 les définitions effectives ordonnées, la source complète et son SHA-256 ; le
 jeu absent par défaut et un fichier `rules.json` existant restent donc
 distinguables. DicTeX ne modifie jamais automatiquement un fichier utilisateur.
-Pour activer la version 2 sur une installation existante, l'utilisateur ferme
-l'application, sauvegarde le fichier, le renomme, laisse DicTeX générer le
-nouveau jeu, puis réintègre volontairement ses règles personnelles. La procédure
-détaillée vit dans `docs/development.md`.
+La procédure manuelle initiale est remplacée par la migration explicite et non
+destructive de DEC-NORM-002.
+
+## DEC-NORM-002 — Jeu livré versionné et surcouche personnelle — 15 juillet 2026
+
+**Statut : active.** Les règles livrées vivent uniquement dans le code partagé,
+avec une version de jeu, un identifiant stable indépendant du contenu et un
+ordre explicite. La configuration utilisateur `rules-overlay.json` ne recopie
+pas ce jeu : elle peut désactiver un identifiant, le remplacer à sa position ou
+ajouter des règles personnelles ordonnées. `packages/shared` est l'unique lieu
+où le jeu courant et cette surcouche sont composés, compilés, diagnostiqués et
+hachés. DicTeX, préremplissage, export et benchmark consomment le même chargeur.
+
+Un `rules.json` historique reste actif sans surcouche afin de préserver une
+baseline reproductible, mais le Lab l'annonce comme legacy et ne confond jamais
+la version sémantique du pipeline avec le jeu réellement exécuté. La migration
+n'a lieu qu'après prévisualisation, résolution explicite des ambiguïtés et
+confirmation. Elle reconnaît les signatures livrées v1/v2, conserve toute règle
+inconnue comme personnelle, crée une sauvegarde horodatée sans écrasement, écrit
+la surcouche atomiquement et produit un reçu limité aux chemins, versions et
+empreintes. L'original n'est ni supprimé ni réécrit.
+
+La provenance distingue version et SHA-256 du jeu livré, SHA-256 de la source
+locale éventuelle et SHA-256 des définitions effectives. Un nouveau run fige
+aussi les définitions ordonnées ; les variantes historiques restent lisibles
+par leurs anciens schémas. Cette extension porte le contrat du pipeline à 3 et
+sa version sémantique à `dictex-deterministic-pipeline-v4`. Une mise à jour
+future du jeu livré devient ainsi
+effective automatiquement, tandis que désactivations et remplacements
+continuent de viser les mêmes identifiants stables.
 
 ## DicTeX / Lab split (monorepo)
 
@@ -223,11 +250,12 @@ DicTeX est séparé en deux applications Electron dans un même monorepo npm
   analysis, candidate selection — see DEC-RUN-001), typed corrections,
   benchmark-set split membership, the Vosk provider, and the dataset export.
 
-Data contract (one-directional, file-based, zero code coupling): the Lab reads
-DicTeX's local data folder **read-only** (audio + `stt_result` /
-`normalization_result` events) and keeps its **own** store for everything it
-writes — corrections, splits, benchmark results, candidate selections, dataset
-exports, and its own settings — under its own Electron `userData`
+Data contract (file-based, zero code coupling): the Lab keeps DicTeX's audio and
+events **read-only** and uses its **own** store for corrections, splits,
+benchmark results, candidate selections, exports and settings. La seule
+exception d'écriture dans la source est la migration de règles confirmée par
+l'utilisateur, limitée à la surcouche, aux sauvegardes et au reçu sous
+`normalizer/`. Le store propre reste sous son Electron `userData`
 (`%APPDATA%/dictex-lab-app/data`), never DicTeX's `%APPDATA%/dictex-app/data`.
 The DicTeX data folder path is configurable in the Lab (default
 `%APPDATA%/dictex-app/data`). Both apps import all derivation/scoring/export

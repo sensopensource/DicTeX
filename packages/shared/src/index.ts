@@ -38,6 +38,7 @@ export * from "./normalizerBenchmark.js";
 export * from "./benchmarkRunExport.js";
 export * from "./normalizerBenchmarkRunExport.js";
 export * from "./normalizer.js";
+export * from "./normalizerRulesMigration.js";
 export * from "./datasetExport.js";
 export * from "./sttEngine.js";
 export * from "./benchmarkTypes.js";

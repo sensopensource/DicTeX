@@ -74,7 +74,8 @@ Déjà disponible :
 - raccourci global `Win+Alt+Space` et collage automatique sous Windows ;
 - stockage local à ajout uniquement (`append-only`) de l'audio, du texte brut
   et de la normalisation ;
-- dictionnaire personnel, mots de commande et règles mathématiques regex ;
+- dictionnaire personnel, mots de commande et règles mathématiques regex
+  livrées versionnées, composées avec une surcouche personnelle ;
 - interrupteur persistant du normaliseur, avec sortie STT brute lorsqu'il est
   désactivé ;
 - convention LaTeX canonique et canonicalisation avant mesure ou export ;

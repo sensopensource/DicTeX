@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import {
   COMMANDS,
   COMMAND_TABLE_CONTRACT_VERSION,
@@ -119,6 +120,37 @@ export type NormalizerOperationTrace =
     };
 
 export type NormalizerSourceState = "file" | "default_absent" | "invalid" | "unreadable";
+export type NormalizerOverlaySourceState = "absent" | "file" | "invalid" | "unreadable";
+export type NormalizerRulesMode = "bundled" | "overlay" | "legacy";
+export type NormalizerRulesConfigurationState =
+  | "bundled"
+  | "current_overlay"
+  | "legacy_file"
+  | "migration_required"
+  | "ambiguous"
+  | "invalid";
+
+export type NormalizerRulesConfiguration = {
+  mode: NormalizerRulesMode;
+  state: NormalizerRulesConfigurationState;
+  bundledVersion: number;
+  bundledHash: string;
+  bundledRuleCount: number;
+  overlayPath: string;
+  overlayState: NormalizerOverlaySourceState;
+  overlayHash: string | null;
+  legacyPath: string;
+  legacyVersion: number | null;
+  legacyHash: string | null;
+  personalRuleCount: number;
+  effectiveRuleCount: number;
+  effectiveHash: string;
+  recognizedBundledRuleCount: number;
+  ambiguityCount: number;
+  invalidRuleCount: number;
+  warning: string | null;
+  diagnostics: string[];
+};
 
 export type NormalizerIgnoredDefinition = {
   index: number | null;
@@ -127,7 +159,7 @@ export type NormalizerIgnoredDefinition = {
 };
 
 export type NormalizerPipelineSnapshot = {
-  schema_version: 1;
+  schema_version: 1 | 2;
   pipeline_contract_version: number;
   semantic_version: string;
   dictionary: {
@@ -162,13 +194,22 @@ export type NormalizerPipelineSnapshot = {
     }[];
     ignored_rules: NormalizerIgnoredDefinition[];
     diagnostics: string[];
+    /** Added by #150. Absent on historical schema-1 snapshots. */
+    bundled_version?: number;
+    bundled_sha256?: string;
+    overlay_source_state?: NormalizerOverlaySourceState;
+    overlay_sha256?: string | null;
+    legacy_source_sha256?: string | null;
+    configuration_mode?: NormalizerRulesMode;
   };
   latex_canonicalization_contract_version: number;
 };
 
-export const NORMALIZER_PIPELINE_CONTRACT_VERSION = 2;
-export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v3";
+export const NORMALIZER_PIPELINE_CONTRACT_VERSION = 3;
+export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v4";
 export const DEFAULT_RULES_CONFIG_VERSION = 2;
+export const PERSONAL_RULES_OVERLAY_VERSION = 1;
+export const PERSONAL_RULES_OVERLAY_FILENAME = "rules-overlay.json";
 
 type LayerApplication = {
   output: string;
@@ -188,6 +229,8 @@ export type NormalizeOptions = {
   dictionaryPath: string;
   /** Absolute path to the regex math-verbalization rules JSON file. */
   rulesPath: string;
+  /** Absolute path to the personal overlay. Defaults beside rulesPath. */
+  rulesOverlayPath?: string;
 };
 
 /**
@@ -202,6 +245,7 @@ export type TranscriptNormalizer = {
   /** Full SHA-256 fingerprints of the dictionary and rules loaded into this instance. */
   version: NormalizerPipelineVersion;
   pipelineSnapshot: NormalizerPipelineSnapshot;
+  rulesConfiguration: NormalizerRulesConfiguration;
   normalize: (input: string, options?: NormalizeRuntimeOptions) => Promise<NormalizationResult>;
 };
 
@@ -218,6 +262,7 @@ export async function createTranscriptNormalizer(
   return {
     version: pipeline.version,
     pipelineSnapshot: pipeline.snapshot,
+    rulesConfiguration: pipeline.rulesConfiguration,
     normalize: (input: string, runtimeOptions) =>
       runPipeline(input, pipeline.layers, runtimeOptions?.detailedTrace === true),
   };
@@ -248,11 +293,12 @@ async function buildPipeline(
   layers: NormalizationLayer[];
   version: NormalizerPipelineVersion;
   snapshot: NormalizerPipelineSnapshot;
+  rulesConfiguration: NormalizerRulesConfiguration;
 }> {
   // Load the dictionary and rules once per run so layer application is synchronous
   // and deterministic. Layer 3 will be appended to this array in a later issue.
   const dictionary = await loadDictionary(options.dictionaryPath);
-  const rules = await loadRules(options.rulesPath);
+  const rules = await loadRules(options.rulesPath, resolveRulesOverlayPath(options));
 
   const commandDefinitions = COMMANDS.map((command, index) => ({
     id: command.id,
@@ -279,6 +325,11 @@ async function buildPipeline(
     commandTableHash,
     rulesHash: rules.sourceHash,
     latexCanonicalizationContractVersion: LATEX_CANONICALIZATION_CONTRACT_VERSION,
+    bundledRulesVersion: rules.configuration.bundledVersion,
+    bundledRulesHash: rules.configuration.bundledHash,
+    rulesMode: rules.configuration.mode,
+    overlayHash: rules.configuration.overlayHash,
+    localRulesHash: rules.configuration.overlayHash ?? rules.configuration.legacyHash,
   };
 
   return {
@@ -289,7 +340,7 @@ async function buildPipeline(
     ],
     version,
     snapshot: {
-      schema_version: 1,
+      schema_version: 2,
       pipeline_contract_version: NORMALIZER_PIPELINE_CONTRACT_VERSION,
       semantic_version: NORMALIZER_PIPELINE_SEMANTIC_VERSION,
       dictionary: {
@@ -318,10 +369,21 @@ async function buildPipeline(
         })),
         ignored_rules: rules.ignored,
         diagnostics: rules.diagnostics,
+        bundled_version: rules.configuration.bundledVersion,
+        bundled_sha256: rules.configuration.bundledHash,
+        overlay_source_state: rules.configuration.overlayState,
+        overlay_sha256: rules.configuration.overlayHash,
+        legacy_source_sha256: rules.configuration.legacyHash,
+        configuration_mode: rules.configuration.mode,
       },
       latex_canonicalization_contract_version: LATEX_CANONICALIZATION_CONTRACT_VERSION,
     },
+    rulesConfiguration: rules.configuration,
   };
+}
+
+export function resolveRulesOverlayPath(options: NormalizeOptions): string {
+  return options.rulesOverlayPath ?? path.join(path.dirname(options.rulesPath), PERSONAL_RULES_OVERLAY_FILENAME);
 }
 
 /**
@@ -581,6 +643,21 @@ export type RuleEntry = {
   pattern: string;
   replacement: string;
   flags?: string;
+};
+
+export type BundledRuleDefinition = RuleEntry & {
+  /** Stable semantic identity. It never changes when the definition changes. */
+  id: string;
+  /** Explicit application order inside the bundled set. */
+  order: number;
+};
+
+export type PersonalRuleOverlay = {
+  version: typeof PERSONAL_RULES_OVERLAY_VERSION;
+  bundled_rules_version: number;
+  disabled_rule_ids: string[];
+  replacements: Array<RuleEntry & { rule_id: string }>;
+  personal_rules: Array<RuleEntry & { id: string; order: number }>;
 };
 
 type CompiledRule = {
@@ -898,6 +975,92 @@ export const DEFAULT_RULES: RuleEntry[] = [
   },
 ];
 
+/**
+ * These ids are intentionally hand-authored, not derived from a pattern,
+ * replacement or alias. A future edit to a definition must keep the same id so
+ * personal disable/replace directives continue to target it.
+ */
+const SPOKEN_ATOM_RULE_IDS = [
+  "spoken-atom-left-zero", "spoken-atom-left-un", "spoken-atom-left-deux",
+  "spoken-atom-left-trois", "spoken-atom-left-quatre", "spoken-atom-left-cinq",
+  "spoken-atom-left-six", "spoken-atom-left-sept", "spoken-atom-left-huit",
+  "spoken-atom-left-neuf", "spoken-atom-left-dix", "spoken-atom-left-onze",
+  "spoken-atom-left-douze", "spoken-atom-left-treize", "spoken-atom-left-quatorze",
+  "spoken-atom-left-quinze", "spoken-atom-left-seize", "spoken-atom-left-dix-sept",
+  "spoken-atom-left-dix-huit", "spoken-atom-left-dix-neuf", "spoken-atom-left-vingt",
+  "spoken-atom-left-theta", "spoken-atom-left-rho",
+  "spoken-atom-right-zero", "spoken-atom-right-un", "spoken-atom-right-deux",
+  "spoken-atom-right-trois", "spoken-atom-right-quatre", "spoken-atom-right-cinq",
+  "spoken-atom-right-six", "spoken-atom-right-sept", "spoken-atom-right-huit",
+  "spoken-atom-right-neuf", "spoken-atom-right-dix", "spoken-atom-right-onze",
+  "spoken-atom-right-douze", "spoken-atom-right-treize", "spoken-atom-right-quatorze",
+  "spoken-atom-right-quinze", "spoken-atom-right-seize", "spoken-atom-right-dix-sept",
+  "spoken-atom-right-dix-huit", "spoken-atom-right-dix-neuf", "spoken-atom-right-vingt",
+  "spoken-atom-right-theta", "spoken-atom-right-rho",
+] as const;
+
+/** Stable ids are deliberately separate from pattern/replacement content. */
+const DEFAULT_RULE_IDS = [
+  ...SPOKEN_ATOM_RULE_IDS,
+  "spoken-negative-left",
+  "spoken-negative-right",
+  "spoken-negative-function",
+  "power-square",
+  "power-cube",
+  "power-explicit",
+  "root-square",
+  "function-sine",
+  "function-cosine",
+  "function-natural-log",
+  "function-application",
+  "fraction-over",
+  "fraction-divided-by",
+  "multiply-by",
+  "multiply-times",
+  "addition",
+  "subtraction",
+  "equality",
+  "comparison-greater",
+  "comparison-less",
+] as const;
+
+if (DEFAULT_RULE_IDS.length !== DEFAULT_RULES.length) {
+  throw new Error("Bundled rule ids must stay aligned with the bundled rule definitions");
+}
+
+export const BUNDLED_RULES: BundledRuleDefinition[] = DEFAULT_RULES.map((rule, order) => ({
+  ...rule,
+  id: DEFAULT_RULE_IDS[order],
+  order,
+}));
+
+function buildHistoricalV1Rules(): RuleEntry[] {
+  const historicalOperand = "\\d+|\\p{L}";
+  const bare = (tag: string): string => `(?<p${tag}>${historicalOperand})`;
+  const any = (tag: string): string => `(?:\\$(?<i${tag}>[^$]+)\\$|(?<p${tag}>${historicalOperand}))`;
+  const bareRef = (tag: string): string => `$<p${tag}>`;
+  const anyRef = (tag: string): string => `$<i${tag}>$<p${tag}>`;
+  return [
+    { pattern: `${NOT_WORD_BEFORE}${bare("1")}\\s+au\\s+carr(?:é|ée)${NOT_WORD_AFTER}`, replacement: `$$${bareRef("1")}^{2}$$`, flags: "i" },
+    { pattern: `${NOT_WORD_BEFORE}${bare("1")}\\s+au\\s+cube${NOT_WORD_AFTER}`, replacement: `$$${bareRef("1")}^{3}$$`, flags: "i" },
+    { pattern: `${NOT_WORD_BEFORE}${bare("1")}\\s+puissance\\s+${bare("2")}${NOT_WORD_AFTER}`, replacement: `$$${bareRef("1")}^{${bareRef("2")}}$$`, flags: "i" },
+    { pattern: `${NOT_WORD_BEFORE}racine\\s+(?:carr(?:é|ée)\\s+)?de\\s+${bare("1")}${NOT_WORD_AFTER}`, replacement: `$$\\sqrt{${bareRef("1")}}$$`, flags: "i" },
+    { pattern: `${NOT_WORD_BEFORE}${any("1")}\\s+[ée]gale?\\s+${any("2")}${NOT_WORD_AFTER}`, replacement: `$$${anyRef("1")} = ${anyRef("2")}$$`, flags: "i" },
+    { pattern: `${NOT_WORD_BEFORE}${any("1")}\\s+plus\\s+grand\\s+que\\s+${any("2")}${NOT_WORD_AFTER}`, replacement: `$$${anyRef("1")} > ${anyRef("2")}$$`, flags: "i" },
+    { pattern: `${NOT_WORD_BEFORE}${any("1")}\\s+plus\\s+petit\\s+que\\s+${any("2")}${NOT_WORD_AFTER}`, replacement: `$$${anyRef("1")} < ${anyRef("2")}$$`, flags: "i" },
+    { pattern: `${NOT_WORD_BEFORE}${any("1")}\\s+plus\\s+${any("2")}${NOT_WORD_AFTER}`, replacement: `$$${anyRef("1")} + ${anyRef("2")}$$`, flags: "i" },
+    { pattern: `${NOT_WORD_BEFORE}${any("1")}\\s+moins\\s+${any("2")}${NOT_WORD_AFTER}`, replacement: `$$${anyRef("1")} - ${anyRef("2")}$$`, flags: "i" },
+    { pattern: `${NOT_WORD_BEFORE}${any("1")}\\s+fois\\s+${any("2")}${NOT_WORD_AFTER}`, replacement: `$$${anyRef("1")} \\times ${anyRef("2")}$$`, flags: "i" },
+    { pattern: `${NOT_WORD_BEFORE}${bare("1")}\\s+divis[ée]e?\\s+par\\s+${bare("2")}${NOT_WORD_AFTER}`, replacement: `$$\\frac{${bareRef("1")}}{${bareRef("2")}}$$`, flags: "i" },
+  ];
+}
+
+/** Complete normalized signatures of shipped legacy sets recognized by migration. */
+export const HISTORICAL_BUNDLED_RULE_SETS = [
+  { version: 1, rules: buildHistoricalV1Rules() },
+  { version: 2, rules: DEFAULT_RULES },
+] as const;
+
 // Bounds re-applying a single rule to its own output. A global replace only
 // finds non-overlapping matches in one pass, so "1 plus 2 plus 3" would
 // otherwise stop at "1 + 2 plus 3": the middle "2" is consumed as the first
@@ -945,6 +1108,272 @@ type RawRuleEntry = {
   flags?: unknown;
 };
 
+export type LegacyRuleClassification =
+  | { index: number; kind: "bundled"; rule: RuleEntry; bundledRuleId: string; historicalVersion: number }
+  | { index: number; kind: "personal"; rule: RuleEntry }
+  | { index: number; kind: "ambiguous"; rule: RuleEntry; candidateBundledRuleIds: string[] }
+  | { index: number; kind: "invalid"; rawJson: string; diagnostic: string };
+
+export type LegacyRulesAnalysis = {
+  validTopLevel: boolean;
+  legacyVersion: number | null;
+  classifications: LegacyRuleClassification[];
+  diagnostics: string[];
+};
+
+const HISTORICAL_V1_RULE_IDS = [
+  "power-square",
+  "power-cube",
+  "power-explicit",
+  "root-square",
+  "equality",
+  "comparison-greater",
+  "comparison-less",
+  "addition",
+  "subtraction",
+  "multiply-times",
+  "fraction-divided-by",
+] as const;
+
+function normalizedRuleSignature(rule: RuleEntry): string {
+  return JSON.stringify({
+    pattern: rule.pattern,
+    replacement: rule.replacement,
+    flags: compileRuleRegex(rule.pattern, rule.flags).flags,
+  });
+}
+
+function historicalRulesWithIds(): Array<{ version: number; id: string; rule: RuleEntry; signature: string }> {
+  return HISTORICAL_BUNDLED_RULE_SETS.flatMap((set) =>
+    set.rules.map((rule, index) => ({
+      version: set.version,
+      id: set.version === 1 ? HISTORICAL_V1_RULE_IDS[index]! : BUNDLED_RULES[index]!.id,
+      rule,
+      signature: normalizedRuleSignature(rule),
+    })),
+  );
+}
+
+/** Classifies a monolithic legacy rules source without dropping an entry. */
+export function analyzeLegacyRulesSource(contents: string): LegacyRulesAnalysis {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "parse error";
+    return { validTopLevel: false, legacyVersion: null, classifications: [], diagnostics: [`rules.json is not valid JSON (${message})`] };
+  }
+  if (!isRecord(parsed) || !Array.isArray(parsed.rules)) {
+    return {
+      validTopLevel: false,
+      legacyVersion: null,
+      classifications: [],
+      diagnostics: ['rules.json must be an object with a "rules" array'],
+    };
+  }
+
+  const history = historicalRulesWithIds();
+  const diagnostics: string[] = [];
+  const classifications = parsed.rules.map((rawRule, index): LegacyRuleClassification => {
+    const validated = validateRuleEntry(rawRule, index);
+    if (!validated.ok) {
+      diagnostics.push(validated.error);
+      return { index, kind: "invalid", rawJson: safeJson(rawRule), diagnostic: validated.error };
+    }
+    const rule = validated.rule;
+    const signature = normalizedRuleSignature(rule);
+    const exact = history.find((known) => known.signature === signature);
+    if (exact) {
+      return {
+        index,
+        kind: "bundled",
+        rule,
+        bundledRuleId: exact.id,
+        historicalVersion: exact.version,
+      };
+    }
+    const candidates = Array.from(new Set(history
+      .filter((known) => known.rule.pattern === rule.pattern || known.rule.replacement === rule.replacement)
+      .map((known) => known.id)));
+    if (candidates.length > 0) {
+      return { index, kind: "ambiguous", rule, candidateBundledRuleIds: candidates };
+    }
+    return { index, kind: "personal", rule };
+  });
+  return {
+    validTopLevel: true,
+    legacyVersion: Number.isInteger(parsed.version) ? (parsed.version as number) : null,
+    classifications,
+    diagnostics,
+  };
+}
+
+function validateRuleEntry(rawRule: unknown, index: number): { ok: true; rule: RuleEntry } | { ok: false; error: string } {
+  if (!isRecord(rawRule)) {
+    return { ok: false, error: `rule #${index + 1} is not an object` };
+  }
+  const { pattern, replacement, flags } = rawRule as RawRuleEntry;
+  if (typeof pattern !== "string" || pattern.length === 0) {
+    return { ok: false, error: `rule #${index + 1} has an empty or non-string "pattern"` };
+  }
+  if (typeof replacement !== "string") {
+    return { ok: false, error: `rule #${index + 1} has a non-string "replacement"` };
+  }
+  if (flags !== undefined && typeof flags !== "string") {
+    return { ok: false, error: `rule #${index + 1} has a non-string "flags"` };
+  }
+  try {
+    compileRuleRegex(pattern, flags);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid pattern";
+    return { ok: false, error: `rule #${index + 1} has an invalid regex (${message})` };
+  }
+  return { ok: true, rule: { pattern, replacement, ...(flags === undefined ? {} : { flags }) } };
+}
+
+function effectiveRulesHash(entries: readonly CompiledRule[]): string {
+  return hashNormalizerSource(JSON.stringify(entries.map((rule, order) => ({
+    id: rule.id,
+    order,
+    pattern: rule.pattern,
+    flags: rule.flags,
+    replacement: rule.replacement,
+  }))));
+}
+
+function parsePersonalRuleOverlay(contents: string): { overlay: PersonalRuleOverlay | null; diagnostics: string[] } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "parse error";
+    return { overlay: null, diagnostics: [`rules-overlay.json is not valid JSON (${message})`] };
+  }
+  if (!isRecord(parsed)) {
+    return { overlay: null, diagnostics: ["rules-overlay.json must be an object"] };
+  }
+  if (
+    parsed.version !== PERSONAL_RULES_OVERLAY_VERSION ||
+    !Number.isInteger(parsed.bundled_rules_version) ||
+    (parsed.bundled_rules_version as number) < 1 ||
+    !Array.isArray(parsed.disabled_rule_ids) ||
+    !Array.isArray(parsed.replacements) ||
+    !Array.isArray(parsed.personal_rules)
+  ) {
+    return {
+      overlay: null,
+      diagnostics: [
+        `rules-overlay.json must use version ${PERSONAL_RULES_OVERLAY_VERSION} with disabled_rule_ids, replacements and personal_rules arrays`,
+      ],
+    };
+  }
+
+  const bundledIds = new Set(BUNDLED_RULES.map((rule) => rule.id));
+  const diagnostics: string[] = [];
+  const disabled = parsed.disabled_rule_ids.filter((value): value is string => {
+    if (typeof value !== "string" || !bundledIds.has(value)) {
+      diagnostics.push(`disabled_rule_ids contains an unknown bundled rule id: ${safeJson(value)}`);
+      return false;
+    }
+    return true;
+  });
+  if (new Set(disabled).size !== disabled.length) {
+    diagnostics.push("disabled_rule_ids must not contain duplicates");
+  }
+
+  const replacementIds = new Set<string>();
+  const replacements: PersonalRuleOverlay["replacements"] = [];
+  parsed.replacements.forEach((value, index) => {
+    if (!isRecord(value) || typeof value.rule_id !== "string" || !bundledIds.has(value.rule_id)) {
+      diagnostics.push(`replacement #${index + 1} must target a known bundled rule_id`);
+      return;
+    }
+    if (replacementIds.has(value.rule_id)) {
+      diagnostics.push(`replacement rule_id ${value.rule_id} is duplicated`);
+      return;
+    }
+    const validated = validateRuleEntry(value, index);
+    if (!validated.ok) {
+      diagnostics.push(`replacement ${value.rule_id}: ${validated.error}`);
+      return;
+    }
+    replacementIds.add(value.rule_id);
+    replacements.push({ rule_id: value.rule_id, ...validated.rule });
+  });
+  for (const replacement of replacements) {
+    if (disabled.includes(replacement.rule_id)) {
+      diagnostics.push(`bundled rule id ${replacement.rule_id} cannot be both disabled and replaced`);
+    }
+  }
+
+  const personalIds = new Set<string>();
+  const personalRules: PersonalRuleOverlay["personal_rules"] = [];
+  parsed.personal_rules.forEach((value, index) => {
+    if (
+      !isRecord(value) || typeof value.id !== "string" || value.id.trim().length === 0 ||
+      !Number.isInteger(value.order) || (value.order as number) < 0
+    ) {
+      diagnostics.push(`personal rule #${index + 1} must have a non-empty id and non-negative integer order`);
+      return;
+    }
+    if (bundledIds.has(value.id) || personalIds.has(value.id)) {
+      diagnostics.push(`personal rule id ${value.id} must be unique and must not shadow a bundled id`);
+      return;
+    }
+    const validated = validateRuleEntry(value, index);
+    if (!validated.ok) {
+      diagnostics.push(`personal rule ${value.id}: ${validated.error}`);
+      return;
+    }
+    personalIds.add(value.id);
+    personalRules.push({ id: value.id, order: value.order as number, ...validated.rule });
+  });
+  if (new Set(personalRules.map((rule) => rule.order)).size !== personalRules.length) {
+    diagnostics.push("personal rule order values must be unique");
+  }
+  if (diagnostics.length > 0) {
+    return { overlay: null, diagnostics };
+  }
+  return {
+    overlay: {
+      version: PERSONAL_RULES_OVERLAY_VERSION,
+      bundled_rules_version: parsed.bundled_rules_version as number,
+      disabled_rule_ids: disabled,
+      replacements,
+      personal_rules: personalRules,
+    },
+    diagnostics: [],
+  };
+}
+
+function compileEffectiveOverlay(overlay: PersonalRuleOverlay): ReturnType<typeof compileRules> {
+  const disabled = new Set(overlay.disabled_rule_ids);
+  const replacements = new Map(overlay.replacements.map((rule) => [rule.rule_id, rule]));
+  const definitions: Array<RuleEntry & { id: string }> = BUNDLED_RULES
+    .filter((rule) => !disabled.has(rule.id))
+    .map((rule) => ({ id: rule.id, ...(replacements.get(rule.id) ?? rule) }));
+  for (const rule of [...overlay.personal_rules].sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))) {
+    definitions.push(rule);
+  }
+  return compileRules(definitions, definitions.map((rule) => rule.id));
+}
+
+export function inspectPersonalRuleOverlay(overlay: PersonalRuleOverlay): {
+  effectiveHash: string;
+  effectiveRuleCount: number;
+  personalRuleCount: number;
+} {
+  const compiled = compileEffectiveOverlay(overlay);
+  if (compiled.diagnostics.length > 0) {
+    throw new Error(compiled.diagnostics.join("; "));
+  }
+  return {
+    effectiveHash: effectiveRulesHash(compiled.entries),
+    effectiveRuleCount: compiled.entries.length,
+    personalRuleCount: overlay.personal_rules.length,
+  };
+}
+
 /**
  * Load and validate the regex rules file.
  *
@@ -959,6 +1388,7 @@ type RawRuleEntry = {
  */
 async function loadRules(
   rulesPath: string,
+  overlayPath: string,
 ): Promise<{
   entries: CompiledRule[];
   diagnostics: string[];
@@ -966,16 +1396,128 @@ async function loadRules(
   sourceHash: string;
   sourceState: NormalizerSourceState;
   sourceContent: string | null;
+  configuration: NormalizerRulesConfiguration;
 }> {
-  if (!existsSync(rulesPath)) {
-    const compiled = compileRules(DEFAULT_RULES);
+  const bundled = compileRules(BUNDLED_RULES, BUNDLED_RULES.map((rule) => rule.id));
+  const bundledHash = effectiveRulesHash(bundled.entries);
+  const baseConfiguration = {
+    bundledVersion: DEFAULT_RULES_CONFIG_VERSION,
+    bundledHash,
+    bundledRuleCount: BUNDLED_RULES.length,
+    overlayPath,
+    legacyPath: rulesPath,
+  };
+
+  if (existsSync(overlayPath)) {
+    let overlayContents: string;
+    try {
+      overlayContents = await readFile(overlayPath, { encoding: "utf8" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unreadable";
+      const diagnostics = [`rules-overlay.json could not be read (${message}); using bundled rules only`];
+      return {
+        ...bundled,
+        sourceHash: bundledHash,
+        sourceState: "unreadable",
+        sourceContent: null,
+        configuration: {
+          ...baseConfiguration,
+          mode: "overlay",
+          state: "invalid",
+          overlayState: "unreadable",
+          overlayHash: null,
+          legacyVersion: null,
+          legacyHash: existsSync(rulesPath) ? await hashReadableFile(rulesPath) : null,
+          personalRuleCount: 0,
+          effectiveRuleCount: bundled.entries.length,
+          effectiveHash: bundledHash,
+          recognizedBundledRuleCount: 0,
+          ambiguityCount: 0,
+          invalidRuleCount: 1,
+          warning: "The personal overlay is unreadable; bundled rules remain active.",
+          diagnostics,
+        },
+      };
+    }
+    const overlayHash = hashNormalizerSource(overlayContents);
+    const parsedOverlay = parsePersonalRuleOverlay(overlayContents);
+    if (!parsedOverlay.overlay) {
+      return {
+        ...bundled,
+        diagnostics: parsedOverlay.diagnostics,
+        ignored: parsedOverlay.diagnostics.map((diagnostic) => ({ index: null, raw_json: null, diagnostic })),
+        sourceHash: bundledHash,
+        sourceState: "invalid",
+        sourceContent: overlayContents,
+        configuration: {
+          ...baseConfiguration,
+          mode: "overlay",
+          state: "invalid",
+          overlayState: "invalid",
+          overlayHash,
+          legacyVersion: null,
+          legacyHash: existsSync(rulesPath) ? await hashReadableFile(rulesPath) : null,
+          personalRuleCount: 0,
+          effectiveRuleCount: bundled.entries.length,
+          effectiveHash: bundledHash,
+          recognizedBundledRuleCount: 0,
+          ambiguityCount: 0,
+          invalidRuleCount: parsedOverlay.diagnostics.length,
+          warning: "The personal overlay is invalid; bundled rules remain active.",
+          diagnostics: parsedOverlay.diagnostics,
+        },
+      };
+    }
+    const compiled = compileEffectiveOverlay(parsedOverlay.overlay);
+    const effectiveHash = effectiveRulesHash(compiled.entries);
     return {
       ...compiled,
-      sourceHash: hashNormalizerSource(
-        JSON.stringify({ version: DEFAULT_RULES_CONFIG_VERSION, rules: DEFAULT_RULES }),
-      ),
+      sourceHash: effectiveHash,
+      sourceState: "file",
+      sourceContent: overlayContents,
+      configuration: {
+        ...baseConfiguration,
+        mode: "overlay",
+        state: "current_overlay",
+        overlayState: "file",
+        overlayHash,
+        legacyVersion: null,
+        legacyHash: existsSync(rulesPath) ? await hashReadableFile(rulesPath) : null,
+        personalRuleCount: parsedOverlay.overlay.personal_rules.length,
+        effectiveRuleCount: compiled.entries.length,
+        effectiveHash,
+        recognizedBundledRuleCount: 0,
+        ambiguityCount: 0,
+        invalidRuleCount: 0,
+        warning: null,
+        diagnostics: compiled.diagnostics,
+      },
+    };
+  }
+
+  if (!existsSync(rulesPath)) {
+    return {
+      ...bundled,
+      sourceHash: bundledHash,
       sourceState: "default_absent",
       sourceContent: null,
+      configuration: {
+        ...baseConfiguration,
+        mode: "bundled",
+        state: "bundled",
+        overlayState: "absent",
+        overlayHash: null,
+        legacyVersion: null,
+        legacyHash: null,
+        personalRuleCount: 0,
+        effectiveRuleCount: bundled.entries.length,
+        effectiveHash: bundledHash,
+        recognizedBundledRuleCount: 0,
+        ambiguityCount: 0,
+        invalidRuleCount: 0,
+        warning: null,
+        diagnostics: bundled.diagnostics,
+      },
     };
   }
 
@@ -991,6 +1533,23 @@ async function loadRules(
       sourceHash: hashNormalizerSource(UNREADABLE_RULES_SOURCE),
       sourceState: "unreadable",
       sourceContent: null,
+      configuration: {
+        ...baseConfiguration,
+        mode: "legacy",
+        state: "invalid",
+        overlayState: "absent",
+        overlayHash: null,
+        legacyVersion: null,
+        legacyHash: null,
+        personalRuleCount: 0,
+        effectiveRuleCount: 0,
+        effectiveHash: hashNormalizerSource(UNREADABLE_RULES_SOURCE),
+        recognizedBundledRuleCount: 0,
+        ambiguityCount: 0,
+        invalidRuleCount: 1,
+        warning: "The legacy rules file is unreadable.",
+        diagnostics: [`rules.json could not be read (${message})`],
+      },
     };
   }
   const sourceHash = hashNormalizerSource(contents);
@@ -1007,6 +1566,7 @@ async function loadRules(
       sourceHash,
       sourceState: "invalid",
       sourceContent: contents,
+      configuration: legacyConfiguration(baseConfiguration, contents, sourceHash, null, [], [message]),
     };
   }
 
@@ -1022,18 +1582,87 @@ async function loadRules(
       sourceHash,
       sourceState: "invalid",
       sourceContent: contents,
+      configuration: legacyConfiguration(baseConfiguration, contents, sourceHash, null, [], ['rules.json must be an object with a "rules" array']),
     };
   }
-
+  const compiled = compileRules(parsed.rules as unknown[]);
+  const analysis = analyzeLegacyRulesSource(contents);
+  const effectiveHash = effectiveRulesHash(compiled.entries);
   return {
-    ...compileRules(parsed.rules as unknown[]),
-    sourceHash,
+    ...compiled,
+    sourceHash: effectiveHash,
     sourceState: "file",
     sourceContent: contents,
+    configuration: legacyConfiguration(
+      baseConfiguration,
+      contents,
+      sourceHash,
+      Number.isInteger(parsed.version) ? (parsed.version as number) : null,
+      analysis.classifications,
+      compiled.diagnostics,
+      effectiveHash,
+      compiled.entries.length,
+    ),
+  };
+}
+
+async function hashReadableFile(filePath: string): Promise<string | null> {
+  try {
+    return hashNormalizerSource(await readFile(filePath, { encoding: "utf8" }));
+  } catch {
+    return null;
+  }
+}
+
+function legacyConfiguration(
+  base: Pick<NormalizerRulesConfiguration, "bundledVersion" | "bundledHash" | "bundledRuleCount" | "overlayPath" | "legacyPath">,
+  _contents: string,
+  legacyHash: string,
+  legacyVersion: number | null,
+  classifications: LegacyRuleClassification[],
+  diagnostics: string[],
+  effectiveHash = legacyHash,
+  effectiveRuleCount = 0,
+): NormalizerRulesConfiguration {
+  const recognizedBundledRuleCount = classifications.filter((entry) => entry.kind === "bundled").length;
+  const personalRuleCount = classifications.filter((entry) => entry.kind === "personal").length;
+  const ambiguityCount = classifications.filter((entry) => entry.kind === "ambiguous").length;
+  const invalidRuleCount = classifications.filter((entry) => entry.kind === "invalid").length + (classifications.length === 0 && diagnostics.length > 0 ? 1 : 0);
+  const state: NormalizerRulesConfigurationState = invalidRuleCount > 0
+    ? "invalid"
+    : ambiguityCount > 0
+      ? "ambiguous"
+      : "migration_required";
+  return {
+    ...base,
+    mode: "legacy",
+    state,
+    overlayState: "absent",
+    overlayHash: null,
+    legacyVersion,
+    legacyHash,
+    personalRuleCount,
+    effectiveRuleCount,
+    effectiveHash,
+    recognizedBundledRuleCount,
+    ambiguityCount,
+    invalidRuleCount,
+    warning: `Legacy rules.json is active and masks bundled rules v${DEFAULT_RULES_CONFIG_VERSION}.`,
+    diagnostics,
   };
 }
 
 function compileRules(rawRules: readonly unknown[]): {
+  entries: CompiledRule[];
+  diagnostics: string[];
+  ignored: NormalizerIgnoredDefinition[];
+};
+function compileRules(rawRules: readonly unknown[], stableIds?: readonly (string | undefined)[]): {
+  entries: CompiledRule[];
+  diagnostics: string[];
+  ignored: NormalizerIgnoredDefinition[];
+};
+function compileRules(rawRules: readonly unknown[], stableIds?: readonly (string | undefined)[]): {
   entries: CompiledRule[];
   diagnostics: string[];
   ignored: NormalizerIgnoredDefinition[];
@@ -1077,7 +1706,7 @@ function compileRules(rawRules: readonly unknown[]): {
       const regex = compileRuleRegex(pattern, flags);
       const normalizedFlags = regex.flags;
       entries.push({
-        id: stableDefinitionId("regex", { pattern, flags: normalizedFlags, replacement }, usedIds),
+        id: stableIds?.[index] ?? stableDefinitionId("regex", { pattern, flags: normalizedFlags, replacement }, usedIds),
         regex,
         pattern,
         flags: normalizedFlags,

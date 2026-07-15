@@ -13,6 +13,7 @@ import {
   type BenchmarkRunFinishedEvent,
   type BenchmarkRunStartedEvent,
   type LocalEvent,
+  type NormalizerRulesConfiguration,
   type NormalizerBenchmarkCandidate,
   type SttBenchmarkSetProgress,
   type SttBenchmarkSetSplit,
@@ -25,6 +26,7 @@ export type NormalizerBenchmarkSetPreview = {
   evaluableSegments: number;
   scorableSegments: number;
   candidate: NormalizerBenchmarkCandidate;
+  rulesConfiguration: NormalizerRulesConfiguration;
 };
 
 export type NormalizerBenchmarkRunRequest = {
@@ -56,6 +58,7 @@ export function buildNormalizerBenchmarkSetPreview(
     evaluableSegments: snapshot.length,
     scorableSegments: snapshot.length,
     candidate: buildNormalizerBenchmarkCandidate(normalizer.version),
+    rulesConfiguration: normalizer.rulesConfiguration,
   };
 }
 

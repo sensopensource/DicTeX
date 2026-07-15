@@ -14,6 +14,10 @@ import type {
   SttBenchmarkRunDetail,
   SttBenchmarkRunExportSummary,
   NormalizerBenchmarkRunExportSummary,
+  LegacyRuleResolution,
+  LegacyRulesMigrationPreview,
+  RulesMigrationReceipt,
+  RulesMigrationConfirmation,
   SttBenchmarkSetMembershipRequest,
   SttBenchmarkSetMembershipResponse,
   SttBenchmarkSetPreview,
@@ -129,6 +133,8 @@ type LabApi = {
     split: SttBenchmarkSetSplit,
     candidate: BenchmarkCandidateIdentity,
   ) => Promise<NormalizerBenchmarkRunResponse>;
+  previewRulesMigration: (resolutions?: LegacyRuleResolution[]) => Promise<LegacyRulesMigrationPreview>;
+  migrateRules: (confirmation: RulesMigrationConfirmation) => Promise<RulesMigrationReceipt>;
   getBenchmarkRunDetail: (
     runId: string,
   ) => Promise<SttBenchmarkRunDetail | BenchmarkMathTransformRunProjection | null>;
@@ -146,6 +152,7 @@ type LabApi = {
   createSttPromptVariant: (request: SttPromptVariantCreateRequest) => Promise<SttPromptVariantListEntry>;
   openLabDataFolder: () => Promise<boolean>;
   openSourceDataFolder: () => Promise<boolean>;
+  openSourceRulesFolder: () => Promise<boolean>;
   openLabEventsLog: () => Promise<boolean>;
   onBatchBenchmarkProgress: (callback: (progress: SttBenchmarkSetProgress) => void) => () => void;
 };
@@ -163,6 +170,17 @@ function formatRunOption(run: BenchmarkRunListEntry): string {
   const status = run.finished ? `${run.done ?? 0} done / ${run.failed ?? 0} failed` : "unfinished";
   const stage = run.stage === "math_transform" ? "Normalizer" : "STT";
   return `${when} · ${stage} · ${run.snapshotSize} member${run.snapshotSize === 1 ? "" : "s"} · ${status}`;
+}
+
+function formatRulesConfigurationState(state: NormalizerBenchmarkSetPreview["rulesConfiguration"]["state"]): string {
+  return {
+    bundled: "Bundled",
+    current_overlay: "Current overlay",
+    legacy_file: "Legacy file",
+    migration_required: "Migration required",
+    ambiguous: "Ambiguous",
+    invalid: "Invalid",
+  }[state];
 }
 
 /**
@@ -255,6 +273,11 @@ function App(): React.ReactElement {
   const [launchProgress, setLaunchProgress] = useState<SttBenchmarkSetProgress | null>(null);
   const [launchError, setLaunchError] = useState("");
   const [isRunningExperiment, setIsRunningExperiment] = useState(false);
+  const [rulesMigrationPreview, setRulesMigrationPreview] = useState<LegacyRulesMigrationPreview | null>(null);
+  const [rulesMigrationResolutions, setRulesMigrationResolutions] = useState<LegacyRuleResolution[]>([]);
+  const [rulesMigrationReceipt, setRulesMigrationReceipt] = useState<RulesMigrationReceipt | null>(null);
+  const [rulesMigrationError, setRulesMigrationError] = useState("");
+  const [isMigratingRules, setIsMigratingRules] = useState(false);
 
   // Results: one immutable run at a time (issue #138). The split here is a
   // browse filter over the run list — it never drives a launch, so changing it
@@ -742,6 +765,68 @@ function App(): React.ReactElement {
     setRunExportError("");
   }
 
+  async function reviewRulesMigration(): Promise<void> {
+    setRulesMigrationError("");
+    setRulesMigrationReceipt(null);
+    setRulesMigrationResolutions([]);
+    try {
+      setRulesMigrationPreview(await window.dictexLab.previewRulesMigration([]));
+    } catch (error) {
+      setRulesMigrationPreview(null);
+      setRulesMigrationError(error instanceof Error ? error.message : "Could not inspect legacy rules");
+    }
+  }
+
+  async function resolveAmbiguousRule(index: number, value: string): Promise<void> {
+    const next = rulesMigrationResolutions.filter((resolution) => resolution.index !== index);
+    if (value === "keep_personal") {
+      next.push({ index, action: "keep_personal" });
+    } else if (value.startsWith("replace:")) {
+      next.push({ index, action: "replace_bundled", bundledRuleId: value.slice("replace:".length) });
+    }
+    setRulesMigrationResolutions(next);
+    setRulesMigrationError("");
+    try {
+      setRulesMigrationPreview(await window.dictexLab.previewRulesMigration(next));
+    } catch (error) {
+      setRulesMigrationError(error instanceof Error ? error.message : "Could not update the migration preview");
+    }
+  }
+
+  async function confirmRulesMigration(): Promise<void> {
+    if (rulesMigrationPreview?.state !== "ready") {
+      return;
+    }
+    if (!window.confirm("Create a timestamped backup and activate the reviewed personal overlay?")) {
+      return;
+    }
+    setRulesMigrationError("");
+    setIsMigratingRules(true);
+    try {
+      const receipt = await window.dictexLab.migrateRules({
+        resolutions: rulesMigrationResolutions,
+        expectedLegacyHash: rulesMigrationPreview.legacyHash,
+        expectedEffectiveHash: rulesMigrationPreview.expectedEffectiveHash!,
+      });
+      setRulesMigrationReceipt(receipt);
+      setRulesMigrationPreview(null);
+      const refreshed = await window.dictexLab.previewNormalizerBenchmarkSet(experimentSplit);
+      setSetPreview(refreshed);
+    } catch (error) {
+      setRulesMigrationError(error instanceof Error ? error.message : "Rules migration failed");
+    } finally {
+      setIsMigratingRules(false);
+    }
+  }
+
+  async function openRulesFolder(): Promise<void> {
+    try {
+      await window.dictexLab.openSourceRulesFolder();
+    } catch {
+      // Non-fatal convenience.
+    }
+  }
+
   /**
    * Launches the announced protocol, then follows the run it created: the new
    * run becomes the selected result and the Lab moves to Results. The launch
@@ -1007,6 +1092,14 @@ function App(): React.ReactElement {
           isCreatingPromptVariant={isCreatingPromptVariant}
           createPromptVariantError={createPromptVariantError}
           createPromptVariant={createPromptVariant}
+          rulesMigrationPreview={rulesMigrationPreview}
+          rulesMigrationReceipt={rulesMigrationReceipt}
+          rulesMigrationError={rulesMigrationError}
+          isMigratingRules={isMigratingRules}
+          reviewRulesMigration={() => void reviewRulesMigration()}
+          resolveAmbiguousRule={(index, value) => void resolveAmbiguousRule(index, value)}
+          confirmRulesMigration={() => void confirmRulesMigration()}
+          openRulesFolder={() => void openRulesFolder()}
           onNavigate={setView}
         />
       </main>
@@ -1941,6 +2034,14 @@ type ExperimentsViewProps = {
   createPromptVariantError: string;
   /** Resolves to whether creation succeeded, so the inline form collapses only then. */
   createPromptVariant: () => Promise<boolean>;
+  rulesMigrationPreview: LegacyRulesMigrationPreview | null;
+  rulesMigrationReceipt: RulesMigrationReceipt | null;
+  rulesMigrationError: string;
+  isMigratingRules: boolean;
+  reviewRulesMigration: () => void;
+  resolveAmbiguousRule: (index: number, value: string) => void;
+  confirmRulesMigration: () => void;
+  openRulesFolder: () => void;
   onNavigate: (view: View) => void;
 };
 
@@ -1976,6 +2077,14 @@ function ExperimentsView({
   isCreatingPromptVariant,
   createPromptVariantError,
   createPromptVariant,
+  rulesMigrationPreview,
+  rulesMigrationReceipt,
+  rulesMigrationError,
+  isMigratingRules,
+  reviewRulesMigration,
+  resolveAmbiguousRule,
+  confirmRulesMigration,
+  openRulesFolder,
   onNavigate,
 }: ExperimentsViewProps): React.ReactElement {
   const normalizerPreview = preview?.stage === "math_transform" ? preview : null;
@@ -2085,14 +2194,119 @@ function ExperimentsView({
                   <code>{formatCandidateIdentity(normalizerPreview.candidate.candidate)}</code>
                   <dl className="normalizer-version">
                     <div>
+                      <dt>Rules state</dt>
+                      <dd>
+                        <span className={`rules-state rules-state-${normalizerPreview.rulesConfiguration.state}`}>
+                          {formatRulesConfigurationState(normalizerPreview.rulesConfiguration.state)}
+                        </span>
+                        {normalizerPreview.rulesConfiguration.mode === "legacy" && (
+                          <span className="rules-state rules-state-legacy">Legacy file</span>
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Bundled rules</dt>
+                      <dd>v{normalizerPreview.rulesConfiguration.bundledVersion} · {normalizerPreview.rulesConfiguration.bundledRuleCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Bundled rules SHA-256</dt>
+                      <dd><code>{normalizerPreview.rulesConfiguration.bundledHash}</code></dd>
+                    </div>
+                    {normalizerPreview.rulesConfiguration.legacyHash && (
+                      <div>
+                        <dt>Legacy local source</dt>
+                        <dd>v{normalizerPreview.rulesConfiguration.legacyVersion ?? "?"} · <code>{normalizerPreview.rulesConfiguration.legacyHash}</code></dd>
+                      </div>
+                    )}
+                    {normalizerPreview.rulesConfiguration.overlayHash && (
+                      <div>
+                        <dt>Personal overlay SHA-256</dt>
+                        <dd><code>{normalizerPreview.rulesConfiguration.overlayHash}</code></dd>
+                      </div>
+                    )}
+                    <div>
+                      <dt>Personal rules</dt>
+                      <dd>{normalizerPreview.rulesConfiguration.personalRuleCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Effective rules</dt>
+                      <dd>{normalizerPreview.rulesConfiguration.effectiveRuleCount}</dd>
+                    </div>
+                    <div>
                       <dt>Dictionary SHA-256</dt>
                       <dd><code>{normalizerPreview.candidate.version.dictionaryHash}</code></dd>
                     </div>
                     <div>
-                      <dt>Rules SHA-256</dt>
-                      <dd><code>{normalizerPreview.candidate.version.rulesHash}</code></dd>
+                      <dt>Effective rules SHA-256</dt>
+                      <dd><code>{normalizerPreview.rulesConfiguration.effectiveHash}</code></dd>
                     </div>
                   </dl>
+                  {normalizerPreview.rulesConfiguration.warning && (
+                    <p className="rules-warning">
+                      {normalizerPreview.rulesConfiguration.warning} A run is still allowed as a reproducible legacy baseline,
+                      but it does not use the current bundled rules.
+                    </p>
+                  )}
+                  <div className="rules-actions">
+                    {normalizerPreview.rulesConfiguration.mode === "legacy" && (
+                      <button className="secondary-button" disabled={isRunning || isMigratingRules} onClick={reviewRulesMigration}>
+                        Review migration
+                      </button>
+                    )}
+                    <button className="secondary-button" onClick={openRulesFolder}>Open rules folder</button>
+                  </div>
+                  {rulesMigrationError && <pre className="error">{rulesMigrationError}</pre>}
+                  {rulesMigrationPreview && (
+                    <section className="rules-migration-preview" aria-label="Rules migration preview">
+                      <h4>Migration preview</h4>
+                      <dl className="protocol-summary protocol-summary-wide">
+                        <div><dt>Local legacy</dt><dd>v{rulesMigrationPreview.legacyVersion ?? "?"} · <code>{rulesMigrationPreview.legacyHash}</code></dd></div>
+                        <div><dt>Bundled target</dt><dd>v{rulesMigrationPreview.bundledVersion} · {rulesMigrationPreview.bundledRuleCount} rules</dd></div>
+                        <div><dt>Recognized shipped copies</dt><dd>{rulesMigrationPreview.recognizedBundledRules.length}</dd></div>
+                        <div><dt>Personal rules kept</dt><dd>{rulesMigrationPreview.personalRules.length}</dd></div>
+                        <div><dt>Ambiguities</dt><dd>{rulesMigrationPreview.ambiguities.length}</dd></div>
+                        <div><dt>Invalid rules</dt><dd>{rulesMigrationPreview.invalidRules.length}</dd></div>
+                        <div><dt>Expected effective SHA-256</dt><dd><code>{rulesMigrationPreview.expectedEffectiveHash ?? "Resolve issues first"}</code></dd></div>
+                      </dl>
+                      {rulesMigrationPreview.ambiguities.map((ambiguity) => {
+                        const value = ambiguity.resolution?.action === "keep_personal"
+                          ? "keep_personal"
+                          : ambiguity.resolution?.action === "replace_bundled"
+                            ? `replace:${ambiguity.resolution.bundledRuleId}`
+                            : "";
+                        return (
+                          <label className="rules-ambiguity" key={ambiguity.index}>
+                            <span>Rule #{ambiguity.index + 1}: <code>{ambiguity.rule.pattern}</code></span>
+                            <select value={value} onChange={(event) => resolveAmbiguousRule(ambiguity.index, event.target.value)}>
+                              <option value="">Choose explicitly…</option>
+                              <option value="keep_personal">Keep personal and disable suggested bundled matches</option>
+                              {ambiguity.candidateBundledRuleIds.map((id) => (
+                                <option value={`replace:${id}`} key={id}>Replace bundled rule {id}</option>
+                              ))}
+                            </select>
+                          </label>
+                        );
+                      })}
+                      {rulesMigrationPreview.invalidRules.map((invalid) => (
+                        <p className="rules-warning" key={invalid.index}>Rule #{invalid.index + 1}: {invalid.diagnostic}</p>
+                      ))}
+                      <button
+                        className="primary-button"
+                        disabled={rulesMigrationPreview.state !== "ready" || isMigratingRules}
+                        onClick={confirmRulesMigration}
+                      >
+                        {isMigratingRules ? "Migrating…" : "Confirm migration"}
+                      </button>
+                    </section>
+                  )}
+                  {rulesMigrationReceipt && (
+                    <section className="notice rules-migration-receipt">
+                      <strong>Migration complete.</strong>
+                      <span>Backup: <code>{rulesMigrationReceipt.backup_path}</code></span>
+                      <span>Overlay SHA-256: <code>{rulesMigrationReceipt.overlay_sha256}</code></span>
+                      <span>Effective SHA-256: <code>{rulesMigrationReceipt.effective_sha256}</code></span>
+                    </section>
+                  )}
                 </article>
               ) : (
                 <p className="empty-state">Reading the current deterministic pipeline…</p>
@@ -2202,7 +2416,11 @@ function ExperimentsView({
             </div>
             <div className="actions">
               <button className="secondary-button" disabled={!launchPlan.canLaunch} onClick={launchExperiment}>
-                {isRunning ? "Running" : "Run experiment"}
+                {isRunning
+                  ? "Running"
+                  : normalizerPreview?.rulesConfiguration.mode === "legacy"
+                    ? "Run legacy baseline"
+                    : "Run experiment"}
               </button>
               {launchPlan.blockedReason && <span className="experiment-step-note">{launchPlan.blockedReason}</span>}
             </div>
@@ -2481,9 +2699,27 @@ function NormalizerRunResults({
                   <dd><code>{version.dictionaryHash}</code></dd>
                 </div>
                 <div>
-                  <dt>Rules SHA-256</dt>
+                  <dt>Effective rules SHA-256</dt>
                   <dd><code>{version.rulesHash}</code></dd>
                 </div>
+                {version.rulesMode && (
+                  <div>
+                    <dt>Rules source</dt>
+                    <dd>{version.rulesMode === "legacy" ? "Legacy local file" : version.rulesMode === "overlay" ? "Current personal overlay" : "Bundled"}</dd>
+                  </div>
+                )}
+                {version.bundledRulesVersion !== undefined && (
+                  <div>
+                    <dt>Bundled rules</dt>
+                    <dd>v{version.bundledRulesVersion} · <code>{version.bundledRulesHash}</code></dd>
+                  </div>
+                )}
+                {version.localRulesHash && (
+                  <div>
+                    <dt>Local rules SHA-256</dt>
+                    <dd><code>{version.localRulesHash}</code></dd>
+                  </div>
+                )}
               </dl>
             )}
           </div>
