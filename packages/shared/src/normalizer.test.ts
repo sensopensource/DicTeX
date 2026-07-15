@@ -3,7 +3,14 @@ import path from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { createTranscriptNormalizer, normalizeTranscript, type NormalizeOptions } from "./normalizer.js";
+import {
+  createTranscriptNormalizer,
+  DEFAULT_RULES,
+  DEFAULT_RULES_CONFIG_VERSION,
+  NORMALIZER_PIPELINE_SEMANTIC_VERSION,
+  normalizeTranscript,
+  type NormalizeOptions,
+} from "./normalizer.js";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { canonicalizeLatex } from "./latex.js";
 
@@ -53,6 +60,15 @@ const RULE_CASES: { name: string; input: string; expected: string }[] = [
   // Digit operands, not just letters.
   { name: "plus, digit operands", input: "2 plus 3", expected: "$2 + 3$" },
   { name: "divisé par, digit operands", input: "12 divisé par 4", expected: "$\\frac{12}{4}$" },
+  { name: "sur", input: "1 sur x", expected: "$\\frac{1}{x}$" },
+  { name: "multiplié par", input: "x multiplié par y", expected: "$x \\times y$" },
+  { name: "multipliée par", input: "x multipliée par y", expected: "$x \\times y$" },
+  { name: "supérieur à", input: "x supérieur à 0", expected: "$x > 0$" },
+  { name: "inférieur à", input: "x inférieur à 0", expected: "$x < 0$" },
+  { name: "sinus de", input: "sinus de x", expected: "$\\sin(x)$" },
+  { name: "cosinus de", input: "cosinus de x", expected: "$\\cos(x)$" },
+  { name: "logarithme naturel de", input: "logarithme naturel de x", expected: "$\\ln(x)$" },
+  { name: "function application", input: "f de x", expected: "$f(x)$" },
 ];
 
 for (const { name, input, expected } of RULE_CASES) {
@@ -109,16 +125,89 @@ test("bracing rules do not compose with an already-wrapped operand: divisé par"
   assert.equal(output, "a divisé par $x^{2}$");
 });
 
-test("bracing rules only ever see a single-token operand: 'a divisé par b plus un'", async () => {
-  // Matches the issue's own worked example: "divisé par" needs BOTH operands to
-  // be a single digit/letter, and "un" (spelled out) is two letters, not one —
-  // so "un" can never join the denominator. What DOES happen is the flat
-  // "divisé par" pattern still finds its own two single-token operands ("a",
-  // "b") earlier in the string and fires on just that span, leaving "plus un"
-  // as untouched prose beside it — the regex never attempts (and cannot
-  // attempt) the grouping that would be needed for "a / (b+1)".
+test("bracing rules keep atomic scope when a word-number operation follows", async () => {
+  // The new word-number atom makes the trailing addition recognizable, but the
+  // bracing fraction still consumes only "a" and "b". It therefore produces
+  // (a / b) + 1, never the unrequested a / (b + 1) grouping.
   const output = await regexLayerOutput("a divisé par b plus un");
-  assert.equal(output, "$\\frac{a}{b}$ plus un");
+  assert.equal(output, "$\\frac{a}{b} + 1$");
+  assert.equal(canonicalizeLatex(output), output);
+});
+
+// ── Issue #148: atomic aliases, local composition, and prose safety ──────────
+test("fractions are constructed before equality", async () => {
+  const output = await regexLayerOutput("v égal d sur t");
+  assert.equal(output, "$v = \\frac{d}{t}$");
+  assert.equal(canonicalizeLatex(output), output);
+});
+
+test("the acceptance examples compose without changing surrounding prose", async () => {
+  const cases = [
+    ["un sur x", "$\\frac{1}{x}$"],
+    ["un sur deux", "$\\frac{1}{2}$"],
+    ["x multiplié par y", "$x \\times y$"],
+    ["x supérieur à zéro", "$x > 0$"],
+    ["x inférieur à zéro", "$x < 0$"],
+    ["sinus de x", "$\\sin(x)$"],
+    ["cosinus de theta", "$\\cos(\\theta)$"],
+    ["logarithme naturel de x", "$\\ln(x)$"],
+    ["f de x", "$f(x)$"],
+    ["la masse est égale à rho multiplié par v", "la masse est égale à $\\rho \\times v$"],
+    [
+      "pour x supérieur à zéro la fonction est logarithme naturel de x",
+      "pour $x > 0$ la fonction est $\\ln(x)$",
+    ],
+  ] as const;
+
+  for (const [input, expected] of cases) {
+    const output = await regexLayerOutput(input);
+    assert.equal(output, expected, input);
+    assert.equal(canonicalizeLatex(output), output, input);
+    assert.doesNotMatch(output, /[\uE000-\uE00F]/u, input);
+  }
+});
+
+test("French number words zero through twenty normalize only as math operands", async () => {
+  const numbers = [
+    ["zéro", "0"], ["un", "1"], ["deux", "2"], ["trois", "3"], ["quatre", "4"],
+    ["cinq", "5"], ["six", "6"], ["sept", "7"], ["huit", "8"], ["neuf", "9"],
+    ["dix", "10"], ["onze", "11"], ["douze", "12"], ["treize", "13"],
+    ["quatorze", "14"], ["quinze", "15"], ["seize", "16"], ["dix-sept", "17"],
+    ["dix-huit", "18"], ["dix-neuf", "19"], ["vingt", "20"],
+  ] as const;
+
+  for (const [spoken, digit] of numbers) {
+    assert.equal(await regexLayerOutput(`x plus ${spoken}`), `$x + ${digit}$`, spoken);
+    assert.equal(await regexLayerOutput(`il reste ${spoken} exemples`), `il reste ${spoken} exemples`, spoken);
+  }
+});
+
+test("unary moins is converted only when the signed number is consumed as an operand", async () => {
+  assert.equal(await regexLayerOutput("x supérieur à moins trois"), "$x > -3$");
+  assert.equal(await regexLayerOutput("moins trois sur x"), "$\\frac{-3}{x}$");
+  assert.equal(await regexLayerOutput("sinus de moins trois"), "$\\sin(-3)$");
+  assert.equal(await regexLayerOutput("il reste moins trois minutes"), "il reste moins trois minutes");
+  assert.equal(await regexLayerOutput("moins trois"), "moins trois");
+});
+
+test("Greek names stay literal outside recognized atomic math constructs", async () => {
+  assert.equal(await regexLayerOutput("theta et rho sont des noms"), "theta et rho sont des noms");
+  assert.equal(await regexLayerOutput("theta plus rho"), "$\\theta + \\rho$");
+});
+
+test("new atomic conversions keep ordered, versioned regex traces", async () => {
+  const normalizer = await createTranscriptNormalizer(ABSENT_CONFIG);
+  const result = await normalizer.normalize("x supérieur à zéro", { detailedTrace: true });
+  assert.equal(result.output, "$x > 0$");
+
+  const regexOperations = result.operations?.filter((operation) => operation.operation === "regex") ?? [];
+  assert.ok(regexOperations.length >= 2, "the contextual number conversion and comparison are both traced");
+  const effectiveIds = new Set(
+    normalizer.pipelineSnapshot.regex_rules.effective_rules.map((rule) => rule.id),
+  );
+  assert.equal(regexOperations.every((operation) => effectiveIds.has(operation.definition_id)), true);
+  assert.equal(normalizer.pipelineSnapshot.semantic_version, NORMALIZER_PIPELINE_SEMANTIC_VERSION);
+  assert.doesNotMatch(JSON.stringify(result), /[\uE000-\uE00F]/u);
 });
 
 // ── Prose guards are unaffected by the LaTeX rewrite ─────────────────────────
@@ -179,6 +268,37 @@ test("pipeline snapshot distinguishes invalid and unreadable sources without reb
     assert.equal(normalizer.pipelineSnapshot.regex_rules.effective_rules.length, 0);
     assert.match(normalizer.pipelineSnapshot.dictionary.sha256, /^[0-9a-f]{64}$/);
     assert.match(normalizer.pipelineSnapshot.regex_rules.sha256, /^[0-9a-f]{64}$/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("an existing rules.json is never overwritten and can be migrated by explicit merge", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "dictex-rules-migration-"));
+  try {
+    const dictionaryPath = path.join(directory, "dictionary.json");
+    const rulesPath = path.join(directory, "rules.json");
+    const personalRule = { pattern: "\\bbonjour\\b", replacement: "salut", flags: "i" };
+    const legacySource = JSON.stringify({ version: 1, rules: [personalRule] }, null, 2);
+    writeFileSync(rulesPath, legacySource, "utf8");
+
+    const legacy = await createTranscriptNormalizer({ dictionaryPath, rulesPath });
+    assert.equal((await legacy.normalize("bonjour et un sur x")).output, "salut et un sur x");
+    assert.equal(legacy.pipelineSnapshot.regex_rules.source_content, legacySource);
+    assert.equal(legacy.pipelineSnapshot.regex_rules.effective_rules.length, 1);
+
+    const migratedSource = JSON.stringify(
+      { version: DEFAULT_RULES_CONFIG_VERSION, rules: [...DEFAULT_RULES, personalRule] },
+      null,
+      2,
+    );
+    writeFileSync(rulesPath, migratedSource, "utf8");
+    const migrated = await createTranscriptNormalizer({ dictionaryPath, rulesPath });
+    assert.equal((await migrated.normalize("bonjour et un sur x")).output, "salut et $\\frac{1}{x}$");
+    assert.equal(migrated.pipelineSnapshot.regex_rules.source_content, migratedSource);
+    assert.equal(migrated.pipelineSnapshot.regex_rules.effective_rules.length, DEFAULT_RULES.length + 1);
+    assert.notEqual(migrated.version.rulesHash, legacy.version.rulesHash);
+    assert.equal(migrated.version.semanticVersion, NORMALIZER_PIPELINE_SEMANTIC_VERSION);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

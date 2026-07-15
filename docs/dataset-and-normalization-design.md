@@ -381,21 +381,25 @@ No, and the question mistakes what the `math_transform` dataset is for.
 
 ### The regex layer is structurally bounded
 
-Layer 2's operand is a single token (`packages/shared/src/normalizer.ts`):
+Depuis #148, un opérande atomique de couche 2 est un entier signé ou non, une
+seule lettre, ou l'un des noms grecs explicitement convertis en LaTeX (`theta`
+et `rho`). Les nombres français simples de zéro à vingt deviennent des chiffres,
+et `moins N` un entier négatif, **uniquement** lorsqu'une autre partie de la
+regex prouve qu'ils sont consommés par une construction mathématique reconnue.
+Une phrase comme « il reste trois exemples » demeure donc identique.
 
-```js
-const OPERAND = "(\\d+[²³]?|\\p{L}[²³]?)";
-```
-
-A run of digits, or **one** letter. Its own header calls it a "conservative
-starter set". So it handles `x au carré`, `x égale y`, `racine de x`,
-`x puissance n` — local, enumerable, unambiguous mappings — and it structurally
-cannot handle:
+Le jeu couvre désormais aussi les fractions atomiques avec « sur », les
+fonctions `sinus de A`, `cosinus de A`, `logarithme naturel de A`, l'application
+`f de A`, les synonymes de multiplication et de comparaison, puis compose les
+opérations internes avant égalité ou comparaison. Cette extension reste un jeu
+d'atomes locaux, pas une grammaire. Il peut traiter `v égal d sur t`, mais il est
+structurellement incapable de traiter :
 
 - `racine de x plus 1` — the operand of `racine de` cannot be an expression;
 - `x plus y au carré` — is that `(x+y)²` or `x + y²`? No regex decides this; it
   needs context;
-- `f de x` → `f(x)`, `somme de i égale 1 à n`, `intégrale de zéro à un`;
+- une application de fonction dont l'argument est lui-même une expression ;
+- `somme de i égale 1 à n`, `intégrale de zéro à un` ;
 - any nesting or scoping. There is no parenthesis handling at all.
 
 Layer 3 exists for composition, scope, and disambiguation. The two are different
