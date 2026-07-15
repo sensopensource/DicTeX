@@ -89,6 +89,14 @@ de `docs/product-decisions.md`, avec des exemples et une date.
     et non comme de la ponctuation, pour le scoring acoustique ?
 - [ ] **CONV-015 — Ponctuation dictée.** Comment demander explicitement une
   ponctuation lorsque celle-ci compte réellement pour le texte inséré ?
+- [ ] **CONV-021 — Casse des identifiants.** Proposition : employer « grand »
+  comme commande uniquement devant le nom canonique d'une lettre latine ;
+  `grand f` en couche 1 produit `F` en couche 2, et `grand a` produit `A`.
+  Prévoir symétriquement `petit f` → `f` si la casse minuscule doit être rendue
+  explicite. La commande ne s'applique jamais à un mot arbitraire : « un grand
+  nombre » reste inchangé. À valider sur des audios réels, en particulier pour
+  les noms de lettres ambigus, puis à trancher séparément pour les lettres
+  grecques.
 
 ## Annotation et mesure
 
