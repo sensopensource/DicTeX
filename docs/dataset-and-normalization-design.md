@@ -391,16 +391,26 @@ Une phrase comme « il reste trois exemples » demeure donc identique.
 Le jeu couvre désormais aussi les fractions atomiques avec « sur », les
 fonctions `sinus de A`, `cosinus de A`, `logarithme naturel de A`, l'application
 `f de A`, les synonymes de multiplication et de comparaison, puis compose les
-opérations internes avant égalité ou comparaison. Cette extension reste un jeu
-d'atomes locaux, pas une grammaire. Il peut traiter `v égal d sur t`, mais il est
-structurellement incapable de traiter :
+opérations internes avant égalité ou comparaison. La version 3 ajoute des
+gabarits fermés mesurés sur `validation` : trois groupes dont les parenthèses
+sont prononcées, deux fonctions d'une lettre imbriquées, une expression affine,
+des exponentielles atomiques, deux limites canoniques, une dérivée et une
+intégrale bornée. Elle passe de 7/21 à 20/21 correspondances exactes sur le run
+`run_20260715131235469_r1xsgn7a`, sans régression sur les sept succès initiaux.
+
+Cette extension reste une collection de gabarits locaux, pas une grammaire. Les
+parenthèses ne sont produites que lorsque l'utilisateur dicte explicitement
+« parenthèse ouvrante » et « parenthèse fermante » autour d'une somme ou d'une
+différence atomique prise en charge. Le jeu peut traiter `v égal d sur t`, mais
+il reste structurellement incapable de traiter :
 
 - `racine de x plus 1` — the operand of `racine de` cannot be an expression;
 - `x plus y au carré` — is that `(x+y)²` or `x + y²`? No regex decides this; it
   needs context;
-- une application de fonction dont l'argument est lui-même une expression ;
-- `somme de i égale 1 à n`, `intégrale de zéro à un` ;
-- any nesting or scoping. There is no parenthesis handling at all.
+- une application générale de fonction dont l'argument est une expression ;
+- `somme de i égale 1 à n` ou une intégrale hors du gabarit validé ;
+- toute imbrication ou portée qui n'est pas explicitement décrite par un gabarit
+  livré.
 
 Layer 3 exists for composition, scope, and disambiguation. The two are different
 regimes, not competing attempts at the same job.
