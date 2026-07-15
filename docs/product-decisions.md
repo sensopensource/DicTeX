@@ -224,7 +224,7 @@ Un `rules.json` historique reste actif sans surcouche afin de préserver une
 baseline reproductible, mais le Lab l'annonce comme legacy et ne confond jamais
 la version sémantique du pipeline avec le jeu réellement exécuté. La migration
 n'a lieu qu'après prévisualisation, résolution explicite des ambiguïtés et
-confirmation. Elle reconnaît les signatures livrées v1/v2, conserve toute règle
+confirmation. Elle reconnaît les signatures livrées v1/v2/v3, conserve toute règle
 inconnue comme personnelle, crée une sauvegarde horodatée sans écrasement, écrit
 la surcouche atomiquement et produit un reçu limité aux chemins, versions et
 empreintes. L'original n'est ni supprimé ni réécrit.
@@ -237,6 +237,35 @@ sa version sémantique à `dictex-deterministic-pipeline-v4`. Une mise à jour
 future du jeu livré devient ainsi
 effective automatiquement, tandis que désactivations et remplacements
 continuent de viser les mêmes identifiants stables.
+
+## DEC-NORM-003 — Promotion des motifs structurés validés — 15 juillet 2026
+
+**Statut : active.** Le jeu livré passe à la version 3 et la version sémantique
+du pipeline à `dictex-deterministic-pipeline-v5`. Son empreinte effective est
+`8686d68c18668b5c1e5edd72598f235410aac49ca411710ba7e9dfc77f81170f`. La
+variante expérimentale `combined-structured-feminine-comparisons-v3`,
+d'empreinte SHA-256
+`86204019a1bca8a0585400365b61cd49aa6a64f5bbf0e61ca88a88461a3959e9`, a été
+rejouée sur les 21 exemples figés de `validation` du run
+`run_20260715131235469_r1xsgn7a`. Elle passe de 7 à 20 correspondances exactes,
+sans régression sur les sept succès initiaux et sans diagnostic.
+
+Les nouveaux motifs restent déterministes et bornés. Ils reconnaissent quelques
+formulations explicites observées : parenthèses dictées autour d'une somme ou
+d'une différence simple, carré de ce groupe, deux fonctions d'une lettre
+imbriquées, deux limites canoniques, une dérivée, une intégrale bornée, une
+exponentielle atomique, une expression affine et certains identifiants annoncés
+par un contexte mathématique. Les nombres de zéro à vingt sont générés dans ces
+seuls contextes. Ce jeu n'est ni une grammaire générale ni un parseur : il ne
+déduit aucune parenthèse silencieuse et ne choisit aucune portée non dictée.
+
+Le résidu « racine carrée de a plus b » est volontairement conservé : la règle
+atomique produit `\sqrt{a} + b`, car décider `\sqrt{a+b}` sans marque de groupe
+serait une convention de portée, pas une substitution sûre. Les identifiants des
+66 règles v2 restent inchangés ; les 160 nouvelles définitions reçoivent leurs
+propres identifiants stables. Une surcouche ancienne continue donc à désactiver
+ou remplacer la même règle, tout en consommant automatiquement les nouvelles
+définitions livrées.
 
 ## DicTeX / Lab split (monorepo)
 

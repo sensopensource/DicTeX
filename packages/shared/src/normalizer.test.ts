@@ -11,6 +11,7 @@ import {
 } from "./normalizer.js";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { canonicalizeLatex } from "./latex.js";
+import { restoreCommandWords } from "./commands.js";
 
 // Points the normalizer at a directory that does not exist: the personal
 // dictionary degrades to passthrough (empty) and the rules degrade to the
@@ -163,6 +164,136 @@ test("the acceptance examples compose without changing surrounding prose", async
     assert.equal(canonicalizeLatex(output), output, input);
     assert.doesNotMatch(output, /[\uE000-\uE00F]/u, input);
   }
+});
+
+test("validation snapshot run_20260715131235469_r1xsgn7a reproduces 20 of 21 references", async () => {
+  const cases = [
+    ["seg_0025", "racine carrée de a plus b", "$\\sqrt{a+b}$"],
+    [
+      "seg_0026",
+      "parenthèse ouvrante x plus deux parenthèse fermante multiplié par y",
+      "$(x + 2) \\times y$",
+    ],
+    [
+      "seg_0028",
+      "x multiplié par parenthèse ouvrante y moins trois parenthèse fermante",
+      "$x \\times (y - 3)$",
+    ],
+    ["seg_0029", "f de g de x", "$f(g(x))$"],
+    [
+      "seg_0030",
+      "parenthèse ouvrante x plus un parenthèse fermante au carré",
+      "$(x + 1)^{2}$",
+    ],
+    ["seg_0031", "sinus de x", "$\\sin(x)$"],
+    ["seg_0032", "cosinus de theta plus un", "$\\cos(\\theta) + 1$"],
+    [
+      "seg_0036",
+      "limite quand x tend vers zéro de sinus de x sur x",
+      "$\\lim_{x\\to0}\\frac{\\sin(x)}{x}$",
+    ],
+    [
+      "seg_0037",
+      "dérivée de f par rapport à x",
+      "$\\frac{\\mathrm{d}f}{\\mathrm{d}x}$",
+    ],
+    [
+      "seg_0038",
+      "intégrale de zéro à un de x au carré d x",
+      "$\\int_{0}^{1}x^{2} \\, dx$",
+    ],
+    ["seg_0039", "la vitesse vaut v égal d sur t.", "la vitesse vaut $v = \\frac{d}{t}$."],
+    [
+      "seg_0040",
+      "la masse est égale à rho multiplié par v",
+      "la masse est égale à $\\rho \\times v$",
+    ],
+    [
+      "seg_0041",
+      "pour x supérieur à zéro la fonction est logarithme naturel de x",
+      "pour $x > 0$ la fonction est $\\ln(x)$",
+    ],
+    [
+      "seg_0005",
+      "exponentielle de moins trois inférieur à exponentielle de moins un inférieur à exponentielle de zéro inférieur à exponentielle de deux",
+      "$e^{-3} < e^{-1} < e^{0} < e^{2}$",
+    ],
+    [
+      "seg_0006",
+      "exponentielle de cinq supérieure à exponentielle de trois exponentielle de moins dix inférieure à exponentielle de moins deux exponentielle de x ne peut pas être négatif exponentielle de x est égale à zéro pour une certaine valeur de x est impossible",
+      "$e^{5} > e^{3}$ $e^{-10} < e^{-2}$ $e^{x}$ ne peut pas être négatif $e^{x} = 0$ pour une certaine valeur de $x$ est impossible",
+    ],
+    [
+      "seg_0009",
+      "le logarithme n'existe que pour x supérieur à zéro",
+      "le logarithme n'existe que pour $x > 0$",
+    ],
+    [
+      "seg_0015",
+      "soit f de x est égal à deux x plus trois",
+      "soit $f(x) = 2x + 3$",
+    ],
+    [
+      "seg_0016",
+      "f de zéro est égal trois retour à la ligne f de deux est égal à sept retour à la ligne f de moins un est égal à un retour à la ligne soit g de x est égal à x au carré retour à la ligne calculons g de trois retour à la ligne g de trois est égal à neuf retour à la ligne g de moins deux est égal à quatre retour à la ligne g de zéro est égal à zéro retour à la ligne f de cinq est égal à treize cela signifie que treize est l'image de la fonction f quand x est égal à cinq",
+      "$f(0) = 3$ retour à la ligne $f(2) = 7$ retour à la ligne $f(-1) = 1$ retour à la ligne soit $g(x) = x^{2}$ retour à la ligne calculons $g(3)$ retour à la ligne $g(3) = 9$ retour à la ligne $g(-2) = 4$ retour à la ligne $g(0) = 0$ retour à la ligne $f(5) = 13$ cela signifie que $13$ est l'image de la fonction $f$ quand $x = 5$",
+    ],
+    [
+      "seg_0017",
+      "une limite décrit vers quoi tend une fonction lorsqu'on s'approche d'une valeur sans forcément l'atteindre",
+      "une limite décrit vers quoi tend une fonction lorsqu'on s'approche d'une valeur sans forcément l'atteindre",
+    ],
+    [
+      "seg_0018",
+      "exemple retour à la ligne f de x est égal à un sur x",
+      "exemple retour à la ligne $f(x) = \\frac{1}{x}$",
+    ],
+    [
+      "seg_0020",
+      "limite de un sur x quand x tend vers plus l'infini",
+      "$\\lim_{x\\to+\\infty}\\frac{1}{x}$",
+    ],
+  ] as const;
+  const baselineExactSegments = new Set([
+    "seg_0031", "seg_0032", "seg_0039", "seg_0040", "seg_0041", "seg_0009", "seg_0017",
+  ]);
+  let exact = 0;
+
+  for (const [segmentId, input, expected] of cases) {
+    const result = await normalizeTranscript(input, ABSENT_CONFIG);
+    const restoredOutput = restoreCommandWords(result.output);
+    const output = canonicalizeLatex(restoredOutput);
+    const target = canonicalizeLatex(expected);
+    assert.equal(output, restoredOutput, `${segmentId} output is already canonical`);
+    if (segmentId === "seg_0025") {
+      assert.equal(output, "$\\sqrt{a} + b$", "ambiguous root scope stays atomic");
+      assert.notEqual(output, target, "ambiguous scope is not guessed by regex");
+      continue;
+    }
+    assert.equal(output, target, segmentId);
+    if (baselineExactSegments.has(segmentId)) {
+      assert.equal(output, target, `${segmentId} baseline regression`);
+    }
+    exact += 1;
+  }
+
+  assert.equal(exact, 20);
+  assert.equal(baselineExactSegments.size, 7);
+});
+
+test("structured rules stay bounded to explicit mathematical utterances", async () => {
+  const prose = [
+    "une parenthèse ouvrante montre une précision",
+    "la fonction fabrique une image",
+    "la valeur de xylophone reste stable",
+    "il reste deux xylophones plus trois exemples",
+    "une limite décrit un comportement",
+  ];
+  for (const input of prose) {
+    assert.equal(await regexLayerOutput(input), input);
+  }
+  assert.equal(await regexLayerOutput("x supérieure à zéro"), "$x > 0$");
+  assert.equal(await regexLayerOutput("x inférieure à zéro"), "$x < 0$");
 });
 
 test("French number words zero through twenty normalize only as math operands", async () => {

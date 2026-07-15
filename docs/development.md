@@ -157,8 +157,9 @@ scripts\npm.cmd run dev
 11. Click `Open events log` and confirm `audio_segment`, `stt_result`, and `normalization_result` events were appended. (DicTeX no longer writes corrections or benchmark events — those live in DicTeX Lab.)
 12. Click `Open dictionary`, add an entry like `{"from":"dic tex","to":"DicTeX"}`, save the file, then dictate a phrase containing "dic tex". Confirm the clipboard/pasted text and the `Inserted (normalized)` line show `DicTeX`, the `Last transcript (raw)` textarea still shows the raw STT output, and a `normalization_result` event was appended while `stt_result.stt_output` kept the raw transcript. Break the JSON on purpose and confirm the next dictation still inserts the raw text with a quiet `Normalizer:` diagnostic instead of failing.
 13. Sans créer de surcouche, dicter « un sur x », « v égal d sur t »,
-    « cosinus de theta » et « x supérieur à zéro ». Vérifier respectivement
-    `$\frac{1}{x}$`, `$v = \frac{d}{t}$`, `$\cos(\theta)$` et `$x > 0$`, déjà
+    « cosinus de theta », « x supérieure à zéro » et « f de g de x ». Vérifier
+    respectivement `$\frac{1}{x}$`, `$v = \frac{d}{t}$`, `$\cos(\theta)$`,
+    `$x > 0$` et `$f(g(x))$`, déjà
     points fixes de `canonicalizeLatex`. Dicter ensuite « il reste trois
     exemples », « je suis de plus en plus fatigué » et « je suis moins fatigué
     que toi » : la prose doit rester identique. Cliquer sur `Open rule overlay`,
@@ -168,7 +169,7 @@ scripts\npm.cmd run dev
     versions locale/livrée, les SHA-256 et les nombres de règles. Lancer une fois
     `Run legacy baseline`, puis `Review migration`. Vérifier la prévisualisation,
     confirmer, contrôler le chemin de sauvegarde et la nouvelle empreinte, puis
-    relancer : l'état doit être `Current overlay` et les 66 règles v2 actives.
+    relancer : l'état doit être `Current overlay` et les 226 règles v3 actives.
 14. Placer l'interrupteur `Normalizer` sur **Off**, dicter « retour à la ligne x au carré », puis vérifier que le texte copié ou inséré est identique octet par octet à `Last transcript` : les mots de commande restent littéraux et aucun LaTeX n'est produit. Vérifier que le nouvel événement `normalization_result` contient `disabled: true`, aucun champ `passthrough` et des `layers` vides. Redémarrer DicTeX, confirmer que l'état Off persiste, puis repasser sur On et vérifier que règles et commandes s'appliquent à nouveau.
 15. Dans le sélecteur `STT model`, choisir un autre modèle. Vérifier le diagnostic `Model`, dicter une phrase et confirmer que l'événement `stt_result` contient le modèle choisi. Redémarrer l'application et vérifier la persistance dans `data/settings.json`. Corrompre ce fichier et confirmer que DicTeX redémarre avec la variable d'environnement ou `base`, et avec le normaliseur activé.
 16. Cliquer sur **Open Lab**. Avec un Lab construit (`scripts\npm.cmd run build`), vérifier son ouverture ; sans construction, vérifier que DicTeX affiche une erreur explicite sans planter.
@@ -1511,7 +1512,7 @@ data/normalizer/rules-overlay.json
 ```json
 {
   "version": 1,
-  "bundled_rules_version": 2,
+  "bundled_rules_version": 3,
   "disabled_rule_ids": ["addition"],
   "replacements": [
     {"rule_id":"equality","pattern":"...","replacement":"...","flags":"i"}
@@ -1532,7 +1533,7 @@ Le `pattern` d'une règle est une source regex JavaScript compatible Unicode
 (drapeaux `g`/`u` imposés, plus les éventuels `flags`) ; `replacement` peut
 référencer les groupes de capture (`$1`, `$2`, ... ou `$<name>`), et un dollar
 littéral s'écrit `$$`. Les règles s'appliquent dans l'ordre du fichier. Chaque
-règle structurelle exige un opérande atomique réel : entier signé ou non, lettre
+règle atomique exige un opérande réel : entier signé ou non, lettre
 Unicode unique ou nom grec explicitement mappé. Les nombres français de zéro à
 vingt et `moins N` ne sont convertis que si la construction complète prouve
 qu'ils sont consommés comme opérandes. Un opérande collé à une lettre ou un
@@ -1549,11 +1550,16 @@ que" -> `$x > y$`/`$x < y$`, "plus"/"moins"/"fois" -> `$x + y$`/`$x - y$`/`$x
 \times y$`, et « divisé par »/« sur » -> `$\frac{x}{y}$`. #148 ajoute
 « multiplié par », « supérieur/inférieur à », les fonctions atomiques `\sin`,
 `\cos`, `\ln`, `f(x)`, `theta`/`rho`, ainsi que les nombres français de zéro à
-vingt seulement comme opérandes reconnus. Chaque sortie est déjà un point fixe de
-`canonicalizeLatex` (`packages/shared/src/latex.ts`) ; mesure et export ne la
-traitent donc jamais comme une réparation.
+vingt seulement comme opérandes reconnus. La v3 ajoute les formulations
+structurées explicitement validées : parenthèses dictées pour trois gabarits
+simples, fonctions d'une lettre imbriquées, exponentielles atomiques,
+expressions affines, deux limites canoniques, une dérivée et une intégrale
+bornée. Elle accepte aussi `est égal à` entre deux fragments mathématiques et
+les formes féminines `supérieure/inférieure à`. Chaque sortie est déjà un point
+fixe de `canonicalizeLatex` (`packages/shared/src/latex.ts`) ; mesure et export
+ne la traitent donc jamais comme une réparation.
 
-Une regex ne sait ni grouper ni décider une portée. Les règles « au carré »,
+Une regex ne sait ni grouper ni décider une portée implicite. Les règles « au carré »,
 « au cube », « puissance », « racine (carrée) de », les fractions et les
 fonctions — qui introduisent une nouvelle accolade ou un argument — restent donc
 limitées aux opérandes atomiques. `\frac{a}{b}` exige deux opérandes non ambigus :
@@ -1562,7 +1568,11 @@ limitées aux opérandes atomiques. `\frac{a}{b}` exige deux opérandes non ambi
 soustraction et multiplication) n'ajoutent pas d'accolade et peuvent accepter un
 fragment déjà délimité par `$…$`. C'est ce qui permet à « x au carré plus y » de
 devenir d'abord « `$x^{2}$ plus y` », puis `$x^{2} + y$`. La composition et la
-portée générales restent le résidu prévu pour la couche 3 (§7).
+portée générales restent le résidu prévu pour la couche 3 (§7). Les trois
+gabarits v3 avec parenthèses ne contredisent pas cette limite : les mots
+« parenthèse ouvrante » et « parenthèse fermante » donnent explicitement le
+groupe, et chaque contenu accepté reste une somme ou différence d'atomes. La
+portée non marquée de « racine carrée de a plus b » n'est donc pas devinée.
 
 Une surcouche vide, invalide ou illisible est signalée et le jeu livré reste
 actif. Aucun démarrage ne migre automatiquement un ancien `rules.json` : sans
@@ -1573,7 +1583,7 @@ volontairement le jeu livré.
 `Experiments -> Normalizer`, puis utiliser `Review migration`. La prévisualisation
 affiche version et SHA-256 locaux, version livrée, copies livrées reconnues,
 règles personnelles, ambiguïtés, invalidités et empreinte effective attendue.
-Une règle identique à une signature historique v1/v2 est reconnue comme copie
+Une règle identique à une signature historique v1/v2/v3 est reconnue comme copie
 livrée ; une règle inconnue reste personnelle ; une définition proche mais
 modifiée exige de choisir explicitement sa conservation personnelle ou le
 remplacement de l'identifiant livré proposé.

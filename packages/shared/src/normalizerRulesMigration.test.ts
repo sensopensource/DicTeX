@@ -36,7 +36,7 @@ test("bundled rules have stable unique ids and an old empty overlay automaticall
   const paths = makePaths("dictex-rules-overlay-");
   try {
     assert.equal(new Set(BUNDLED_RULES.map((rule) => rule.id)).size, BUNDLED_RULES.length);
-    assert.equal(BUNDLED_RULES.length, 66);
+    assert.equal(BUNDLED_RULES.length, 226);
     assert.equal(BUNDLED_RULES.every((rule, order) => rule.order === order), true);
 
     const options = {
@@ -46,6 +46,11 @@ test("bundled rules have stable unique ids and an old empty overlay automaticall
     };
     const bundled = await createTranscriptNormalizer(options);
     assert.equal(bundled.rulesConfiguration.state, "bundled");
+    assert.equal(bundled.rulesConfiguration.bundledVersion, 3);
+    assert.equal(
+      bundled.rulesConfiguration.bundledHash,
+      "8686d68c18668b5c1e5edd72598f235410aac49ca411710ba7e9dfc77f81170f",
+    );
     assert.equal(bundled.rulesConfiguration.effectiveRuleCount, BUNDLED_RULES.length);
     assert.equal((await bundled.normalize("un sur x")).output, "$\\frac{1}{x}$");
 
@@ -77,6 +82,11 @@ test("the legacy classifier distinguishes shipped, personal, ambiguous and inval
   const exactV2 = analyzeLegacyRulesSource(JSON.stringify({ version: 2, rules: historicalV2.rules }));
   assert.equal(exactV2.classifications.length, 66);
   assert.equal(exactV2.classifications.every((entry) => entry.kind === "bundled"), true);
+  const historicalV3 = HISTORICAL_BUNDLED_RULE_SETS.find((set) => set.version === 3);
+  assert.ok(historicalV3);
+  const exactV3 = analyzeLegacyRulesSource(JSON.stringify({ version: 3, rules: historicalV3.rules }));
+  assert.equal(exactV3.classifications.length, BUNDLED_RULES.length);
+  assert.equal(exactV3.classifications.every((entry) => entry.kind === "bundled"), true);
 
   const equality = BUNDLED_RULES.find((rule) => rule.id === "equality");
   assert.ok(equality);
@@ -168,7 +178,7 @@ test("migration keeps the legacy source byte-identical, backs it up, activates a
     });
     assert.equal(migrated.rulesConfiguration.state, "current_overlay");
     assert.equal(migrated.rulesConfiguration.personalRuleCount, 1);
-    assert.equal(migrated.rulesConfiguration.effectiveRuleCount, 67);
+    assert.equal(migrated.rulesConfiguration.effectiveRuleCount, BUNDLED_RULES.length + 1);
     assert.equal((await migrated.normalize("bonjour et un sur x")).output, "salut et $\\frac{1}{x}$");
     assert.equal(migrated.version.rulesHash, receipt.effective_sha256);
 

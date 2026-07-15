@@ -90,7 +90,7 @@ test("the normalizer identity separates legacy source provenance from effective 
     const identity = buildNormalizerBenchmarkCandidate(normalizer.version).candidate;
     assert.match(identity.variant ?? "", /pipeline-contract:3/);
     assert.match(identity.variant ?? "", /commands-sha256:[0-9a-f]{64}/);
-    assert.match(identity.variant ?? "", /bundled-rules-version:2;bundled-rules-sha256:[0-9a-f]{64}/);
+    assert.match(identity.variant ?? "", /bundled-rules-version:3;bundled-rules-sha256:[0-9a-f]{64}/);
     assert.match(identity.variant ?? "", /rules-mode:legacy/);
     assert.match(identity.variant ?? "", /local-rules-sha256:[0-9a-f]{64}/);
     const changedCommands = buildNormalizerBenchmarkCandidate({
