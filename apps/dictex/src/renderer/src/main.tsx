@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { formatAudioDuration, formatLatency, formatTimestamp, getSegmentKey } from "@dictex/shared/formatting";
 import "@dictex/shared/styles.css";
 import "./styles.css";
 
@@ -356,7 +357,7 @@ function App(): React.ReactElement {
       return;
     }
 
-    const segmentKey = getSegmentKey(segment);
+    const segmentKey = getSegmentKey(segment, { separator: "::" });
     if (playingAudioSegmentKey === segmentKey) {
       stopAudioPlayback();
       return;
@@ -608,15 +609,17 @@ function App(): React.ReactElement {
         {sttWorkerStatus?.workerStartupMs !== null && sttWorkerStatus?.workerStartupMs !== undefined && (
           <div className="shortcut-row">
             <span>Preparation</span>
-            <strong>{formatLatency(sttWorkerStatus.workerStartupMs)}</strong>
-            <span className="signal-muted">model load {formatLatency(sttWorkerStatus.modelLoadMs)}</span>
+            <strong>{formatLatency(sttWorkerStatus.workerStartupMs, { rejectNonFinite: true, round: true })}</strong>
+            <span className="signal-muted">
+              model load {formatLatency(sttWorkerStatus.modelLoadMs, { rejectNonFinite: true, round: true })}
+            </span>
           </div>
         )}
 
         {sttWorkerStatus?.lastInferenceDurationMs !== null && sttWorkerStatus?.lastInferenceDurationMs !== undefined && (
           <div className="shortcut-row">
             <span>Warm inference</span>
-            <strong>{formatLatency(sttWorkerStatus.lastInferenceDurationMs)}</strong>
+            <strong>{formatLatency(sttWorkerStatus.lastInferenceDurationMs, { rejectNonFinite: true, round: true })}</strong>
             <span className="signal-muted">worker request</span>
           </div>
         )}
@@ -743,9 +746,11 @@ function HistoryPanel({
         ) : (
           <div className="history-list">
             {recentSegments.map((segment) => (
-              <article className="history-item" key={getSegmentKey(segment)}>
+              <article className="history-item" key={getSegmentKey(segment, { separator: "::" })}>
                 <div className="history-heading">
-                  <span title={segment.createdAt ?? undefined}>{formatTimestamp(segment.createdAt)}</span>
+                  <span title={segment.createdAt ?? undefined}>
+                    {formatTimestamp(segment.createdAt, { missingLabel: "unknown time", style: "full" })}
+                  </span>
                   <strong title={`${segment.sessionId} / ${segment.segmentId}`}>
                     {segment.sessionId} / {segment.segmentId}
                   </strong>
@@ -763,23 +768,25 @@ function HistoryPanel({
                   <div className="history-meta">
                     <span>{segment.sttModel}</span>
                     <span>{segment.sttLanguage}</span>
-                    <span>{formatAudioDuration(segment.audioDurationSeconds)}</span>
-                    <span>{formatLatency(segment.transcriptionDurationMs)}</span>
+                    <span>{formatAudioDuration(segment.audioDurationSeconds, { rejectNonFinite: true })}</span>
+                    <span>
+                      {formatLatency(segment.transcriptionDurationMs, { rejectNonFinite: true, round: true })}
+                    </span>
                   </div>
                   <div className="history-actions">
                     <button
                       className="secondary-button"
                       disabled={
                         !segment.audioRef ||
-                        loadingAudioSegmentKey === getSegmentKey(segment) ||
+                        loadingAudioSegmentKey === getSegmentKey(segment, { separator: "::" }) ||
                         status === "recording" ||
                         status === "transcribing"
                       }
                       onClick={() => playHistoryAudio(segment)}
                     >
-                      {loadingAudioSegmentKey === getSegmentKey(segment)
+                      {loadingAudioSegmentKey === getSegmentKey(segment, { separator: "::" })
                         ? "Loading"
-                        : playingAudioSegmentKey === getSegmentKey(segment)
+                        : playingAudioSegmentKey === getSegmentKey(segment, { separator: "::" })
                           ? "Stop"
                           : "Play"}
                     </button>
@@ -814,39 +821,6 @@ function Metric({ label, value }: { label: string; value: string }): React.React
       <strong title={value}>{value}</strong>
     </div>
   );
-}
-
-function getSegmentKey(segment: Pick<RecentSegment, "sessionId" | "segmentId">): string {
-  return `${segment.sessionId}::${segment.segmentId}`;
-}
-
-function formatTimestamp(value: string | null): string {
-  if (!value) {
-    return "unknown time";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString();
-}
-
-function formatAudioDuration(seconds: number | null): string {
-  if (seconds === null || !Number.isFinite(seconds)) {
-    return "-";
-  }
-
-  return `${seconds.toFixed(2)} s`;
-}
-
-function formatLatency(ms: number | null): string {
-  if (ms === null || !Number.isFinite(ms)) {
-    return "-";
-  }
-
-  return `${Math.round(ms)} ms`;
 }
 
 function formatSttWorkerState(state: SttWorkerState | undefined): string {
