@@ -969,7 +969,8 @@ DICTEX_STT_BENCHMARK_RUNTIMES  liste "device:compute_type" séparée par des vir
 
 La sélection des candidats — l'étape « Candidates » du flux de lancement
 d'`Experiments` depuis #138 — est recomposée pour rester compacte et contenue
-dans la fenêtre (`CandidateSelector`, `apps/lab/src/renderer/src/main.tsx`). Le renderer ne fabrique jamais une
+dans la fenêtre (`CandidateSelector`,
+`apps/lab/src/renderer/src/views/CandidateSelector.tsx`). Le renderer ne fabrique jamais une
 combinaison absente du catalogue : il ne fait que grouper et décomposer les
 `SttBenchmarkCandidateOption` réelles reçues de
 `diagnostics:get-stt-benchmark-candidates`.
