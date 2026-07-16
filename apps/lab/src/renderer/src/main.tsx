@@ -5,7 +5,6 @@ import "./styles.css";
 import type {
   BenchmarkRunListEntry,
   BenchmarkCandidateIdentity,
-  ReconstructedSegment,
   LegacyRuleResolution,
   LegacyRulesMigrationPreview,
   RulesMigrationReceipt,
@@ -17,13 +16,11 @@ import type {
 } from "@dictex/shared";
 import {
   formatCandidateIdentityKey,
-  formatCorrectionKind,
   formatDatasetCorrectionKind,
   formatBenchmarkSetSplit,
   getSegmentKey,
 } from "@dictex/shared/formatting";
 import { analyzeBatchErrors, toSttBenchmarkRunOutcomes } from "@dictex/shared/errorAnalysis";
-import { planCorpusCorrection, type CorpusCorrectionLayer } from "./corpusCorrection.js";
 import {
   getExperimentStage,
   planExperimentLaunch,
@@ -39,13 +36,14 @@ import {
   startResultsSelection,
   type ResultsState,
 } from "./resultsSelection.js";
-import { api, type DataFolderStatus, type SourceFolderCheck } from "./api.js";
+import { api } from "./api.js";
+import { useCorpus } from "./hooks/useCorpus.js";
 import { useSegmentAudio } from "./hooks/useSegmentAudio.js";
 import { DatasetView } from "./views/DatasetView.js";
 import { ExperimentsView, type ExperimentPreview } from "./views/ExperimentsView.js";
 import type { View } from "./views/LabNavigation.js";
 import { ResultsView, type BenchmarkRunExportSummary } from "./views/ResultsView.js";
-import { SegmentsView, type HistoryCorrectionTarget } from "./views/SegmentsView.js";
+import { SegmentsView } from "./views/SegmentsView.js";
 import type { DatasetBuilderSource } from "../../main/datasetBuilder.js";
 import type { SttBenchmarkCandidateOption } from "../../main/candidateCatalog.js";
 import type { NormalizerBenchmarkRunResponse } from "../../main/normalizerBenchmark.js";
@@ -54,22 +52,10 @@ function App(): React.ReactElement {
   const [view, setView] = useState<View>("corpus");
   const [notice, setNotice] = useState("");
 
-  // Configurable DicTeX data folder (source, read-only).
-  const [dataFolder, setDataFolder] = useState<DataFolderStatus | null>(null);
-  const [sourceCheck, setSourceCheck] = useState<SourceFolderCheck | null>(null);
-  const [dataFolderDraft, setDataFolderDraft] = useState("");
-  const [isSavingDataFolder, setIsSavingDataFolder] = useState(false);
-
-  // Segments (read-only source + own correction/split state).
-  const [segments, setSegments] = useState<ReconstructedSegment[]>([]);
-  const [segmentsError, setSegmentsError] = useState("");
-  const [isLoadingSegments, setIsLoadingSegments] = useState(false);
+  // The configured (read-only) DicTeX data folder, the segments read from it,
+  // and the Lab's own corrections and split assignments over them.
+  const corpus = useCorpus({ api, onNotice: setNotice });
   const { audioError, loadingAudioSegmentKey, playingAudioSegmentKey, playSegmentAudio } = useSegmentAudio({ api });
-  const [isSavingCorrection, setIsSavingCorrection] = useState(false);
-  const [correctionNotice, setCorrectionNotice] = useState("");
-  const [benchmarkSetTargetKey, setBenchmarkSetTargetKey] = useState<string | null>(null);
-  const [historyCorrectionTarget, setHistoryCorrectionTarget] = useState<HistoryCorrectionTarget | null>(null);
-  const [historyCorrectionDraft, setHistoryCorrectionDraft] = useState("");
 
   // Experiments: the protocol to launch. Never a past result (issue #138).
   const [candidateCatalog, setCandidateCatalog] = useState<SttBenchmarkCandidateOption[]>([]);
@@ -178,7 +164,6 @@ function App(): React.ReactElement {
 
   useEffect(() => {
     const removeBatchProgressListener = api.onBatchBenchmarkProgress(setLaunchProgress);
-    void refreshDataFolder();
     void api
       .getSttBenchmarkCandidates()
       .then((catalog) => {
@@ -191,7 +176,6 @@ function App(): React.ReactElement {
     void api.getLatestSttCandidateSelection().then(setCurrentSelection).catch(() => {
       // Non-fatal; the panel shows none selected.
     });
-    void loadSegments();
 
     return () => {
       removeBatchProgressListener();
@@ -332,158 +316,6 @@ function App(): React.ReactElement {
       clearTimeout(timer);
     };
   }, [builderLiteral]);
-
-  async function refreshDataFolder(): Promise<void> {
-    try {
-      const [status, check] = await Promise.all([
-        api.getDataFolder(),
-        api.checkDataFolder(),
-      ]);
-      setDataFolder(status);
-      setSourceCheck(check);
-    } catch {
-      // Non-fatal.
-    }
-  }
-
-  async function loadSegments(): Promise<void> {
-    setSegmentsError("");
-    setIsLoadingSegments(true);
-    try {
-      setSegments(await api.getSegments(50));
-      await refreshDataFolder();
-    } catch (error) {
-      setSegmentsError(error instanceof Error ? error.message : "Could not load segments");
-    } finally {
-      setIsLoadingSegments(false);
-    }
-  }
-
-  async function pickDataFolder(): Promise<void> {
-    setIsSavingDataFolder(true);
-    try {
-      const status = await api.pickDataFolder();
-      if (status) {
-        setDataFolder(status);
-        setNotice(`DicTeX data folder set to ${status.path}`);
-        await loadSegments();
-      }
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not set data folder");
-    } finally {
-      setIsSavingDataFolder(false);
-    }
-  }
-
-  async function applyDataFolderDraft(): Promise<void> {
-    if (dataFolderDraft.trim() === "") {
-      return;
-    }
-    setIsSavingDataFolder(true);
-    try {
-      const status = await api.setDataFolder(dataFolderDraft.trim());
-      setDataFolder(status);
-      setDataFolderDraft("");
-      setNotice(`DicTeX data folder set to ${status.path}`);
-      await loadSegments();
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not set data folder");
-    } finally {
-      setIsSavingDataFolder(false);
-    }
-  }
-
-  async function resetDataFolder(): Promise<void> {
-    setIsSavingDataFolder(true);
-    try {
-      const status = await api.resetDataFolder();
-      setDataFolder(status);
-      setNotice(`DicTeX data folder reset to default (${status.path})`);
-      await loadSegments();
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not reset data folder");
-    } finally {
-      setIsSavingDataFolder(false);
-    }
-  }
-
-  function startSegmentCorrection(segment: ReconstructedSegment, layer: CorpusCorrectionLayer): void {
-    const plan = planCorpusCorrection(segment, layer);
-    if (plan === null) {
-      setCorrectionNotice("Save Layer 1 before adding Layer 2");
-      return;
-    }
-
-    setHistoryCorrectionTarget({
-      sessionId: segment.sessionId,
-      segmentId: segment.segmentId,
-      audioRef: segment.audioRef,
-      rawTranscript: plan.rawTranscript,
-      correctionKind: plan.correctionKind,
-    });
-    setHistoryCorrectionDraft(plan.draft);
-    setCorrectionNotice("");
-    setNotice(`Correction target ${segment.sessionId} / ${segment.segmentId}`);
-  }
-
-  function cancelSegmentCorrection(): void {
-    setHistoryCorrectionTarget(null);
-    setHistoryCorrectionDraft("");
-  }
-
-  async function saveSegmentCorrection(): Promise<void> {
-    if (!historyCorrectionTarget) {
-      return;
-    }
-
-    setCorrectionNotice("");
-    setIsSavingCorrection(true);
-    try {
-      const saved = await api.saveSttCorrection({
-        sessionId: historyCorrectionTarget.sessionId,
-        segmentId: historyCorrectionTarget.segmentId,
-        audioRef: historyCorrectionTarget.audioRef,
-        rawTranscript: historyCorrectionTarget.rawTranscript,
-        correctedTranscript: historyCorrectionDraft,
-        correctionKind: historyCorrectionTarget.correctionKind,
-        correctionMethod: "keyboard",
-      });
-      setCorrectionNotice(
-        `Saved ${formatCorrectionKind(saved.correctionKind)} correction for ${saved.sessionId} / ${saved.segmentId}`,
-      );
-      cancelSegmentCorrection();
-      void loadSegments();
-    } catch (saveError) {
-      setCorrectionNotice(saveError instanceof Error ? saveError.message : "Could not save correction");
-    } finally {
-      setIsSavingCorrection(false);
-    }
-  }
-
-  async function markSttBenchmarkSetMembership(segment: ReconstructedSegment, split: SttBenchmarkSetSplit): Promise<void> {
-    if (!segment.correctedTranscript) {
-      setSegmentsError("Correct the transcript before adding it to an STT benchmark set");
-      return;
-    }
-
-    const segmentKey = getSegmentKey(segment);
-    setSegmentsError("");
-    setBenchmarkSetTargetKey(segmentKey);
-    try {
-      const marked = await api.markSttBenchmarkSetMembership({
-        sessionId: segment.sessionId,
-        segmentId: segment.segmentId,
-        audioRef: segment.audioRef,
-        split,
-      });
-      setNotice(`Marked ${marked.sessionId} / ${marked.segmentId} as ${formatBenchmarkSetSplit(marked.split)}`);
-      void loadSegments();
-    } catch (markError) {
-      setSegmentsError(markError instanceof Error ? markError.message : "Could not mark benchmark set membership");
-    } finally {
-      setBenchmarkSetTargetKey(null);
-    }
-  }
 
   async function refreshRunList(split: SttBenchmarkSetSplit): Promise<void> {
     try {
@@ -745,7 +577,7 @@ function App(): React.ReactElement {
     let rawTranscript: string;
 
     if (builderMode === "segment") {
-      const segment = segments.find((candidate) => getSegmentKey(candidate) === builderSegmentKey);
+      const segment = corpus.segments.find((candidate) => getSegmentKey(candidate) === builderSegmentKey);
       if (!segment) {
         setBuilderError("Pick a DicTeX segment first");
         return;
@@ -800,7 +632,7 @@ function App(): React.ReactElement {
         setBuilderRawTranscript("");
         setBuilderLiteral("");
       }
-      void loadSegments();
+      void corpus.loadSegments();
     } catch (saveError) {
       setBuilderError(saveError instanceof Error ? saveError.message : "Could not save dataset entry");
     } finally {
@@ -903,35 +735,32 @@ function App(): React.ReactElement {
   return (
     <main className="app-shell">
       <SegmentsView
-        dataFolder={dataFolder}
-        sourceCheck={sourceCheck}
-        dataFolderDraft={dataFolderDraft}
-        setDataFolderDraft={setDataFolderDraft}
-        isSavingDataFolder={isSavingDataFolder}
-        pickDataFolder={() => void pickDataFolder()}
-        applyDataFolderDraft={() => void applyDataFolderDraft()}
-        resetDataFolder={() => void resetDataFolder()}
-        segments={segments}
-        segmentsError={segmentsError}
-        isLoadingSegments={isLoadingSegments}
-        loadSegments={() => void loadSegments()}
+        dataFolder={corpus.dataFolder}
+        sourceCheck={corpus.sourceCheck}
+        dataFolderDraft={corpus.dataFolderDraft}
+        setDataFolderDraft={corpus.setDataFolderDraft}
+        isSavingDataFolder={corpus.isSavingDataFolder}
+        pickDataFolder={() => void corpus.pickDataFolder()}
+        applyDataFolderDraft={() => void corpus.applyDataFolderDraft()}
+        resetDataFolder={() => void corpus.resetDataFolder()}
+        segments={corpus.segments}
+        segmentsError={corpus.segmentsError}
+        isLoadingSegments={corpus.isLoadingSegments}
+        loadSegments={() => void corpus.loadSegments()}
         audioError={audioError}
         loadingAudioSegmentKey={loadingAudioSegmentKey}
         playingAudioSegmentKey={playingAudioSegmentKey}
         playSegmentAudio={(segment) => void playSegmentAudio(segment)}
-        benchmarkSetTargetKey={benchmarkSetTargetKey}
-        markSttBenchmarkSetMembership={(segment, split) => void markSttBenchmarkSetMembership(segment, split)}
-        startSegmentCorrection={startSegmentCorrection}
-        isSavingCorrection={isSavingCorrection}
-        historyCorrectionTarget={historyCorrectionTarget}
-        historyCorrectionDraft={historyCorrectionDraft}
-        setHistoryCorrectionDraft={(value) => {
-          setHistoryCorrectionDraft(value);
-          setCorrectionNotice("");
-        }}
-        saveSegmentCorrection={() => void saveSegmentCorrection()}
-        cancelSegmentCorrection={cancelSegmentCorrection}
-        correctionNotice={correctionNotice}
+        benchmarkSetTargetKey={corpus.benchmarkSetTargetKey}
+        markSttBenchmarkSetMembership={(segment, split) => void corpus.markSttBenchmarkSetMembership(segment, split)}
+        startSegmentCorrection={corpus.startSegmentCorrection}
+        isSavingCorrection={corpus.isSavingCorrection}
+        historyCorrectionTarget={corpus.historyCorrectionTarget}
+        historyCorrectionDraft={corpus.historyCorrectionDraft}
+        setHistoryCorrectionDraft={corpus.editHistoryCorrectionDraft}
+        saveSegmentCorrection={() => void corpus.saveSegmentCorrection()}
+        cancelSegmentCorrection={corpus.cancelSegmentCorrection}
+        correctionNotice={corpus.correctionNotice}
         notice={notice}
         openLabDataFolder={() => void api.openLabDataFolder()}
         openSourceDataFolder={() => void api.openSourceDataFolder()}
@@ -940,9 +769,9 @@ function App(): React.ReactElement {
       />
       <DatasetView
         embedded
-        segments={segments}
-        loadSegments={() => void loadSegments()}
-        isLoadingSegments={isLoadingSegments}
+        segments={corpus.segments}
+        loadSegments={() => void corpus.loadSegments()}
+        isLoadingSegments={corpus.isLoadingSegments}
         playSegmentAudio={(segment) => void playSegmentAudio(segment)}
         loadingAudioSegmentKey={loadingAudioSegmentKey}
         playingAudioSegmentKey={playingAudioSegmentKey}
