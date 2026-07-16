@@ -1,15 +1,42 @@
 import type { BenchmarkCandidateIdentity, CorrectionKind, SttBenchmarkSetSplit } from "./localEvents.js";
-import type { SttBenchmarkScore } from "./benchmarkTypes.js";
+import type { BenchmarkRunListEntry, SttBenchmarkScore } from "./benchmarkTypes.js";
 
 /**
  * Small presentation helpers shared by apps/lab's Benchmark/Dataset views.
  * Pure string formatting only, no I/O — importable from renderer (browser)
- * code, so this module only TYPE-imports from ./localEvents (never a runtime
- * import, which would pull node:fs into the renderer bundle). Copied from
- * apps/dictex's renderer (main.tsx) at the time of the DicTeX/Lab split;
- * apps/dictex's renderer keeps its own private copies unchanged (see PR
- * description).
+ * code, so this module only TYPE-imports from the node-touching shared modules
+ * (never a runtime import, which would pull node built-ins into renderer
+ * bundles).
  */
+
+export type SegmentIdentity = {
+  sessionId: string;
+  segmentId: string;
+};
+
+/** A provider + model pair selected by value, without separator-joined keys. */
+export type CandidateModelChoice = {
+  providerLabel: string;
+  modelLabel: string;
+};
+
+export type CandidateModelOption = CandidateModelChoice & {
+  runtimeLabel: string;
+};
+
+export type CandidateModelGroup = {
+  providerLabel: string;
+  models: CandidateModelChoice[];
+};
+
+export type TimestampFormatOptions = {
+  missingLabel?: string;
+  style?: "compact" | "full";
+};
+
+export function getSegmentKey(segment: SegmentIdentity, options: { separator?: string } = {}): string {
+  return `${segment.sessionId}${options.separator ?? "/"}${segment.segmentId}`;
+}
 
 export const CORRECTION_KIND_OPTIONS: { value: CorrectionKind; label: string }[] = [
   { value: "acoustic", label: "Acoustic" },
@@ -41,17 +68,29 @@ export function isCorrectionKind(value: string): value is CorrectionKind {
   );
 }
 
-export function formatAudioDuration(durationSeconds: number | null): string {
-  return durationSeconds === null ? "-" : `${durationSeconds.toFixed(2)} s`;
+export function formatAudioDuration(
+  durationSeconds: number | null,
+  options: { rejectNonFinite?: boolean } = {},
+): string {
+  return durationSeconds === null || (options.rejectNonFinite && !Number.isFinite(durationSeconds))
+    ? "-"
+    : `${durationSeconds.toFixed(2)} s`;
 }
 
-export function formatLatency(durationMs: number | null): string {
-  return durationMs === null ? "-" : `${durationMs} ms`;
-}
-
-export function formatTimestamp(timestamp: string | null): string {
-  if (!timestamp) {
+export function formatLatency(
+  durationMs: number | null,
+  options: { rejectNonFinite?: boolean; round?: boolean } = {},
+): string {
+  if (durationMs === null || (options.rejectNonFinite && !Number.isFinite(durationMs))) {
     return "-";
+  }
+
+  return `${options.round ? Math.round(durationMs) : durationMs} ms`;
+}
+
+export function formatTimestamp(timestamp: string | null, options: TimestampFormatOptions = {}): string {
+  if (!timestamp) {
+    return options.missingLabel ?? "-";
   }
 
   const date = new Date(timestamp);
@@ -59,12 +98,53 @@ export function formatTimestamp(timestamp: string | null): string {
     return timestamp;
   }
 
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return options.style === "full"
+    ? date.toLocaleString()
+    : date.toLocaleString(undefined, {
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
+export function formatBenchmarkRunOption(run: BenchmarkRunListEntry): string {
+  const when = run.createdAt ? formatTimestamp(run.createdAt) : run.runId;
+  const status = run.finished ? `${run.done ?? 0} done / ${run.failed ?? 0} failed` : "unfinished";
+  const stage = run.stage === "math_transform" ? "Normalizer" : "STT";
+  return `${when} · ${stage} · ${run.snapshotSize} member${run.snapshotSize === 1 ? "" : "s"} · ${status}`;
+}
+
+export function sameCandidateModel(left: CandidateModelChoice, right: CandidateModelChoice): boolean {
+  return left.providerLabel === right.providerLabel && left.modelLabel === right.modelLabel;
+}
+
+export function candidateOptionMatchesModel(option: CandidateModelOption, model: CandidateModelChoice): boolean {
+  return sameCandidateModel(option, model);
+}
+
+export function groupCandidateModelsByProvider(options: CandidateModelOption[]): CandidateModelGroup[] {
+  const byProvider = new Map<string, CandidateModelChoice[]>();
+  for (const option of options) {
+    const models = byProvider.get(option.providerLabel) ?? [];
+    if (!models.some((model) => model.modelLabel === option.modelLabel)) {
+      models.push({ providerLabel: option.providerLabel, modelLabel: option.modelLabel });
+    }
+    byProvider.set(option.providerLabel, models);
+  }
+
+  return Array.from(byProvider.entries()).map(([providerLabel, models]) => ({ providerLabel, models }));
+}
+
+export function getCandidateRuntimeLabels(options: CandidateModelOption[]): string[] {
+  const labels: string[] = [];
+  for (const option of options) {
+    if (!labels.includes(option.runtimeLabel)) {
+      labels.push(option.runtimeLabel);
+    }
+  }
+
+  return labels;
 }
 
 export function formatScore(score: SttBenchmarkScore): string {

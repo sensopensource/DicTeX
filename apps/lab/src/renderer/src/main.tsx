@@ -21,7 +21,9 @@ import type {
   SttDatasetExportSummary,
 } from "@dictex/shared";
 import {
+  candidateOptionMatchesModel,
   formatAudioDuration,
+  formatBenchmarkRunOption,
   formatCandidateIdentity,
   formatCandidateIdentityKey,
   formatCorrectionKind,
@@ -30,7 +32,12 @@ import {
   formatRatePercent,
   formatTimestamp,
   formatBenchmarkSetSplit,
+  getCandidateRuntimeLabels,
+  getSegmentKey,
+  groupCandidateModelsByProvider,
   isSttBenchmarkSetSplit,
+  sameCandidateModel,
+  type CandidateModelChoice,
 } from "@dictex/shared/formatting";
 import {
   analyzeBatchErrors,
@@ -82,13 +89,6 @@ type ExperimentPreview =
 type BenchmarkRunExportSummary = SttBenchmarkRunExportSummary | NormalizerBenchmarkRunExportSummary;
 
 type View = "corpus" | "experiments" | "results";
-
-function formatRunOption(run: BenchmarkRunListEntry): string {
-  const when = run.createdAt ? formatTimestamp(run.createdAt) : run.runId;
-  const status = run.finished ? `${run.done ?? 0} done / ${run.failed ?? 0} failed` : "unfinished";
-  const stage = run.stage === "math_transform" ? "Normalizer" : "STT";
-  return `${when} · ${stage} · ${run.snapshotSize} member${run.snapshotSize === 1 ? "" : "s"} · ${status}`;
-}
 
 function formatRulesConfigurationState(state: NormalizerBenchmarkSetPreview["rulesConfiguration"]["state"]): string {
   return {
@@ -1479,52 +1479,6 @@ function SegmentsView({
   );
 }
 
-/**
- * A chosen model in the progressive candidate selector (issue #126): a
- * provider + model pair, compared by value so no fragile separator-joined
- * string key is needed.
- */
-type ModelChoice = { providerLabel: string; modelLabel: string };
-
-function sameModel(a: ModelChoice, b: ModelChoice): boolean {
-  return a.providerLabel === b.providerLabel && a.modelLabel === b.modelLabel;
-}
-
-function optionMatchesModel(option: SttBenchmarkCandidateOption, model: ModelChoice): boolean {
-  return sameModel({ providerLabel: option.providerLabel, modelLabel: option.modelLabel }, model);
-}
-
-/**
- * Distinct models across the catalog, grouped by provider, order preserved —
- * feeds the progressive selector's model list (issue #126). The renderer never
- * hardcodes a candidate list, it only groups whatever `getSttBenchmarkCandidates`
- * returns.
- */
-function groupModelsByProvider(
-  catalog: SttBenchmarkCandidateOption[],
-): { providerLabel: string; models: ModelChoice[] }[] {
-  const byProvider = new Map<string, ModelChoice[]>();
-  for (const option of catalog) {
-    const models = byProvider.get(option.providerLabel) ?? [];
-    if (!models.some((model) => model.modelLabel === option.modelLabel)) {
-      models.push({ providerLabel: option.providerLabel, modelLabel: option.modelLabel });
-    }
-    byProvider.set(option.providerLabel, models);
-  }
-  return Array.from(byProvider.entries()).map(([providerLabel, models]) => ({ providerLabel, models }));
-}
-
-/** Distinct runtime labels among a chosen model's options, order preserved. */
-function runtimeLabelsFor(options: SttBenchmarkCandidateOption[]): string[] {
-  const seen: string[] = [];
-  for (const option of options) {
-    if (!seen.includes(option.runtimeLabel)) {
-      seen.push(option.runtimeLabel);
-    }
-  }
-  return seen;
-}
-
 /** The 1-3 rule of #126, kept in one place with the launch gate that enforces it. */
 const MAX_CANDIDATES = MAX_EXPERIMENT_CANDIDATES;
 
@@ -1573,7 +1527,7 @@ function CandidateSelector({
 }: CandidateSelectorProps): React.ReactElement {
   const [replaceIndex, setReplaceIndex] = useState<number | null>(null);
   const [isPicking, setIsPicking] = useState(false);
-  const [draftModel, setDraftModel] = useState<ModelChoice | null>(null);
+  const [draftModel, setDraftModel] = useState<CandidateModelChoice | null>(null);
   const [draftRuntime, setDraftRuntime] = useState<string | null>(null);
   const [draftCandidateKey, setDraftCandidateKey] = useState<string | null>(null);
   const [openControl, setOpenControl] = useState<"model" | "runtime" | "prompt" | null>(null);
@@ -1586,12 +1540,12 @@ function CandidateSelector({
     }
     return map;
   }, [catalog]);
-  const providers = useMemo(() => groupModelsByProvider(catalog), [catalog]);
+  const providers = useMemo(() => groupCandidateModelsByProvider(catalog), [catalog]);
   const modelOptions = useMemo(
-    () => (draftModel ? catalog.filter((option) => optionMatchesModel(option, draftModel)) : []),
+    () => (draftModel ? catalog.filter((option) => candidateOptionMatchesModel(option, draftModel)) : []),
     [catalog, draftModel],
   );
-  const runtimeOptions = useMemo(() => runtimeLabelsFor(modelOptions), [modelOptions]);
+  const runtimeOptions = useMemo(() => getCandidateRuntimeLabels(modelOptions), [modelOptions]);
   const supportsPrompt = modelOptions.length > 0 && modelOptions[0].supportsPrompt;
   const promptOptions = useMemo(
     () => modelOptions.filter((option) => option.runtimeLabel === draftRuntime),
@@ -1630,9 +1584,9 @@ function CandidateSelector({
     resetDraft();
   }
 
-  function chooseModel(model: ModelChoice): void {
-    const options = catalog.filter((option) => optionMatchesModel(option, model));
-    const runtimes = runtimeLabelsFor(options);
+  function chooseModel(model: CandidateModelChoice): void {
+    const options = catalog.filter((option) => candidateOptionMatchesModel(option, model));
+    const runtimes = getCandidateRuntimeLabels(options);
     const soleRuntime = runtimes.length === 1 ? runtimes[0] : null;
     const providerSupportsPrompt = options.length > 0 && options[0].supportsPrompt;
     setDraftModel(model);
@@ -1772,7 +1726,7 @@ function CandidateSelector({
                         key={`${model.providerLabel}/${model.modelLabel}`}
                         type="button"
                         role="option"
-                        aria-selected={draftModel !== null && sameModel(draftModel, model)}
+                        aria-selected={draftModel !== null && sameCandidateModel(draftModel, model)}
                         className="candidate-option"
                         onClick={() => chooseModel(model)}
                       >
@@ -2726,7 +2680,7 @@ function ResultsView({
               </option>
               {runList.map((run) => (
                 <option key={run.runId} value={run.runId}>
-                  {formatRunOption(run)}
+                  {formatBenchmarkRunOption(run)}
                 </option>
               ))}
               <option value={LEGACY_RUN_KEY}>Legacy (pre-run results)</option>
@@ -3348,10 +3302,6 @@ function DatasetView({
       </section>
     </>
   );
-}
-
-function getSegmentKey(segment: Pick<ReconstructedSegment, "sessionId" | "segmentId">): string {
-  return `${segment.sessionId}/${segment.segmentId}`;
 }
 
 createRoot(document.getElementById("root")!).render(
