@@ -12,7 +12,6 @@ import type {
   SttBenchmarkSetRunResponse,
   SttBenchmarkSetSplit,
   SttCandidateSelectionResponse,
-  SttDatasetExportSummary,
 } from "@dictex/shared";
 import { formatCandidateIdentityKey } from "@dictex/shared/formatting";
 import { analyzeBatchErrors, toSttBenchmarkRunOutcomes } from "@dictex/shared/errorAnalysis";
@@ -36,6 +35,7 @@ import { useBenchmarkRuns } from "./hooks/useBenchmarkRuns.js";
 import { useCandidateSelection } from "./hooks/useCandidateSelection.js";
 import { useCorpus } from "./hooks/useCorpus.js";
 import { useDatasetBuilder } from "./hooks/useDatasetBuilder.js";
+import { useDatasetExport } from "./hooks/useDatasetExport.js";
 import { useSegmentAudio } from "./hooks/useSegmentAudio.js";
 import { DatasetView } from "./views/DatasetView.js";
 import { ExperimentsView, type ExperimentPreview } from "./views/ExperimentsView.js";
@@ -93,9 +93,7 @@ function App(): React.ReactElement {
   const builder = useDatasetBuilder({ api, segments: corpus.segments, onSaved: () => void corpus.loadSegments() });
 
   // Dataset export.
-  const [datasetExportSummary, setDatasetExportSummary] = useState<SttDatasetExportSummary | null>(null);
-  const [datasetExportError, setDatasetExportError] = useState("");
-  const [isExportingDataset, setIsExportingDataset] = useState(false);
+  const datasetExport = useDatasetExport({ api });
 
   const experimentStage = getExperimentStage(experimentStageId);
   // Never render or launch from a count fetched for a previous split. The
@@ -341,26 +339,6 @@ function App(): React.ReactElement {
     }
   }
 
-  async function exportSttDataset(): Promise<void> {
-    setIsExportingDataset(true);
-    setDatasetExportError("");
-    try {
-      setDatasetExportSummary(await api.exportSttDataset());
-    } catch (exportError) {
-      setDatasetExportError(exportError instanceof Error ? exportError.message : "Dataset export failed");
-    } finally {
-      setIsExportingDataset(false);
-    }
-  }
-
-  async function openExportFolder(): Promise<void> {
-    try {
-      await api.openExportFolder(datasetExportSummary?.exportDir ?? undefined);
-    } catch {
-      // Non-fatal convenience.
-    }
-  }
-
   if (view === "experiments") {
     return (
       <main className="app-shell">
@@ -493,11 +471,11 @@ function App(): React.ReactElement {
         builderNotice={builder.builderNotice}
         builderError={builder.builderError}
         saveDatasetBuilderEntry={() => void builder.saveDatasetBuilderEntry()}
-        exportSttDataset={() => void exportSttDataset()}
-        openExportFolder={() => void openExportFolder()}
-        isExportingDataset={isExportingDataset}
-        datasetExportSummary={datasetExportSummary}
-        datasetExportError={datasetExportError}
+        exportSttDataset={() => void datasetExport.exportSttDataset()}
+        openExportFolder={() => void datasetExport.openExportFolder()}
+        isExportingDataset={datasetExport.isExportingDataset}
+        datasetExportSummary={datasetExport.datasetExportSummary}
+        datasetExportError={datasetExport.datasetExportError}
       />
     </main>
   );
