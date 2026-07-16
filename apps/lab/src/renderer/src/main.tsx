@@ -74,6 +74,7 @@ import {
 } from "./resultsSelection.js";
 import { api, type DataFolderStatus, type SourceFolderCheck } from "./api.js";
 import { CandidateSummaryTable } from "./views/CandidateSummaryTable.js";
+import { LabNavigation, type View } from "./views/LabNavigation.js";
 import { RunSegmentOutputs } from "./views/RunSegmentOutputs.js";
 import type { DatasetBuilderSource } from "../../main/datasetBuilder.js";
 import type { SttBenchmarkCandidateOption } from "../../main/candidateCatalog.js";
@@ -87,8 +88,6 @@ type ExperimentPreview =
   | NormalizerBenchmarkSetPreview;
 
 type BenchmarkRunExportSummary = SttBenchmarkRunExportSummary | NormalizerBenchmarkRunExportSummary;
-
-type View = "corpus" | "experiments" | "results";
 
 function formatRulesConfigurationState(state: NormalizerBenchmarkSetPreview["rulesConfiguration"]["state"]): string {
   return {
@@ -114,36 +113,6 @@ type HistoryCorrectionTarget = {
   rawTranscript: string;
   correctionKind: CorrectionKind;
 };
-
-function LabNavigation({
-  activeView,
-  onNavigate,
-}: {
-  activeView: View;
-  onNavigate: (view: View) => void;
-}): React.ReactElement {
-  const items: { view: View; label: string }[] = [
-    { view: "corpus", label: "Corpus" },
-    { view: "experiments", label: "Experiments" },
-    { view: "results", label: "Results" },
-  ];
-
-  return (
-    <nav className="panel nav-panel" aria-label="Lab sections">
-      {items.map((item) => (
-        <button
-          aria-current={activeView === item.view ? "page" : undefined}
-          className="nav-button"
-          disabled={activeView === item.view}
-          key={item.view}
-          onClick={() => onNavigate(item.view)}
-        >
-          {item.label}
-        </button>
-      ))}
-    </nav>
-  );
-}
 
 function App(): React.ReactElement {
   const [view, setView] = useState<View>("corpus");
