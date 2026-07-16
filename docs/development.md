@@ -225,6 +225,56 @@ scripts\npm.cmd run dev:lab
 scripts/npm.sh run dev:lab
 ```
 
+### Structure du renderer du Lab (issues #156 et #157)
+
+Le renderer du Lab est découpé en trois couches :
+
+- `renderer/src/views/` — les vues, qui reçoivent tout par props et ne
+  contiennent aucun état partagé ;
+- `renderer/src/hooks/` — un hook par préoccupation (`useCorpus`,
+  `useSegmentAudio`, `useBenchmarkRuns`, `useCandidateSelection`,
+  `useExperiments`, `useRulesMigration`, `useDatasetBuilder`,
+  `useDatasetExport`) ;
+- `renderer/src/main.tsx` — `App()`, qui n'assemble que ces vues et ces hooks.
+
+`App()` ne garde que ce qui est réellement partagé — la vue courante et le
+message d'une ligne — et câble les rares endroits où une préoccupation doit en
+prévenir une autre : un lancement affiche son run, une entrée enregistrée relit
+le corpus, une migration confirmée relit le pipeline que l'expérience lancerait.
+
+**Un hook reçoit son `LabApi` en paramètre ; il ne l'importe jamais.**
+`renderer/src/api.ts` lit `window.dictexLab` à l'évaluation du module : un hook
+qui l'importerait directement ne pourrait pas être rendu hors d'Electron, donc
+pas être testé. `App()` est l'unique point d'injection de l'API réelle.
+
+Les décisions non triviales restent dans des modules purs testés à part
+(`corpusCorrection.ts`, `experimentProtocol.ts`, `resultsSelection.ts`) ; les
+hooks les appellent plutôt que de rejouer leurs règles.
+
+#### Tester un hook du renderer
+
+Les tests de hooks tournent avec le reste de la suite (`npm run test`, donc
+`node --import tsx --test`). Le harnais vit dans `renderer/src/hooks/testing/` :
+
+- `domEnvironment.ts` installe un DOM jsdom **avant** que `react-dom/client` ne
+  soit importé ; les modules ES étant évalués dans l'ordre des imports,
+  `renderHook.ts` l'importe en premier ;
+- `renderHook.ts` rend un hook isolé et enveloppe tout dans `act`, si bien qu'un
+  test peut `await` une action et lire l'état stabilisé sans attente active. Il
+  est écrit sans JSX : le runner ne lit pas la configuration JSX de Vite ;
+- `labApiStub.ts` construit un `LabApi` ne portant que les canaux déclarés par
+  le test ; tout autre appel **échoue bruyamment** au lieu de renvoyer
+  `undefined` ;
+- `audioPlaybackStub.ts` remplace sur `globalThis` les deux globales que jsdom
+  n'implémente pas — `Audio` et les object URLs. Elles sont remplacées plutôt
+  qu'injectées, afin que le hook testé appelle exactement ce qu'il appelle dans
+  Electron : aucune couture réservée aux tests dans le code de production.
+
+Un faux processus principal doit rester honnête. Le faux de `useCorpus.test.ts`
+mémorise par exemple le dossier qu'on lui a demandé d'utiliser : un bouchon
+répondant un dossier fixe masquerait le fait que le hook relit l'état du dossier
+juste après l'avoir changé.
+
 ### Lancer une expérience et lire son résultat (issue #138)
 
 Le Lab sépare strictement le protocole à lancer du run déjà figé :
