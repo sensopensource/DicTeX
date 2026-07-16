@@ -108,7 +108,8 @@ import {
  * candidates, and exports datasets. Audio and events in DicTeX's data folder
  * stay read-only; the sole explicit source write is the confirmed, backed-up
  * and atomic legacy-rules migration. Every other artifact goes to the Lab's
- * own store. See pivot_dictex_lab_split.md and AGENTS.md "Current Direction".
+ * own store. See pivot_dictex_lab_split.md and docs/product-decisions.md
+ * "DicTeX / Lab split (monorepo)".
  */
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };

@@ -7,8 +7,8 @@ import path from "node:path";
  * benchmark) and apps/lab (benchmark only) so the Python sidecar contract
  * (venv/DICTEX_PYTHON resolution, env vars, stdout JSON shape,
  * ProviderUnavailableError signal) never diverges between the two apps. See
- * AGENTS.md "Benchmark Vision" / docs/development.md "Second STT provider
- * (Vosk)" for the provider contract this wraps.
+ * docs/product-decisions.md "Benchmark Candidates" / docs/development.md
+ * "Second STT provider (Vosk)" for the provider contract this wraps.
  */
 
 export type SttConfig = {
