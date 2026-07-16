@@ -548,6 +548,19 @@ data flow. Decisions:
 
 The UI should feel like a compact utility app, not a landing page, dashboard, or marketing site.
 
+### Direction « Cahier Seyès » — 16 juillet 2026
+
+Les deux applications consomment la même fondation visuelle depuis
+`packages/shared/src/styles.css`. La palette est définie une seule fois par les
+tokens `--ink`, `--ink-deep`, `--paper`, `--paper-edge`, `--rule`, `--margin`,
+`--pencil`, `--ok`, `--warn`, `--err` et `--activity`. Les composants utilisent
+des alias sémantiques dérivés de ces tokens, sans couleur littérale locale.
+
+Le contenu reste sur papier dans tous les thèmes ; seul le bureau derrière le
+cahier suit la préférence claire ou sombre du lecteur. Le texte et les
+mathématiques utilisent une police serif (les mathématiques sont italiques) ;
+les raccourcis et empreintes techniques utilisent la police mono partagée.
+
 Preferred direction:
 
 - sober;
@@ -824,7 +837,8 @@ From `docs/ux-review.md`, human decisions recorded:
 - **Unified navigation model (D)** — deliberately deferred. Structural, purely
   aesthetic benefit, and the likeliest way to drift a utility UI toward a
   dashboard. Revisit once both apps stop moving.
-- **Light theme (G)** — not happening. Both apps are dark-only by design.
+- **Theme (G)** — le cahier reste clair ; seule la couleur du bureau extérieur
+  suit le thème du lecteur.
 
 ## Agent Handoff Guidance
 
