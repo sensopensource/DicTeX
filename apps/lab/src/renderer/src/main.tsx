@@ -3,31 +3,23 @@ import { createRoot } from "react-dom/client";
 import "@dictex/shared/styles.css";
 import "./styles.css";
 import type {
-  AudioSegmentRecord,
   BenchmarkMathTransformRunProjection,
   BenchmarkRunListEntry,
   BenchmarkCandidateIdentity,
   CorrectionKind,
   ReconstructedSegment,
   SttBenchmarkCandidateSummary,
-  SttBenchmarkCandidateSummaryResponse,
   SttBenchmarkRunDetail,
   SttBenchmarkRunExportSummary,
   NormalizerBenchmarkRunExportSummary,
   LegacyRuleResolution,
   LegacyRulesMigrationPreview,
   RulesMigrationReceipt,
-  RulesMigrationConfirmation,
-  SttBenchmarkSetMembershipRequest,
-  SttBenchmarkSetMembershipResponse,
   SttBenchmarkSetPreview,
   SttBenchmarkSetProgress,
   SttBenchmarkSetRunResponse,
   SttBenchmarkSetSplit,
-  SttCandidateSelectionRequest,
   SttCandidateSelectionResponse,
-  SttCorrectionRequest,
-  SttCorrectionResponse,
   SttDatasetExportSummary,
 } from "@dictex/shared";
 import {
@@ -78,90 +70,19 @@ import {
   startResultsSelection,
   type ResultsState,
 } from "./resultsSelection.js";
-import type {
-  DatasetBuilderSaveRequest,
-  DatasetBuilderSaveResponse,
-  DatasetBuilderSource,
-} from "../../main/datasetBuilder.js";
+import { api, type DataFolderStatus, type SourceFolderCheck } from "./api.js";
+import type { DatasetBuilderSource } from "../../main/datasetBuilder.js";
 import type { SttBenchmarkCandidateOption } from "../../main/candidateCatalog.js";
-import type { SttPromptVariantCreateRequest, SttPromptVariantListEntry } from "../../main/promptVariants.js";
 import type {
   NormalizerBenchmarkRunResponse,
   NormalizerBenchmarkSetPreview,
 } from "../../main/normalizerBenchmark.js";
-
-type AudioSegmentPlayback = {
-  audioBytes: Uint8Array;
-  mimeType: string;
-};
-
-type DataFolderStatus = {
-  path: string;
-  isDefault: boolean;
-};
-
-type SourceFolderCheck = {
-  exists: boolean;
-  eventsFound: boolean;
-};
 
 type ExperimentPreview =
   | ({ stage: "stt" } & SttBenchmarkSetPreview)
   | NormalizerBenchmarkSetPreview;
 
 type BenchmarkRunExportSummary = SttBenchmarkRunExportSummary | NormalizerBenchmarkRunExportSummary;
-
-type LabApi = {
-  getDataFolder: () => Promise<DataFolderStatus>;
-  setDataFolder: (folder: string) => Promise<DataFolderStatus>;
-  resetDataFolder: () => Promise<DataFolderStatus>;
-  pickDataFolder: () => Promise<DataFolderStatus | null>;
-  checkDataFolder: () => Promise<SourceFolderCheck>;
-  getSegments: (limit?: number) => Promise<ReconstructedSegment[]>;
-  getSegmentAudio: (audioSegment: AudioSegmentRecord) => Promise<AudioSegmentPlayback>;
-  saveSttCorrection: (correction: SttCorrectionRequest) => Promise<SttCorrectionResponse>;
-  markSttBenchmarkSetMembership: (
-    membership: SttBenchmarkSetMembershipRequest,
-  ) => Promise<SttBenchmarkSetMembershipResponse>;
-  previewSttBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkSetPreview>;
-  previewNormalizerBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<NormalizerBenchmarkSetPreview>;
-  runSetSttBenchmark: (
-    split: SttBenchmarkSetSplit,
-    candidates: BenchmarkCandidateIdentity[],
-  ) => Promise<SttBenchmarkSetRunResponse>;
-  runSetNormalizerBenchmark: (
-    split: SttBenchmarkSetSplit,
-    candidate: BenchmarkCandidateIdentity,
-  ) => Promise<NormalizerBenchmarkRunResponse>;
-  previewRulesMigration: (resolutions?: LegacyRuleResolution[]) => Promise<LegacyRulesMigrationPreview>;
-  migrateRules: (confirmation: RulesMigrationConfirmation) => Promise<RulesMigrationReceipt>;
-  getBenchmarkRunDetail: (
-    runId: string,
-  ) => Promise<SttBenchmarkRunDetail | BenchmarkMathTransformRunProjection | null>;
-  listBenchmarkRuns: (split: SttBenchmarkSetSplit) => Promise<BenchmarkRunListEntry[]>;
-  exportBenchmarkRun: (runId: string) => Promise<BenchmarkRunExportSummary>;
-  summarizeLegacySttBenchmarkSet: (split: SttBenchmarkSetSplit) => Promise<SttBenchmarkCandidateSummaryResponse>;
-  selectSttCandidate: (request: SttCandidateSelectionRequest) => Promise<SttCandidateSelectionResponse>;
-  getLatestSttCandidateSelection: () => Promise<SttCandidateSelectionResponse | null>;
-  saveDatasetBuilderEntry: (request: DatasetBuilderSaveRequest) => Promise<DatasetBuilderSaveResponse>;
-  prefillDatasetBuilderLayer2: (literalTranscript: string) => Promise<string>;
-  exportSttDataset: () => Promise<SttDatasetExportSummary>;
-  openExportFolder: (exportDir?: string) => Promise<boolean>;
-  getSttBenchmarkCandidates: () => Promise<SttBenchmarkCandidateOption[]>;
-  listSttPromptVariants: () => Promise<SttPromptVariantListEntry[]>;
-  createSttPromptVariant: (request: SttPromptVariantCreateRequest) => Promise<SttPromptVariantListEntry>;
-  openLabDataFolder: () => Promise<boolean>;
-  openSourceDataFolder: () => Promise<boolean>;
-  openSourceRulesFolder: () => Promise<boolean>;
-  openLabEventsLog: () => Promise<boolean>;
-  onBatchBenchmarkProgress: (callback: (progress: SttBenchmarkSetProgress) => void) => () => void;
-};
-
-declare global {
-  interface Window {
-    dictexLab: LabApi;
-  }
-}
 
 type View = "corpus" | "experiments" | "results";
 
@@ -358,9 +279,9 @@ function App(): React.ReactElement {
   const audioObjectUrlRef = useRef("");
 
   useEffect(() => {
-    const removeBatchProgressListener = window.dictexLab.onBatchBenchmarkProgress(setLaunchProgress);
+    const removeBatchProgressListener = api.onBatchBenchmarkProgress(setLaunchProgress);
     void refreshDataFolder();
-    void window.dictexLab
+    void api
       .getSttBenchmarkCandidates()
       .then((catalog) => {
         setCandidateCatalog(catalog);
@@ -369,7 +290,7 @@ function App(): React.ReactElement {
       .catch(() => {
         // Non-fatal; the batch selector just shows no candidates.
       });
-    void window.dictexLab.getLatestSttCandidateSelection().then(setCurrentSelection).catch(() => {
+    void api.getLatestSttCandidateSelection().then(setCurrentSelection).catch(() => {
       // Non-fatal; the panel shows none selected.
     });
     void loadSegments();
@@ -387,7 +308,7 @@ function App(): React.ReactElement {
   // change clears the selection in the handler itself.
   useEffect(() => {
     let cancelled = false;
-    window.dictexLab
+    api
       .listBenchmarkRuns(resultsSplit)
       .then((runs) => {
         if (!cancelled) {
@@ -417,8 +338,8 @@ function App(): React.ReactElement {
     let cancelled = false;
     const previewPromise: Promise<ExperimentPreview> =
       experimentStage.benchmarkStage === "math_transform"
-        ? window.dictexLab.previewNormalizerBenchmarkSet(experimentSplit)
-        : window.dictexLab
+        ? api.previewNormalizerBenchmarkSet(experimentSplit)
+        : api
             .previewSttBenchmarkSet(experimentSplit)
             .then((preview) => ({ ...preview, stage: "stt" as const }));
     previewPromise
@@ -480,7 +401,7 @@ function App(): React.ReactElement {
     let cancelled = false;
     const timer = setTimeout(() => {
       setIsPrefillingLayer2(true);
-      void window.dictexLab
+      void api
         .prefillDatasetBuilderLayer2(trimmed)
         .then((prefill) => {
           if (cancelled) {
@@ -518,8 +439,8 @@ function App(): React.ReactElement {
   async function refreshDataFolder(): Promise<void> {
     try {
       const [status, check] = await Promise.all([
-        window.dictexLab.getDataFolder(),
-        window.dictexLab.checkDataFolder(),
+        api.getDataFolder(),
+        api.checkDataFolder(),
       ]);
       setDataFolder(status);
       setSourceCheck(check);
@@ -532,7 +453,7 @@ function App(): React.ReactElement {
     setSegmentsError("");
     setIsLoadingSegments(true);
     try {
-      setSegments(await window.dictexLab.getSegments(50));
+      setSegments(await api.getSegments(50));
       await refreshDataFolder();
     } catch (error) {
       setSegmentsError(error instanceof Error ? error.message : "Could not load segments");
@@ -544,7 +465,7 @@ function App(): React.ReactElement {
   async function pickDataFolder(): Promise<void> {
     setIsSavingDataFolder(true);
     try {
-      const status = await window.dictexLab.pickDataFolder();
+      const status = await api.pickDataFolder();
       if (status) {
         setDataFolder(status);
         setNotice(`DicTeX data folder set to ${status.path}`);
@@ -563,7 +484,7 @@ function App(): React.ReactElement {
     }
     setIsSavingDataFolder(true);
     try {
-      const status = await window.dictexLab.setDataFolder(dataFolderDraft.trim());
+      const status = await api.setDataFolder(dataFolderDraft.trim());
       setDataFolder(status);
       setDataFolderDraft("");
       setNotice(`DicTeX data folder set to ${status.path}`);
@@ -578,7 +499,7 @@ function App(): React.ReactElement {
   async function resetDataFolder(): Promise<void> {
     setIsSavingDataFolder(true);
     try {
-      const status = await window.dictexLab.resetDataFolder();
+      const status = await api.resetDataFolder();
       setDataFolder(status);
       setNotice(`DicTeX data folder reset to default (${status.path})`);
       await loadSegments();
@@ -612,7 +533,7 @@ function App(): React.ReactElement {
     setLoadingAudioSegmentKey(segmentKey);
 
     try {
-      const playback = await window.dictexLab.getSegmentAudio({
+      const playback = await api.getSegmentAudio({
         sessionId: segment.sessionId,
         segmentId: segment.segmentId,
         audioRef: segment.audioRef,
@@ -675,7 +596,7 @@ function App(): React.ReactElement {
     setCorrectionNotice("");
     setIsSavingCorrection(true);
     try {
-      const saved = await window.dictexLab.saveSttCorrection({
+      const saved = await api.saveSttCorrection({
         sessionId: historyCorrectionTarget.sessionId,
         segmentId: historyCorrectionTarget.segmentId,
         audioRef: historyCorrectionTarget.audioRef,
@@ -706,7 +627,7 @@ function App(): React.ReactElement {
     setSegmentsError("");
     setBenchmarkSetTargetKey(segmentKey);
     try {
-      const marked = await window.dictexLab.markSttBenchmarkSetMembership({
+      const marked = await api.markSttBenchmarkSetMembership({
         sessionId: segment.sessionId,
         segmentId: segment.segmentId,
         audioRef: segment.audioRef,
@@ -723,7 +644,7 @@ function App(): React.ReactElement {
 
   async function refreshRunList(split: SttBenchmarkSetSplit): Promise<void> {
     try {
-      setRunList(await window.dictexLab.listBenchmarkRuns(split));
+      setRunList(await api.listBenchmarkRuns(split));
     } catch {
       setRunList([]);
     }
@@ -743,12 +664,12 @@ function App(): React.ReactElement {
 
     try {
       if (key === LEGACY_RUN_KEY) {
-        const legacy = await window.dictexLab.summarizeLegacySttBenchmarkSet(resultsSplit);
+        const legacy = await api.summarizeLegacySttBenchmarkSet(resultsSplit);
         setResults((current) => applyLegacySummary(current, key, legacy));
         return;
       }
 
-      const detail = await window.dictexLab.getBenchmarkRunDetail(key);
+      const detail = await api.getBenchmarkRunDetail(key);
       setResults((current) => applyRunDetail(current, key, detail));
     } catch (detailError) {
       const message = detailError instanceof Error ? detailError.message : "Could not read this run";
@@ -770,7 +691,7 @@ function App(): React.ReactElement {
     setRulesMigrationReceipt(null);
     setRulesMigrationResolutions([]);
     try {
-      setRulesMigrationPreview(await window.dictexLab.previewRulesMigration([]));
+      setRulesMigrationPreview(await api.previewRulesMigration([]));
     } catch (error) {
       setRulesMigrationPreview(null);
       setRulesMigrationError(error instanceof Error ? error.message : "Could not inspect legacy rules");
@@ -787,7 +708,7 @@ function App(): React.ReactElement {
     setRulesMigrationResolutions(next);
     setRulesMigrationError("");
     try {
-      setRulesMigrationPreview(await window.dictexLab.previewRulesMigration(next));
+      setRulesMigrationPreview(await api.previewRulesMigration(next));
     } catch (error) {
       setRulesMigrationError(error instanceof Error ? error.message : "Could not update the migration preview");
     }
@@ -803,14 +724,14 @@ function App(): React.ReactElement {
     setRulesMigrationError("");
     setIsMigratingRules(true);
     try {
-      const receipt = await window.dictexLab.migrateRules({
+      const receipt = await api.migrateRules({
         resolutions: rulesMigrationResolutions,
         expectedLegacyHash: rulesMigrationPreview.legacyHash,
         expectedEffectiveHash: rulesMigrationPreview.expectedEffectiveHash!,
       });
       setRulesMigrationReceipt(receipt);
       setRulesMigrationPreview(null);
-      const refreshed = await window.dictexLab.previewNormalizerBenchmarkSet(experimentSplit);
+      const refreshed = await api.previewNormalizerBenchmarkSet(experimentSplit);
       setSetPreview(refreshed);
     } catch (error) {
       setRulesMigrationError(error instanceof Error ? error.message : "Rules migration failed");
@@ -821,7 +742,7 @@ function App(): React.ReactElement {
 
   async function openRulesFolder(): Promise<void> {
     try {
-      await window.dictexLab.openSourceRulesFolder();
+      await api.openSourceRulesFolder();
     } catch {
       // Non-fatal convenience.
     }
@@ -852,9 +773,9 @@ function App(): React.ReactElement {
         if (!candidate) {
           throw new Error("Read the current deterministic pipeline before launching");
         }
-        response = await window.dictexLab.runSetNormalizerBenchmark(split, candidate);
+        response = await api.runSetNormalizerBenchmark(split, candidate);
       } else {
-        response = await window.dictexLab.runSetSttBenchmark(split, selectedCandidates);
+        response = await api.runSetSttBenchmark(split, selectedCandidates);
       }
     } catch (runError) {
       setLaunchError(runError instanceof Error ? runError.message : "The experiment failed to run");
@@ -883,7 +804,7 @@ function App(): React.ReactElement {
     setRunExportError("");
     setIsExportingRun(true);
     try {
-      setRunExportSummary(await window.dictexLab.exportBenchmarkRun(runId));
+      setRunExportSummary(await api.exportBenchmarkRun(runId));
     } catch (exportError) {
       setRunExportSummary(null);
       setRunExportError(exportError instanceof Error ? exportError.message : "Benchmark run export failed");
@@ -897,7 +818,7 @@ function App(): React.ReactElement {
       return;
     }
     try {
-      await window.dictexLab.openExportFolder(runExportSummary.exportDir);
+      await api.openExportFolder(runExportSummary.exportDir);
     } catch {
       // Non-fatal convenience.
     }
@@ -913,7 +834,7 @@ function App(): React.ReactElement {
     setSelectionError("");
     setIsSelectingCandidateKey(candidateKey);
     try {
-      const selection = await window.dictexLab.selectSttCandidate({
+      const selection = await api.selectSttCandidate({
         candidate,
         selectionReason: selectionReasonDraft.trim(),
       });
@@ -930,7 +851,7 @@ function App(): React.ReactElement {
 
   async function refreshCandidateCatalog(): Promise<void> {
     try {
-      const catalog = await window.dictexLab.getSttBenchmarkCandidates();
+      const catalog = await api.getSttBenchmarkCandidates();
       setCandidateCatalog(catalog);
     } catch {
       // Non-fatal; the batch selector keeps its previous catalog.
@@ -947,7 +868,7 @@ function App(): React.ReactElement {
     setCreatePromptVariantError("");
     setIsCreatingPromptVariant(true);
     try {
-      await window.dictexLab.createSttPromptVariant({
+      await api.createSttPromptVariant({
         name: newPromptVariantName.trim(),
         displayName: newPromptVariantDisplayName.trim(),
         promptText: newPromptVariantText.trim(),
@@ -1014,7 +935,7 @@ function App(): React.ReactElement {
 
     setIsSavingBuilderEntry(true);
     try {
-      const response = await window.dictexLab.saveDatasetBuilderEntry({
+      const response = await api.saveDatasetBuilderEntry({
         source,
         rawTranscript,
         literalTranscript: literal,
@@ -1048,7 +969,7 @@ function App(): React.ReactElement {
     setIsExportingDataset(true);
     setDatasetExportError("");
     try {
-      setDatasetExportSummary(await window.dictexLab.exportSttDataset());
+      setDatasetExportSummary(await api.exportSttDataset());
     } catch (exportError) {
       setDatasetExportError(exportError instanceof Error ? exportError.message : "Dataset export failed");
     } finally {
@@ -1058,7 +979,7 @@ function App(): React.ReactElement {
 
   async function openExportFolder(): Promise<void> {
     try {
-      await window.dictexLab.openExportFolder(datasetExportSummary?.exportDir ?? undefined);
+      await api.openExportFolder(datasetExportSummary?.exportDir ?? undefined);
     } catch {
       // Non-fatal convenience.
     }
@@ -1169,9 +1090,9 @@ function App(): React.ReactElement {
         cancelSegmentCorrection={cancelSegmentCorrection}
         correctionNotice={correctionNotice}
         notice={notice}
-        openLabDataFolder={() => void window.dictexLab.openLabDataFolder()}
-        openSourceDataFolder={() => void window.dictexLab.openSourceDataFolder()}
-        openLabEventsLog={() => void window.dictexLab.openLabEventsLog()}
+        openLabDataFolder={() => void api.openLabDataFolder()}
+        openSourceDataFolder={() => void api.openSourceDataFolder()}
+        openLabEventsLog={() => void api.openLabEventsLog()}
         onNavigate={setView}
       />
       <DatasetView
