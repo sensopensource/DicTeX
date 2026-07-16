@@ -40,6 +40,7 @@ import {
   type ResultsState,
 } from "./resultsSelection.js";
 import { api, type DataFolderStatus, type SourceFolderCheck } from "./api.js";
+import { useSegmentAudio } from "./hooks/useSegmentAudio.js";
 import { DatasetView } from "./views/DatasetView.js";
 import { ExperimentsView, type ExperimentPreview } from "./views/ExperimentsView.js";
 import type { View } from "./views/LabNavigation.js";
@@ -63,9 +64,7 @@ function App(): React.ReactElement {
   const [segments, setSegments] = useState<ReconstructedSegment[]>([]);
   const [segmentsError, setSegmentsError] = useState("");
   const [isLoadingSegments, setIsLoadingSegments] = useState(false);
-  const [audioError, setAudioError] = useState("");
-  const [loadingAudioSegmentKey, setLoadingAudioSegmentKey] = useState("");
-  const [playingAudioSegmentKey, setPlayingAudioSegmentKey] = useState("");
+  const { audioError, loadingAudioSegmentKey, playingAudioSegmentKey, playSegmentAudio } = useSegmentAudio({ api });
   const [isSavingCorrection, setIsSavingCorrection] = useState(false);
   const [correctionNotice, setCorrectionNotice] = useState("");
   const [benchmarkSetTargetKey, setBenchmarkSetTargetKey] = useState<string | null>(null);
@@ -176,8 +175,6 @@ function App(): React.ReactElement {
     candidates: experimentCandidates,
     isRunning: isRunningExperiment,
   });
-  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
-  const audioObjectUrlRef = useRef("");
 
   useEffect(() => {
     const removeBatchProgressListener = api.onBatchBenchmarkProgress(setLaunchProgress);
@@ -198,7 +195,6 @@ function App(): React.ReactElement {
 
     return () => {
       removeBatchProgressListener();
-      stopAudioPlayback();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -408,60 +404,6 @@ function App(): React.ReactElement {
       setNotice(error instanceof Error ? error.message : "Could not reset data folder");
     } finally {
       setIsSavingDataFolder(false);
-    }
-  }
-
-  function stopAudioPlayback(): void {
-    audioPlayerRef.current?.pause();
-    audioPlayerRef.current = null;
-    if (audioObjectUrlRef.current) {
-      URL.revokeObjectURL(audioObjectUrlRef.current);
-      audioObjectUrlRef.current = "";
-    }
-    setPlayingAudioSegmentKey("");
-    setLoadingAudioSegmentKey("");
-  }
-
-  async function playSegmentAudio(segment: ReconstructedSegment): Promise<void> {
-    const segmentKey = getSegmentKey(segment);
-    if (playingAudioSegmentKey === segmentKey) {
-      stopAudioPlayback();
-      return;
-    }
-
-    stopAudioPlayback();
-    setAudioError("");
-    setLoadingAudioSegmentKey(segmentKey);
-
-    try {
-      const playback = await api.getSegmentAudio({
-        sessionId: segment.sessionId,
-        segmentId: segment.segmentId,
-        audioRef: segment.audioRef,
-      });
-      const audioBytes = new Uint8Array(playback.audioBytes);
-      const audioBuffer = audioBytes.buffer.slice(
-        audioBytes.byteOffset,
-        audioBytes.byteOffset + audioBytes.byteLength,
-      ) as ArrayBuffer;
-      const audioUrl = URL.createObjectURL(new Blob([audioBuffer], { type: playback.mimeType }));
-      const player = new Audio(audioUrl);
-
-      audioPlayerRef.current = player;
-      audioObjectUrlRef.current = audioUrl;
-      player.onended = stopAudioPlayback;
-      player.onerror = () => {
-        setAudioError(`Could not play ${segment.sessionId} / ${segment.segmentId}`);
-        stopAudioPlayback();
-      };
-
-      await player.play();
-      setPlayingAudioSegmentKey(segmentKey);
-    } catch (playError) {
-      setAudioError(playError instanceof Error ? playError.message : "Could not play audio segment");
-      stopAudioPlayback();
-    } finally {
-      setLoadingAudioSegmentKey("");
     }
   }
 
