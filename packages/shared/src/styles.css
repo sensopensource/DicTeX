@@ -130,6 +130,13 @@ samp {
   font-family: var(--font-mono);
 }
 
+/* Reserved math typography: a contract, not a current behavior. No surface
+   renders math elements yet — normalized output shows LaTeX as literal text, so
+   it stays in the prose serif (docs/product-decisions.md, "Direction « Cahier
+   Seyès »"). These rules bind the day a renderer emits real math elements.
+   Keep the selector list to math element names only: widening it to a
+   transcript container would italicize the prose mixed into the LaTeX, which
+   styles.test.ts forbids. */
 math,
 mjx-container {
   font-family: var(--font-math);

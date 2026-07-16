@@ -557,9 +557,21 @@ tokens `--ink`, `--ink-deep`, `--paper`, `--paper-edge`, `--rule`, `--margin`,
 des alias sémantiques dérivés de ces tokens, sans couleur littérale locale.
 
 Le contenu reste sur papier dans tous les thèmes ; seul le bureau derrière le
-cahier suit la préférence claire ou sombre du lecteur. Le texte et les
-mathématiques utilisent une police serif (les mathématiques sont italiques) ;
-les raccourcis et empreintes techniques utilisent la police mono partagée.
+cahier suit la préférence claire ou sombre du lecteur. Le texte utilise la
+police serif partagée ; les raccourcis et les empreintes techniques utilisent la
+police mono.
+
+La typographie mathématique est un contrat **réservé**, pas un comportement
+actuel. Le token `--font-math` et la règle italique ne ciblent que de vrais
+éléments mathématiques rendus (`math`, `mjx-container`) ; aucune surface n'en
+produit aujourd'hui. Les sorties normalisées affichent le LaTeX en texte
+littéral : il reste donc dans le serif de la prose, sans italique. Le contrat
+prendra effet le jour où un moteur de rendu mathématique sera adopté — une
+décision produit hors du périmètre de cette fondation, qui précède
+volontairement l'habillage des surfaces. La règle reste limitée aux noms
+d'éléments mathématiques : l'étendre à un conteneur de transcription mettrait en
+italique la prose mêlée au LaTeX. `packages/shared/src/styles.test.ts` verrouille
+cette limite.
 
 Preferred direction:
 
