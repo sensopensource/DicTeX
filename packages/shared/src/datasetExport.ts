@@ -136,7 +136,8 @@ export type BuildSttDatasetExportOptions = NormalizeOptions;
  * mutating it. For each split it reads every corrected segment and, per segment,
  * the latest correction of EACH kind (not just the single latest event), so
  * chained acoustic + math_transform corrections stay separable — the core
- * data-integrity requirement for this export (see AGENTS.md). Records are grouped
+ * data-integrity requirement for this export (see docs/product-decisions.md
+ * "Corrected dataset export"). Records are grouped
  * by split, then by correction kind, so acoustic (STT) and math_transform
  * (normalizer) datasets land in distinct files.
  *

@@ -321,9 +321,9 @@ Then two layers:
 
 Clicking `Save entry` writes chained `stt_correction` events into the Lab's
 **own** store (never DicTeX's folder), same principle as the removed #66
-recorder (see AGENTS.md "Two-layer dataset enrichment"): an **empty layer is
-skipped**, so the two datasets stay separable purely by which layer was
-filled —
+recorder (see `docs/product-decisions.md` "Dataset enrichment recording —
+removed (DicTeX/Lab split)"): an **empty layer is skipped**, so the two
+datasets stay separable purely by which layer was filled —
 
 - a **picked segment** (real audio) + Layer 1 writes an `acoustic` correction
   (`raw_transcript` = the segment's raw STT, `corrected_transcript` = Layer 1);

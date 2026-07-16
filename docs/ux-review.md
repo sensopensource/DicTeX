@@ -13,7 +13,7 @@ coherent and to close small quality gaps **without drifting from the product
 direction**: compact, sober, utility-like, minimal colors, clear state,
 diagnostics visible but not noisy — close to OpenCode / OpenWhispr. No
 landing-page hero, gradients, decorative typography, SaaS-dashboard feel, or
-broad settings pages (AGENTS.md / docs/product-decisions.md → "UI Direction").
+broad settings pages (`docs/product-decisions.md` → "UI Direction").
 
 Each finding is tagged **[safe]** (implemented in this PR) or **[needs product
 call]** (left as a written proposal for a human to greenlight).

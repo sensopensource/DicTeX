@@ -11,7 +11,8 @@ import type { SttBenchmarkSetSplit } from "@dictex/shared";
  *
  * Saving writes chained `stt_correction` events into the Lab's OWN store
  * (never DicTeX's folder) — the same two-layer separability principle as
- * pivot_dictex_lab_split.md / AGENTS.md "Two-layer dataset enrichment":
+ * pivot_dictex_lab_split.md / docs/product-decisions.md "Dataset enrichment
+ * recording — removed (DicTeX/Lab split)":
  *
  *   acoustic       raw_transcript = raw STT, corrected = literal (Layer 1)
  *   math_transform raw_transcript = literal (Layer 1), corrected = notation (Layer 2)

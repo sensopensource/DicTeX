@@ -369,7 +369,7 @@ prennent pas effectivement en charge et ne possèdent pas leurs tests.
 ## DicTeX / Lab split (monorepo)
 
 DicTeX est séparé en deux applications Electron dans un même monorepo npm
-(voir `pivot_dictex_lab_split.md` et la « Direction actuelle » d'`AGENTS.md`) :
+(voir `pivot_dictex_lab_split.md` et `docs/roadmap.md`) :
 
 - **`apps/dictex`** — the consumer dictation tool (voice → STT → normalizer →
   insert). Has the microphone, hotkey, clipboard/paste, and normalizer.
@@ -441,7 +441,9 @@ The implementation currently uses:
 - JSONL event logging for local data capture.
 - Windows-first auto-paste.
 
-Do not migrate to Tauri, SQLite, or a document editor unless there is a specific issue for that migration.
+Do not migrate to Tauri, SQLite, or a document editor; do not integrate a
+third-party LLM provider or API key handling; do not add cloud sync or a
+multi-user backend — unless there is a specific issue for that direction.
 
 ## Data Model Decisions
 
@@ -514,7 +516,7 @@ data flow. Decisions:
   event(s) get written is determined purely by which layer is filled
   (Layer 2 present → math_transform, which always requires Layer 1 since Layer 1
   is its input). A wrong/blended format here would corrupt both datasets (see
-  AGENTS.md level-scoring: axis E = 4).
+  `docs/agent-workflow.md` level-scoring: axis E = 4).
 - **An `acoustic` pair requires real audio (a picked segment) — never a paste.**
   A paste source has no audio, so it can only write a math_transform
   (text → text) pair; an acoustic pair (audio → literal) is only written for a
@@ -550,19 +552,20 @@ Preferred direction:
 
 - sober;
 - compact;
-- functional;
+- functional, utility-like;
 - information-dense but not cluttered;
 - close to tools like OpenCode/OpenWhispr;
 - minimal colors;
-- clear status and diagnostics.
+- clear status and diagnostics, visible but not noisy.
 
 Avoid:
 
 - large hero sections;
 - gradient-heavy marketing screens;
-- decorative animations;
+- big decorative typography or decorative animations;
 - generic AI SaaS layouts;
-- document-editor complexity in the MVP.
+- document-editor complexity in the MVP;
+- broad settings pages too early.
 
 Useful visible information:
 
@@ -576,6 +579,21 @@ Useful visible information:
 - correction state;
 - benchmark results;
 - data folder / events log access.
+
+La navigation actuelle est séparée par application :
+
+- **DicTeX** conserve une seule vue Home : dictée, normaliseur, modèle STT,
+  diagnostic minimal, historique repliable avec copie/réécoute et bouton
+  **Open Lab**. Pas de correction, de banc d'essai ou d'ensemble de données
+  dans cette application.
+- **DicTeX Lab** possède les vues Corpus, Experiments et Results (#136),
+  chacune limitée à sa tâche : le corpus et sa qualification, le formulaire
+  de lancement d'une expérience, la lecture d'un run figé (#138). Un
+  lancement ne montre jamais un résultat, et un résultat n'offre jamais de
+  contrôle de lancement.
+
+Ne pas réintroduire dans DicTeX ce que le pivot #75–#78 a extrait. Le
+caractère compact, sobre et utilitaire s'applique aux deux applications.
 
 ## Shortcut And Insertion Decisions
 
@@ -650,6 +668,35 @@ runtimes par modèle dans le benchmark »).
 Future candidates may belong to other stages, such as normalization, segment classification, math transform, or correction suggestion. They can include local STT engines, local LLMs, remote LLMs, or rule-based transforms, but candidates should only be compared within the same stage for the same segment.
 
 Do not treat a Whisper STT transcript and a Claude or Qwen math-transform output as the same kind of benchmark artifact. They may share benchmark metadata, but their stage defines what output is being evaluated.
+
+Benchmarking is a first-class evaluation loop for choosing rules, prompts, and
+models — not just a developer debugging tool. Do not let the benchmark
+architecture get stuck as "Whisper base vs Whisper small": that is only the
+first useful benchmark because STT is the first implemented stage. The
+long-term goal is to compare candidates by pipeline stage:
+
+```text
+segment audio/transcript
+-> STT candidates
+-> normalization candidates
+-> segment classification candidates
+-> math transform candidates
+-> correction suggestion candidates
+```
+
+Future `math_transform`-stage candidates, for example:
+
+```json
+{"stage":"math_transform","provider":"qwen","model":"qwen2.5-coder","variant":"local"}
+```
+
+```json
+{"stage":"math_transform","provider":"claude","model":"claude-sonnet","variant":"remote"}
+```
+
+Implement this progressively. Do not build a large generic benchmark
+framework before the product needs it, but avoid hardcoding assumptions that
+make future model-vs-model comparisons awkward.
 
 ### Second local STT provider (Vosk)
 
@@ -760,6 +807,24 @@ commencer avec une portée étroite :
 
 L'ambiguïté est normale. Une éventuelle interface devra permettre de choisir ou
 de corriger facilement la portée de l'analyse.
+
+## Deferred UX proposals
+
+From `docs/ux-review.md`, human decisions recorded:
+
+- **Typographic scale (A)** — wanted, but touches nearly every CSS rule in both
+  apps, so it is a merge-conflict magnet. Land it alone, never bundled.
+- **Idle DicTeX Home (B)** — decision: **hide empty metrics** until they have a
+  value, rather than showing eight `-` cells or seeding from config.
+- **Libellé du bouton d'enregistrement (F)** — décision : aligner le bouton sur
+  le fonctionnement à bascule avec les libellés anglais **Start / Stop** et le
+  même état que `Win+Alt+Space`.
+- **Footer actions (C)** and **collapsible Lab data-folder panel (E)** — still
+  open, no decision.
+- **Unified navigation model (D)** — deliberately deferred. Structural, purely
+  aesthetic benefit, and the likeliest way to drift a utility UI toward a
+  dashboard. Revisit once both apps stop moving.
+- **Light theme (G)** — not happening. Both apps are dark-only by design.
 
 ## Agent Handoff Guidance
 

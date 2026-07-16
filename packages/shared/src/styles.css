@@ -5,7 +5,7 @@
  * Imported once, before each app's own styles.css.
  *
  * Keep this sober and minimal: compact utility UI, few colors, clear state,
- * diagnostics visible but not noisy (see AGENTS.md / docs/product-decisions.md
+ * diagnostics visible but not noisy (see docs/product-decisions.md
  * "UI Direction"). Add tokens here and reference them from the app stylesheets
  * rather than reintroducing literal hex values. Anything that is genuinely
  * shared (reset, tokens, panels, headers, nav, status pills, buttons, inputs,

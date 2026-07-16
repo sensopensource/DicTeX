@@ -13,7 +13,8 @@
 // (datasetExport), the local STT engine invocation (sttEngine — imports
 // node:child_process/fs), and the "live benchmark run" IPC contract types
 // (benchmarkTypes). Both apps import from here so they do not diverge — see
-// pivot_dictex_lab_split.md / AGENTS.md.
+// pivot_dictex_lab_split.md / docs/product-decisions.md
+// "DicTeX / Lab split (monorepo)".
 //
 // Renderer-only (browser-safe) helpers live in dedicated subpath exports so
 // they never pull node built-ins into a renderer bundle:
