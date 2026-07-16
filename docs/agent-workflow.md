@@ -19,6 +19,35 @@ L'implémenteur ne se revoit pas. Le Fixer corrige dans la branche et la PR
 existantes. Une nouvelle session indépendante revoit ensuite le nouveau SHA.
 La fusion finale reste humaine.
 
+## Commits dans une PR
+
+Le grain d'un commit n'est pas le grain de `main` : l'historique d'une PR est
+aplati à la fusion (squash), donc `main` conserve une ligne par issue. À
+l'intérieur d'une PR, un agent **committe par étape**, jamais en un seul bloc
+final.
+
+Une étape mérite son propre commit si elle est :
+
+1. **verte** — `npm run typecheck` et `npm run test` passent sur ce commit ;
+2. **autonome** — un seul changement cohérent, jamais un demi-move ;
+3. **nommée** clairement en français, comme un message de `main`.
+
+Ce sont des points de contrôle verts, pas des sauvegardes au fil de l'eau.
+L'historique d'une PR reste ainsi bisectable sans polluer `main`.
+
+Conséquences pour les rôles :
+
+- un refactor mécanique se découpe en **un commit par unité déplacée** (une
+  vue, un module, un helper), ce qui rend la revue vérifiable move par move ;
+- le Fixer committe ses corrections **au-dessus** de l'implémentation, sans
+  réécrire l'historique de la PR : le reviewer neuf lit ainsi le delta du Fixer
+  isolément ;
+- le verdict porte toujours sur le HEAD (`un verdict = un SHA précis`) ;
+  multiplier les commits ne multiplie pas les revues.
+
+Si `main` passait un jour au rebase-merge, chaque commit deviendrait public : la
+même barre verte resterait obligatoire, commit par commit.
+
 ## Démarrage minimal
 
 Lancer Codex ou Claude Code depuis la racine d'un checkout DicTeX afin que les
