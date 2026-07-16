@@ -13,52 +13,63 @@
  * styles.css only holds rules unique to that app. */
 
 :root {
-  /* Surfaces (darkest -> lightest). */
-  --bg: #101010; /* app background + inset items (history rows, textareas) */
-  --surface: #151515; /* panels, status pill */
-  --surface-raised: #1c1c1c; /* buttons, selects, inputs, nav */
-  --surface-hover: #252525; /* hover on raised controls */
-  --surface-active: #303030; /* pressed / active */
-  --record-bg: #222; /* primary record button (DicTeX) */
-  --record-bg-hover: #2a2a2a;
+  /* Cahier Seyès primitives. These are the only literal colours shared by the
+     renderers; component styles must consume the semantic aliases below. */
+  --ink: #26346b;
+  --ink-deep: #1d2a55;
+  --paper: #fcfbf4;
+  --paper-edge: #efeada;
+  --rule: #cbd9e6;
+  --margin: #dd8a82;
+  --pencil: #8a93a8;
+  --ok: #2f8a55;
+  --warn: #c17d2a;
+  --err: #c8483f;
+  --activity: #3f5aa6;
+  --desk-light: color-mix(in srgb, var(--paper-edge) 72%, var(--rule));
+  --desk-dark: color-mix(in srgb, var(--ink-deep) 82%, var(--paper));
+  --desk: var(--desk-light);
 
-  /* Borders. */
-  --border: #2a2a2a; /* panels, list items, tables */
-  --border-strong: #303030; /* interactive controls, inputs */
-  --border-faint: #343434; /* neutral pill (correction state) */
-  --border-subtle: #202020; /* faint intra-card dividers */
-  --border-record: #3a3a3a; /* record button */
-  --border-emphasis: #888; /* record button pressed outline */
+  /* Semantic aliases retain a stable contract for both existing renderers. */
+  --bg: var(--paper);
+  --surface: var(--paper);
+  --surface-raised: var(--paper-edge);
+  --surface-hover: color-mix(in srgb, var(--paper-edge) 72%, var(--rule));
+  --surface-active: color-mix(in srgb, var(--paper-edge) 58%, var(--rule));
+  --record-bg: var(--paper-edge);
+  --record-bg-hover: var(--rule);
 
-  /* Text tiers (brightest -> faintest). */
-  --text-strong: #f4f4f4; /* headings, key values */
-  --text-value: #e8e8e8; /* diagnostic values, normalized preview */
-  --text: #d8d8d8; /* body */
-  --text-dim: #b8b8b8; /* secondary chips / paths */
-  --text-muted: #8f8f8f; /* labels, subtitles, meta, notices */
-  --text-faint: #777; /* smallest labels */
+  --border: var(--rule);
+  --border-strong: color-mix(in srgb, var(--rule) 72%, var(--pencil));
+  --border-faint: var(--rule);
+  --border-subtle: color-mix(in srgb, var(--paper-edge) 72%, var(--rule));
+  --border-record: var(--rule);
+  --border-emphasis: var(--activity);
 
-  /* State accents (text + matching border), kept exact and shared across apps. */
-  --good: #93e0a8;
-  --good-border: #275b37;
-  --good-strong: #8fe0a4; /* "selected" badge text */
-  --good-border-strong: #2f6b3f; /* "selected" badge border */
-  --good-dim: #9fc7a6; /* normalized-output text */
-  --warn: #ead46a;
-  --warn-border: #62551f;
-  --amber: #e0c675; /* lab: error-category badge text */
-  --amber-border: #6b5a1f;
-  --danger: #ff9a9a;
-  --danger-border: #713030;
-  --danger-text: #ffb5b5; /* error body copy */
-  --danger-bg: #261616; /* error block background */
-  --recording: #ffb088;
-  --recording-border: #7a3a22;
-  --info: #b8d7ff; /* lab: benchmark-set split marker */
-  --kind: #d7c69a; /* lab: correction-kind marker */
+  --text-strong: var(--ink-deep);
+  --text-value: var(--ink);
+  --text: var(--ink);
+  --text-dim: color-mix(in srgb, var(--ink) 72%, var(--pencil));
+  --text-muted: var(--pencil);
+  --text-faint: color-mix(in srgb, var(--pencil) 78%, var(--paper));
 
-  /* Focus ring: sober desaturated blue, only shown for keyboard navigation. */
-  --focus-ring: #6b8bbd;
+  --good: var(--ok);
+  --good-border: color-mix(in srgb, var(--ok) 65%, var(--paper));
+  --good-strong: var(--ok);
+  --good-border-strong: var(--ok);
+  --good-dim: var(--ok);
+  --warn-border: color-mix(in srgb, var(--warn) 65%, var(--paper));
+  --amber: var(--warn);
+  --amber-border: var(--warn-border);
+  --danger: var(--err);
+  --danger-border: color-mix(in srgb, var(--err) 65%, var(--paper));
+  --danger-text: var(--err);
+  --danger-bg: color-mix(in srgb, var(--err) 9%, var(--paper));
+  --recording: var(--margin);
+  --recording-border: color-mix(in srgb, var(--margin) 68%, var(--paper));
+  --info: var(--activity);
+  --kind: var(--warn);
+  --focus-ring: var(--activity);
 
   /* Radius. */
   --radius-xs: 0.4rem;
@@ -74,6 +85,8 @@
   --space-4: 1rem;
 
   /* Typography. */
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-math: "Cambria Math", "STIX Two Math", var(--font-serif);
   --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
 
   /* Typographic scale: five steps from smallest labels to largest headings. */
@@ -87,8 +100,8 @@
   --transition-fast: 0.12s ease;
 
   color: var(--text);
-  background: var(--bg);
-  font-family: var(--font-mono);
+  background: var(--desk);
+  font-family: var(--font-serif);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -101,7 +114,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: var(--bg);
+  background: var(--desk);
 }
 
 button,
@@ -109,6 +122,31 @@ select,
 textarea,
 input {
   font: inherit;
+}
+
+code,
+kbd,
+samp {
+  font-family: var(--font-mono);
+}
+
+/* Reserved math typography: a contract, not a current behavior. No surface
+   renders math elements yet — normalized output shows LaTeX as literal text, so
+   it stays in the prose serif (docs/product-decisions.md, "Direction « Cahier
+   Seyès »"). These rules bind the day a renderer emits real math elements.
+   Keep the selector list to math element names only: widening it to a
+   transcript container would italicize the prose mixed into the LaTeX, which
+   styles.test.ts forbids. */
+math,
+mjx-container {
+  font-family: var(--font-math);
+  font-style: italic;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --desk: var(--desk-dark);
+  }
 }
 
 /* Keyboard focus is clearly visible; mouse focus stays quiet. :where() keeps
@@ -132,8 +170,10 @@ select:focus {
   display: grid;
   gap: var(--space-3);
   max-width: 760px;
+  min-height: 100vh;
   margin: 0 auto;
   padding: var(--space-4);
+  background: var(--paper);
 }
 
 .titlebar {

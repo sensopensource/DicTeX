@@ -548,6 +548,31 @@ data flow. Decisions:
 
 The UI should feel like a compact utility app, not a landing page, dashboard, or marketing site.
 
+### Direction « Cahier Seyès » — 16 juillet 2026
+
+Les deux applications consomment la même fondation visuelle depuis
+`packages/shared/src/styles.css`. La palette est définie une seule fois par les
+tokens `--ink`, `--ink-deep`, `--paper`, `--paper-edge`, `--rule`, `--margin`,
+`--pencil`, `--ok`, `--warn`, `--err` et `--activity`. Les composants utilisent
+des alias sémantiques dérivés de ces tokens, sans couleur littérale locale.
+
+Le contenu reste sur papier dans tous les thèmes ; seul le bureau derrière le
+cahier suit la préférence claire ou sombre du lecteur. Le texte utilise la
+police serif partagée ; les raccourcis et les empreintes techniques utilisent la
+police mono.
+
+La typographie mathématique est un contrat **réservé**, pas un comportement
+actuel. Le token `--font-math` et la règle italique ne ciblent que de vrais
+éléments mathématiques rendus (`math`, `mjx-container`) ; aucune surface n'en
+produit aujourd'hui. Les sorties normalisées affichent le LaTeX en texte
+littéral : il reste donc dans le serif de la prose, sans italique. Le contrat
+prendra effet le jour où un moteur de rendu mathématique sera adopté — une
+décision produit hors du périmètre de cette fondation, qui précède
+volontairement l'habillage des surfaces. La règle reste limitée aux noms
+d'éléments mathématiques : l'étendre à un conteneur de transcription mettrait en
+italique la prose mêlée au LaTeX. `packages/shared/src/styles.test.ts` verrouille
+cette limite.
+
 Preferred direction:
 
 - sober;
@@ -824,7 +849,8 @@ From `docs/ux-review.md`, human decisions recorded:
 - **Unified navigation model (D)** — deliberately deferred. Structural, purely
   aesthetic benefit, and the likeliest way to drift a utility UI toward a
   dashboard. Revisit once both apps stop moving.
-- **Light theme (G)** — not happening. Both apps are dark-only by design.
+- **Theme (G)** — le cahier reste clair ; seule la couleur du bureau extérieur
+  suit le thème du lecteur.
 
 ## Agent Handoff Guidance
 
