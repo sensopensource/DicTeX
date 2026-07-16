@@ -167,8 +167,7 @@ export function useExperiments({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, experimentSplit, experimentStage.benchmarkStage]);
+  }, [view, experimentSplit, experimentStage.benchmarkStage, api]);
 
   function selectExperimentStage(stageId: ExperimentStageId): void {
     if (stageId === experimentStageId) {
