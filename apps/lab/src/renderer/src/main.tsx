@@ -1,48 +1,36 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import "@dictex/shared/styles.css";
 import "./styles.css";
-import type {
-  BenchmarkRunListEntry,
-  BenchmarkCandidateIdentity,
-  SttBenchmarkSetProgress,
-  SttBenchmarkSetRunResponse,
-  SttBenchmarkSetSplit,
-  SttCandidateSelectionResponse,
-} from "@dictex/shared";
-import { formatCandidateIdentityKey } from "@dictex/shared/formatting";
-import { analyzeBatchErrors, toSttBenchmarkRunOutcomes } from "@dictex/shared/errorAnalysis";
-import {
-  getExperimentStage,
-  planExperimentLaunch,
-  planLaunchNavigation,
-  type ExperimentStageId,
-} from "./experimentProtocol.js";
-import {
-  applyLegacySummary,
-  applyResultsError,
-  applyRunDetail,
-  emptyResultsState,
-  LEGACY_RUN_KEY,
-  startResultsSelection,
-  type ResultsState,
-} from "./resultsSelection.js";
 import { api } from "./api.js";
 import { useBenchmarkRuns } from "./hooks/useBenchmarkRuns.js";
 import { useCandidateSelection } from "./hooks/useCandidateSelection.js";
 import { useCorpus } from "./hooks/useCorpus.js";
 import { useDatasetBuilder } from "./hooks/useDatasetBuilder.js";
 import { useDatasetExport } from "./hooks/useDatasetExport.js";
+import { useExperiments } from "./hooks/useExperiments.js";
 import { useRulesMigration } from "./hooks/useRulesMigration.js";
 import { useSegmentAudio } from "./hooks/useSegmentAudio.js";
 import { DatasetView } from "./views/DatasetView.js";
-import { ExperimentsView, type ExperimentPreview } from "./views/ExperimentsView.js";
+import { ExperimentsView } from "./views/ExperimentsView.js";
 import type { View } from "./views/LabNavigation.js";
-import { ResultsView, type BenchmarkRunExportSummary } from "./views/ResultsView.js";
+import { ResultsView } from "./views/ResultsView.js";
 import { SegmentsView } from "./views/SegmentsView.js";
-import type { SttBenchmarkCandidateOption } from "../../main/candidateCatalog.js";
-import type { NormalizerBenchmarkRunResponse } from "../../main/normalizerBenchmark.js";
 
+/**
+ * Assembles the Lab: which view is on screen, and which hooks feed it.
+ *
+ * Every piece of state lives in a hook under ./hooks. `App` holds only what is
+ * genuinely shared across them — the current view and the one-line notice — and
+ * wires the few places where one concern must tell another that something
+ * changed: a launch shows its run, a saved dataset entry re-reads the corpus, a
+ * confirmed rules migration re-reads the pipeline the experiment would run.
+ *
+ * `api` is injected here rather than imported by each hook: `api.ts` reads
+ * `window.dictexLab` while it is evaluated, so a hook importing it directly
+ * could not be rendered outside Electron. Passing it from this one composition
+ * root keeps every hook testable.
+ */
 function App(): React.ReactElement {
   const [view, setView] = useState<View>("corpus");
   const [notice, setNotice] = useState("");
@@ -50,263 +38,50 @@ function App(): React.ReactElement {
   // The configured (read-only) DicTeX data folder, the segments read from it,
   // and the Lab's own corrections and split assignments over them.
   const corpus = useCorpus({ api, onNotice: setNotice });
-  const { audioError, loadingAudioSegmentKey, playingAudioSegmentKey, playSegmentAudio } = useSegmentAudio({ api });
-
-  // Experiments: the protocol to launch. Never a past result (issue #138).
-  const [candidateCatalog, setCandidateCatalog] = useState<SttBenchmarkCandidateOption[]>([]);
-  const [experimentStageId, setExperimentStageId] = useState<ExperimentStageId>("stt");
-  const [experimentSplit, setExperimentSplit] = useState<SttBenchmarkSetSplit>("validation");
-  // What a run over the experiment's split would freeze right now: read from the
-  // same snapshot builder the launch uses, so the announced member count is the
-  // one that will actually run.
-  const [setPreview, setSetPreview] = useState<ExperimentPreview | null>(null);
-  const [previewError, setPreviewError] = useState("");
-  // STT prompt variant creation (issue #121): a valid new variant becomes a new
-  // faster-whisper benchmark candidate. The candidate selector (issue #126)
-  // surfaces this as a secondary "New prompt" action beside the prompt choice,
-  // rather than a permanent list panel, so existing variants are discovered by
-  // opening the prompt selector (the catalog already carries them).
-  const [newPromptVariantName, setNewPromptVariantName] = useState("");
-  const [newPromptVariantDisplayName, setNewPromptVariantDisplayName] = useState("");
-  const [newPromptVariantText, setNewPromptVariantText] = useState("");
-  const [isCreatingPromptVariant, setIsCreatingPromptVariant] = useState(false);
-  const [createPromptVariantError, setCreatePromptVariantError] = useState("");
-  const [selectedCandidates, setSelectedCandidates] = useState<BenchmarkCandidateIdentity[]>([]);
-  const [launchProgress, setLaunchProgress] = useState<SttBenchmarkSetProgress | null>(null);
-  const [launchError, setLaunchError] = useState("");
-  const [isRunningExperiment, setIsRunningExperiment] = useState(false);
-
-  // A confirmed migration changes the pipeline an experiment would run, so the
-  // Normalizer preview is re-read as part of the confirmation.
-  const rulesMigration = useRulesMigration({
-    api,
-    onMigrated: async () => {
-      setSetPreview(await api.previewNormalizerBenchmarkSet(experimentSplit));
-    },
-  });
+  const audio = useSegmentAudio({ api });
 
   // Results: one immutable run at a time (issue #138), and the base candidate
   // selected from them.
   const runs = useBenchmarkRuns({ api });
   const selection = useCandidateSelection({ api });
 
+  // Experiments: the protocol to launch. Never a past result (issue #138).
+  const experiments = useExperiments({ api, view, showRun: runs.showRun, onNavigate: setView });
+  const rulesMigration = useRulesMigration({ api, onMigrated: experiments.refreshNormalizerPreview });
+
   // Dataset builder (manual two-layer entries, #78). No microphone: either
   // paste a transcription or pick a DicTeX-recorded segment.
   const builder = useDatasetBuilder({ api, segments: corpus.segments, onSaved: () => void corpus.loadSegments() });
-
-  // Dataset export.
   const datasetExport = useDatasetExport({ api });
-
-  const experimentStage = getExperimentStage(experimentStageId);
-  // Never render or launch from a count fetched for a previous split. The
-  // handler below clears it eagerly; this check also protects the small window
-  // before React has run the next effect's cleanup.
-  const experimentPreview =
-    setPreview?.split === experimentSplit && setPreview.stage === experimentStage.benchmarkStage
-      ? setPreview
-      : null;
-  const experimentCandidates =
-    experimentStage.id === "normalizer"
-      ? experimentPreview?.stage === "math_transform"
-        ? [experimentPreview.candidate.candidate]
-        : []
-      : selectedCandidates;
-  const launchPlan = planExperimentLaunch({
-    stage: experimentStage,
-    split: experimentSplit,
-    preview: experimentPreview,
-    candidates: experimentCandidates,
-    isRunning: isRunningExperiment,
-  });
-
-  useEffect(() => {
-    const removeBatchProgressListener = api.onBatchBenchmarkProgress(setLaunchProgress);
-    void api
-      .getSttBenchmarkCandidates()
-      .then((catalog) => {
-        setCandidateCatalog(catalog);
-        setSelectedCandidates(catalog.slice(0, 3).map((option) => option.candidate));
-      })
-      .catch(() => {
-        // Non-fatal; the batch selector just shows no candidates.
-      });
-
-    return () => {
-      removeBatchProgressListener();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // The evaluable member count a launch would freeze. Refreshed when the
-  // experiment's split changes and whenever the view comes back to Experiments,
-  // since qualifying a Layer 1 or assigning a split happens over in Corpus.
-  useEffect(() => {
-    if (view !== "experiments") {
-      return;
-    }
-
-    setSetPreview(null);
-    setPreviewError("");
-    let cancelled = false;
-    const previewPromise: Promise<ExperimentPreview> =
-      experimentStage.benchmarkStage === "math_transform"
-        ? api.previewNormalizerBenchmarkSet(experimentSplit)
-        : api
-            .previewSttBenchmarkSet(experimentSplit)
-            .then((preview) => ({ ...preview, stage: "stt" as const }));
-    previewPromise
-      .then((preview) => {
-        if (!cancelled) {
-          setSetPreview(preview);
-          setPreviewError("");
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setSetPreview(null);
-          setPreviewError(error instanceof Error ? error.message : "Could not read the corpus for this split");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [view, experimentSplit, experimentStage.benchmarkStage]);
-
-  function selectExperimentStage(stageId: ExperimentStageId): void {
-    if (stageId === experimentStageId) {
-      return;
-    }
-    setExperimentStageId(stageId);
-    setSetPreview(null);
-    setPreviewError("");
-    setLaunchError("");
-    setLaunchProgress(null);
-  }
-
-  function selectExperimentSplit(split: SttBenchmarkSetSplit): void {
-    if (split === experimentSplit) {
-      return;
-    }
-
-    // The next preview is asynchronous, so remove the old split's count in
-    // the same event that changes the selection.
-    setExperimentSplit(split);
-    setSetPreview(null);
-    setPreviewError("");
-  }
-
-  /**
-   * Launches the announced protocol, then follows the run it created: the new
-   * run becomes the selected result and the Lab moves to Results. The launch
-   * form keeps no trace of it — a result lives with its run, never in the form
-   * that started it.
-   */
-  async function launchExperiment(): Promise<void> {
-    if (!launchPlan.canLaunch) {
-      return;
-    }
-
-    const split = experimentSplit;
-    setLaunchError("");
-    setLaunchProgress(null);
-    setIsRunningExperiment(true);
-
-    let response: SttBenchmarkSetRunResponse | NormalizerBenchmarkRunResponse | null = null;
-    try {
-      if (experimentStage.id === "normalizer") {
-        const candidate = experimentPreview?.stage === "math_transform"
-          ? experimentPreview.candidate.candidate
-          : null;
-        if (!candidate) {
-          throw new Error("Read the current deterministic pipeline before launching");
-        }
-        response = await api.runSetNormalizerBenchmark(split, candidate);
-      } else {
-        response = await api.runSetSttBenchmark(split, selectedCandidates);
-      }
-    } catch (runError) {
-      setLaunchError(runError instanceof Error ? runError.message : "The experiment failed to run");
-    } finally {
-      setIsRunningExperiment(false);
-    }
-
-    const navigation = planLaunchNavigation(response?.runId ?? null);
-    if (navigation.view !== "results") {
-      return;
-    }
-
-    await runs.showRun(split, navigation.selectedRunKey);
-    setLaunchProgress(null);
-    setView("results");
-  }
-
-  async function refreshCandidateCatalog(): Promise<void> {
-    try {
-      const catalog = await api.getSttBenchmarkCandidates();
-      setCandidateCatalog(catalog);
-    } catch {
-      // Non-fatal; the batch selector keeps its previous catalog.
-    }
-  }
-
-  // Creating a variant (issue #121) immediately refreshes the candidate catalog,
-  // since a newly-defined variant becomes a new faster-whisper benchmark
-  // candidate for every configured model — the prompt selector (issue #126)
-  // then offers it right away. Returns whether creation succeeded so the caller
-  // can collapse its inline form only on success (a rejected id keeps its
-  // values and error visible, immutability rules unchanged).
-  async function createPromptVariant(): Promise<boolean> {
-    setCreatePromptVariantError("");
-    setIsCreatingPromptVariant(true);
-    try {
-      await api.createSttPromptVariant({
-        name: newPromptVariantName.trim(),
-        displayName: newPromptVariantDisplayName.trim(),
-        promptText: newPromptVariantText.trim(),
-      });
-      setNewPromptVariantName("");
-      setNewPromptVariantDisplayName("");
-      setNewPromptVariantText("");
-      await refreshCandidateCatalog();
-      return true;
-    } catch (createError) {
-      setCreatePromptVariantError(
-        createError instanceof Error ? createError.message : "Could not create the STT prompt variant",
-      );
-      return false;
-    } finally {
-      setIsCreatingPromptVariant(false);
-    }
-  }
 
   if (view === "experiments") {
     return (
       <main className="app-shell">
         <ExperimentsView
-          candidateCatalog={candidateCatalog}
-          stageId={experimentStageId}
-          setStageId={selectExperimentStage}
-          stage={experimentStage}
-          split={experimentSplit}
-          setSplit={selectExperimentSplit}
-          preview={experimentPreview}
-          previewError={previewError}
-          selectedCandidates={experimentCandidates}
-          setSelectedCandidates={setSelectedCandidates}
-          launchPlan={launchPlan}
-          isRunning={isRunningExperiment}
-          launchProgress={launchProgress}
-          launchError={launchError}
-          launchExperiment={() => void launchExperiment()}
-          newPromptVariantName={newPromptVariantName}
-          setNewPromptVariantName={setNewPromptVariantName}
-          newPromptVariantDisplayName={newPromptVariantDisplayName}
-          setNewPromptVariantDisplayName={setNewPromptVariantDisplayName}
-          newPromptVariantText={newPromptVariantText}
-          setNewPromptVariantText={setNewPromptVariantText}
-          isCreatingPromptVariant={isCreatingPromptVariant}
-          createPromptVariantError={createPromptVariantError}
-          createPromptVariant={createPromptVariant}
+          candidateCatalog={experiments.candidateCatalog}
+          stageId={experiments.stageId}
+          setStageId={experiments.selectExperimentStage}
+          stage={experiments.stage}
+          split={experiments.experimentSplit}
+          setSplit={experiments.selectExperimentSplit}
+          preview={experiments.experimentPreview}
+          previewError={experiments.previewError}
+          selectedCandidates={experiments.experimentCandidates}
+          setSelectedCandidates={experiments.setSelectedCandidates}
+          launchPlan={experiments.launchPlan}
+          isRunning={experiments.isRunningExperiment}
+          launchProgress={experiments.launchProgress}
+          launchError={experiments.launchError}
+          launchExperiment={() => void experiments.launchExperiment()}
+          newPromptVariantName={experiments.newPromptVariantName}
+          setNewPromptVariantName={experiments.setNewPromptVariantName}
+          newPromptVariantDisplayName={experiments.newPromptVariantDisplayName}
+          setNewPromptVariantDisplayName={experiments.setNewPromptVariantDisplayName}
+          newPromptVariantText={experiments.newPromptVariantText}
+          setNewPromptVariantText={experiments.setNewPromptVariantText}
+          isCreatingPromptVariant={experiments.isCreatingPromptVariant}
+          createPromptVariantError={experiments.createPromptVariantError}
+          createPromptVariant={experiments.createPromptVariant}
           rulesMigrationPreview={rulesMigration.rulesMigrationPreview}
           rulesMigrationReceipt={rulesMigration.rulesMigrationReceipt}
           rulesMigrationError={rulesMigration.rulesMigrationError}
@@ -363,10 +138,10 @@ function App(): React.ReactElement {
         segmentsError={corpus.segmentsError}
         isLoadingSegments={corpus.isLoadingSegments}
         loadSegments={() => void corpus.loadSegments()}
-        audioError={audioError}
-        loadingAudioSegmentKey={loadingAudioSegmentKey}
-        playingAudioSegmentKey={playingAudioSegmentKey}
-        playSegmentAudio={(segment) => void playSegmentAudio(segment)}
+        audioError={audio.audioError}
+        loadingAudioSegmentKey={audio.loadingAudioSegmentKey}
+        playingAudioSegmentKey={audio.playingAudioSegmentKey}
+        playSegmentAudio={(segment) => void audio.playSegmentAudio(segment)}
         benchmarkSetTargetKey={corpus.benchmarkSetTargetKey}
         markSttBenchmarkSetMembership={(segment, split) => void corpus.markSttBenchmarkSetMembership(segment, split)}
         startSegmentCorrection={corpus.startSegmentCorrection}
@@ -388,10 +163,10 @@ function App(): React.ReactElement {
         segments={corpus.segments}
         loadSegments={() => void corpus.loadSegments()}
         isLoadingSegments={corpus.isLoadingSegments}
-        playSegmentAudio={(segment) => void playSegmentAudio(segment)}
-        loadingAudioSegmentKey={loadingAudioSegmentKey}
-        playingAudioSegmentKey={playingAudioSegmentKey}
-        audioError={audioError}
+        playSegmentAudio={(segment) => void audio.playSegmentAudio(segment)}
+        loadingAudioSegmentKey={audio.loadingAudioSegmentKey}
+        playingAudioSegmentKey={audio.playingAudioSegmentKey}
+        audioError={audio.audioError}
         builderMode={builder.builderMode}
         setBuilderMode={builder.setBuilderMode}
         builderSegmentKey={builder.builderSegmentKey}
