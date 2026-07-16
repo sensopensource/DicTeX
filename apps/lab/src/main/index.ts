@@ -141,7 +141,7 @@ let mainWindow: BrowserWindow | null = null;
 // confirmed legacy-rules migration is the sole write exception.
 let sourceDataFolderOverride: string | null = null;
 
-/** Default DicTeX data folder per docs/development.md / AGENTS.md
+/** Default DicTeX data folder per docs/development.md
  * (`%APPDATA%/dictex-app/data`), computed directly rather than assumed from
  * this app's own name so the default is explicit and does not depend on the
  * sibling app's own userData convention. */

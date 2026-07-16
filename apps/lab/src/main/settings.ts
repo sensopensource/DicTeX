@@ -6,8 +6,8 @@ import path from "node:path";
  * The Lab's OWN local settings, persisted under the Lab's own userData data
  * directory (`data/settings.json`) — never DicTeX's. Currently a single
  * field: the configurable path to DicTeX's data folder that the Lab reads
- * read-only (see AGENTS.md "Current Direction: DicTeX / Lab split" and
- * pivot_dictex_lab_split.md). A missing or malformed file degrades to the
+ * read-only (see docs/product-decisions.md "DicTeX / Lab split (monorepo)"
+ * and pivot_dictex_lab_split.md). A missing or malformed file degrades to the
  * default folder with a quiet diagnostic, never a crash.
  */
 export type LabSettings = {
