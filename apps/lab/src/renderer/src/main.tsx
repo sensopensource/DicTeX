@@ -32,6 +32,8 @@ import {
   type ResultsState,
 } from "./resultsSelection.js";
 import { api } from "./api.js";
+import { useBenchmarkRuns } from "./hooks/useBenchmarkRuns.js";
+import { useCandidateSelection } from "./hooks/useCandidateSelection.js";
 import { useCorpus } from "./hooks/useCorpus.js";
 import { useDatasetBuilder } from "./hooks/useDatasetBuilder.js";
 import { useSegmentAudio } from "./hooks/useSegmentAudio.js";
@@ -81,19 +83,10 @@ function App(): React.ReactElement {
   const [rulesMigrationError, setRulesMigrationError] = useState("");
   const [isMigratingRules, setIsMigratingRules] = useState(false);
 
-  // Results: one immutable run at a time (issue #138). The split here is a
-  // browse filter over the run list — it never drives a launch, so changing it
-  // cannot change what a pending experiment would run.
-  const [resultsSplit, setResultsSplit] = useState<SttBenchmarkSetSplit>("validation");
-  const [runList, setRunList] = useState<BenchmarkRunListEntry[]>([]);
-  const [results, setResults] = useState<ResultsState>(emptyResultsState);
-  const [runExportSummary, setRunExportSummary] = useState<BenchmarkRunExportSummary | null>(null);
-  const [runExportError, setRunExportError] = useState("");
-  const [isExportingRun, setIsExportingRun] = useState(false);
-  const [currentSelection, setCurrentSelection] = useState<SttCandidateSelectionResponse | null>(null);
-  const [selectionReasonDraft, setSelectionReasonDraft] = useState("");
-  const [selectionError, setSelectionError] = useState("");
-  const [isSelectingCandidateKey, setIsSelectingCandidateKey] = useState("");
+  // Results: one immutable run at a time (issue #138), and the base candidate
+  // selected from them.
+  const runs = useBenchmarkRuns({ api });
+  const selection = useCandidateSelection({ api });
 
   // Dataset builder (manual two-layer entries, #78). No microphone: either
   // paste a transcription or pick a DicTeX-recorded segment.
@@ -104,16 +97,6 @@ function App(): React.ReactElement {
   const [datasetExportError, setDatasetExportError] = useState("");
   const [isExportingDataset, setIsExportingDataset] = useState(false);
 
-  // The error analysis of the SELECTED run, derived from that run's own logged
-  // outputs — not from the in-memory outcomes of the last launch, which would
-  // show the newest run's errors under an older run's header.
-  const errorAnalysis = useMemo(
-    () =>
-      results.detail?.stage === "stt"
-        ? analyzeBatchErrors(toSttBenchmarkRunOutcomes(results.detail))
-        : [],
-    [results.detail],
-  );
   const experimentStage = getExperimentStage(experimentStageId);
   // Never render or launch from a count fetched for a previous split. The
   // handler below clears it eagerly; this check also protects the small window
@@ -147,38 +130,12 @@ function App(): React.ReactElement {
       .catch(() => {
         // Non-fatal; the batch selector just shows no candidates.
       });
-    void api.getLatestSttCandidateSelection().then(setCurrentSelection).catch(() => {
-      // Non-fatal; the panel shows none selected.
-    });
 
     return () => {
       removeBatchProgressListener();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Tracked runs are per-split (issue #122): the Results split filter reloads
-  // its own run list. It never touches the current selection here — the launch
-  // path sets the split and selects its new run in one go, and a human split
-  // change clears the selection in the handler itself.
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .listBenchmarkRuns(resultsSplit)
-      .then((runs) => {
-        if (!cancelled) {
-          setRunList(runs);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setRunList([]);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [resultsSplit]);
 
   // The evaluable member count a launch would freeze. Refreshed when the
   // experiment's split changes and whenever the view comes back to Experiments,
@@ -236,50 +193,6 @@ function App(): React.ReactElement {
     setExperimentSplit(split);
     setSetPreview(null);
     setPreviewError("");
-  }
-
-  async function refreshRunList(split: SttBenchmarkSetSplit): Promise<void> {
-    try {
-      setRunList(await api.listBenchmarkRuns(split));
-    } catch {
-      setRunList([]);
-    }
-  }
-
-  /**
-   * Selects one result: a tracked run (its own snapshot, outputs, failures and
-   * summary) or the legacy bucket of pre-#122 results. The state machine in
-   * ./resultsSelection.ts drops the previous run's data before the new data
-   * lands and discards a response that no longer answers the current selection,
-   * so a run can never be rendered against another run's snapshot.
-   */
-  async function selectResult(key: string): Promise<void> {
-    setResults(startResultsSelection(key));
-    setRunExportSummary(null);
-    setRunExportError("");
-
-    try {
-      if (key === LEGACY_RUN_KEY) {
-        const legacy = await api.summarizeLegacySttBenchmarkSet(resultsSplit);
-        setResults((current) => applyLegacySummary(current, key, legacy));
-        return;
-      }
-
-      const detail = await api.getBenchmarkRunDetail(key);
-      setResults((current) => applyRunDetail(current, key, detail));
-    } catch (detailError) {
-      const message = detailError instanceof Error ? detailError.message : "Could not read this run";
-      setResults((current) => applyResultsError(current, key, message));
-    }
-  }
-
-  function selectResultsSplit(split: SttBenchmarkSetSplit): void {
-    setResultsSplit(split);
-    // A run belongs to one split, so browsing another split cannot keep showing
-    // the previous run's numbers.
-    setResults(emptyResultsState());
-    setRunExportSummary(null);
-    setRunExportError("");
   }
 
   async function reviewRulesMigration(): Promise<void> {
@@ -384,65 +297,9 @@ function App(): React.ReactElement {
       return;
     }
 
-    setResultsSplit(split);
-    await refreshRunList(split);
-    await selectResult(navigation.selectedRunKey);
+    await runs.showRun(split, navigation.selectedRunKey);
     setLaunchProgress(null);
     setView("results");
-  }
-
-  async function exportSelectedRun(): Promise<void> {
-    const runId = results.detail?.runId;
-    if (!runId) {
-      return;
-    }
-
-    setRunExportError("");
-    setIsExportingRun(true);
-    try {
-      setRunExportSummary(await api.exportBenchmarkRun(runId));
-    } catch (exportError) {
-      setRunExportSummary(null);
-      setRunExportError(exportError instanceof Error ? exportError.message : "Benchmark run export failed");
-    } finally {
-      setIsExportingRun(false);
-    }
-  }
-
-  async function openRunExportFolder(): Promise<void> {
-    if (!runExportSummary) {
-      return;
-    }
-    try {
-      await api.openExportFolder(runExportSummary.exportDir);
-    } catch {
-      // Non-fatal convenience.
-    }
-  }
-
-  async function selectCandidate(candidate: BenchmarkCandidateIdentity): Promise<void> {
-    if (selectionReasonDraft.trim() === "") {
-      setSelectionError("Enter a selection reason before marking a candidate selected");
-      return;
-    }
-
-    const candidateKey = formatCandidateIdentityKey(candidate);
-    setSelectionError("");
-    setIsSelectingCandidateKey(candidateKey);
-    try {
-      const selection = await api.selectSttCandidate({
-        candidate,
-        selectionReason: selectionReasonDraft.trim(),
-      });
-      setCurrentSelection(selection);
-      setSelectionReasonDraft("");
-    } catch (selectionSaveError) {
-      setSelectionError(
-        selectionSaveError instanceof Error ? selectionSaveError.message : "Could not save candidate selection",
-      );
-    } finally {
-      setIsSelectingCandidateKey("");
-    }
   }
 
   async function refreshCandidateCatalog(): Promise<void> {
@@ -550,26 +407,23 @@ function App(): React.ReactElement {
     return (
       <main className="app-shell">
         <ResultsView
-          split={resultsSplit}
-          setSplit={selectResultsSplit}
-          runList={runList}
-          results={results}
-          selectResult={(key) => void selectResult(key)}
-          errorAnalysis={errorAnalysis}
-          runExportSummary={runExportSummary}
-          runExportError={runExportError}
-          isExportingRun={isExportingRun}
-          exportSelectedRun={() => void exportSelectedRun()}
-          openRunExportFolder={() => void openRunExportFolder()}
-          currentSelection={currentSelection}
-          selectionReasonDraft={selectionReasonDraft}
-          setSelectionReasonDraft={(value) => {
-            setSelectionReasonDraft(value);
-            setSelectionError("");
-          }}
-          selectionError={selectionError}
-          isSelectingCandidateKey={isSelectingCandidateKey}
-          selectCandidate={(candidate) => void selectCandidate(candidate)}
+          split={runs.resultsSplit}
+          setSplit={runs.selectResultsSplit}
+          runList={runs.runList}
+          results={runs.results}
+          selectResult={(key) => void runs.selectResult(key)}
+          errorAnalysis={runs.errorAnalysis}
+          runExportSummary={runs.runExportSummary}
+          runExportError={runs.runExportError}
+          isExportingRun={runs.isExportingRun}
+          exportSelectedRun={() => void runs.exportSelectedRun()}
+          openRunExportFolder={() => void runs.openRunExportFolder()}
+          currentSelection={selection.currentSelection}
+          selectionReasonDraft={selection.selectionReasonDraft}
+          setSelectionReasonDraft={selection.editSelectionReasonDraft}
+          selectionError={selection.selectionError}
+          isSelectingCandidateKey={selection.isSelectingCandidateKey}
+          selectCandidate={(candidate) => void selection.selectCandidate(candidate)}
           onNavigate={setView}
         />
       </main>
