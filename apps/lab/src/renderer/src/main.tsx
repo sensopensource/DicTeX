@@ -5,9 +5,6 @@ import "./styles.css";
 import type {
   BenchmarkRunListEntry,
   BenchmarkCandidateIdentity,
-  LegacyRuleResolution,
-  LegacyRulesMigrationPreview,
-  RulesMigrationReceipt,
   SttBenchmarkSetProgress,
   SttBenchmarkSetRunResponse,
   SttBenchmarkSetSplit,
@@ -36,6 +33,7 @@ import { useCandidateSelection } from "./hooks/useCandidateSelection.js";
 import { useCorpus } from "./hooks/useCorpus.js";
 import { useDatasetBuilder } from "./hooks/useDatasetBuilder.js";
 import { useDatasetExport } from "./hooks/useDatasetExport.js";
+import { useRulesMigration } from "./hooks/useRulesMigration.js";
 import { useSegmentAudio } from "./hooks/useSegmentAudio.js";
 import { DatasetView } from "./views/DatasetView.js";
 import { ExperimentsView, type ExperimentPreview } from "./views/ExperimentsView.js";
@@ -77,11 +75,15 @@ function App(): React.ReactElement {
   const [launchProgress, setLaunchProgress] = useState<SttBenchmarkSetProgress | null>(null);
   const [launchError, setLaunchError] = useState("");
   const [isRunningExperiment, setIsRunningExperiment] = useState(false);
-  const [rulesMigrationPreview, setRulesMigrationPreview] = useState<LegacyRulesMigrationPreview | null>(null);
-  const [rulesMigrationResolutions, setRulesMigrationResolutions] = useState<LegacyRuleResolution[]>([]);
-  const [rulesMigrationReceipt, setRulesMigrationReceipt] = useState<RulesMigrationReceipt | null>(null);
-  const [rulesMigrationError, setRulesMigrationError] = useState("");
-  const [isMigratingRules, setIsMigratingRules] = useState(false);
+
+  // A confirmed migration changes the pipeline an experiment would run, so the
+  // Normalizer preview is re-read as part of the confirmation.
+  const rulesMigration = useRulesMigration({
+    api,
+    onMigrated: async () => {
+      setSetPreview(await api.previewNormalizerBenchmarkSet(experimentSplit));
+    },
+  });
 
   // Results: one immutable run at a time (issue #138), and the base candidate
   // selected from them.
@@ -191,68 +193,6 @@ function App(): React.ReactElement {
     setExperimentSplit(split);
     setSetPreview(null);
     setPreviewError("");
-  }
-
-  async function reviewRulesMigration(): Promise<void> {
-    setRulesMigrationError("");
-    setRulesMigrationReceipt(null);
-    setRulesMigrationResolutions([]);
-    try {
-      setRulesMigrationPreview(await api.previewRulesMigration([]));
-    } catch (error) {
-      setRulesMigrationPreview(null);
-      setRulesMigrationError(error instanceof Error ? error.message : "Could not inspect legacy rules");
-    }
-  }
-
-  async function resolveAmbiguousRule(index: number, value: string): Promise<void> {
-    const next = rulesMigrationResolutions.filter((resolution) => resolution.index !== index);
-    if (value === "keep_personal") {
-      next.push({ index, action: "keep_personal" });
-    } else if (value.startsWith("replace:")) {
-      next.push({ index, action: "replace_bundled", bundledRuleId: value.slice("replace:".length) });
-    }
-    setRulesMigrationResolutions(next);
-    setRulesMigrationError("");
-    try {
-      setRulesMigrationPreview(await api.previewRulesMigration(next));
-    } catch (error) {
-      setRulesMigrationError(error instanceof Error ? error.message : "Could not update the migration preview");
-    }
-  }
-
-  async function confirmRulesMigration(): Promise<void> {
-    if (rulesMigrationPreview?.state !== "ready") {
-      return;
-    }
-    if (!window.confirm("Create a timestamped backup and activate the reviewed personal overlay?")) {
-      return;
-    }
-    setRulesMigrationError("");
-    setIsMigratingRules(true);
-    try {
-      const receipt = await api.migrateRules({
-        resolutions: rulesMigrationResolutions,
-        expectedLegacyHash: rulesMigrationPreview.legacyHash,
-        expectedEffectiveHash: rulesMigrationPreview.expectedEffectiveHash!,
-      });
-      setRulesMigrationReceipt(receipt);
-      setRulesMigrationPreview(null);
-      const refreshed = await api.previewNormalizerBenchmarkSet(experimentSplit);
-      setSetPreview(refreshed);
-    } catch (error) {
-      setRulesMigrationError(error instanceof Error ? error.message : "Rules migration failed");
-    } finally {
-      setIsMigratingRules(false);
-    }
-  }
-
-  async function openRulesFolder(): Promise<void> {
-    try {
-      await api.openSourceRulesFolder();
-    } catch {
-      // Non-fatal convenience.
-    }
   }
 
   /**
@@ -367,14 +307,14 @@ function App(): React.ReactElement {
           isCreatingPromptVariant={isCreatingPromptVariant}
           createPromptVariantError={createPromptVariantError}
           createPromptVariant={createPromptVariant}
-          rulesMigrationPreview={rulesMigrationPreview}
-          rulesMigrationReceipt={rulesMigrationReceipt}
-          rulesMigrationError={rulesMigrationError}
-          isMigratingRules={isMigratingRules}
-          reviewRulesMigration={() => void reviewRulesMigration()}
-          resolveAmbiguousRule={(index, value) => void resolveAmbiguousRule(index, value)}
-          confirmRulesMigration={() => void confirmRulesMigration()}
-          openRulesFolder={() => void openRulesFolder()}
+          rulesMigrationPreview={rulesMigration.rulesMigrationPreview}
+          rulesMigrationReceipt={rulesMigration.rulesMigrationReceipt}
+          rulesMigrationError={rulesMigration.rulesMigrationError}
+          isMigratingRules={rulesMigration.isMigratingRules}
+          reviewRulesMigration={() => void rulesMigration.reviewRulesMigration()}
+          resolveAmbiguousRule={(index, value) => void rulesMigration.resolveAmbiguousRule(index, value)}
+          confirmRulesMigration={() => void rulesMigration.confirmRulesMigration()}
+          openRulesFolder={() => void rulesMigration.openRulesFolder()}
           onNavigate={setView}
         />
       </main>
