@@ -239,6 +239,32 @@ scripts/npm.sh run dev
 
 The app uses a Python sidecar with faster-whisper for local transcription.
 
+### Structure du renderer de DicTeX (issue #170)
+
+Le renderer de `apps/dictex` suit le même motif que celui du Lab (voir
+« Structure du renderer du Lab » ci-dessous), à l'échelle d'une seule vue :
+
+- `renderer/src/api.ts` centralise le typage du pont `window.dictex`
+  (`DictexApi`) ; plus aucun type n'est redéclaré inline dans `main.tsx` ;
+- `renderer/src/hooks/` porte un hook par préoccupation — `useDictation`
+  (enregistrement, transcription, raccourci, HUD), `useSttConfig`,
+  `useSttWorkerStatus`, `useNormalizerSetting`, `useHistory`,
+  `useSegmentAudio`, `useOpenLab` — chacun testé isolément avec le même
+  harnais que le Lab (`renderer/src/hooks/testing/`) ;
+- `renderer/src/views/HomeView.tsx` est la seule vue : elle ne fait que
+  rendre les props reçues des hooks ;
+- `renderer/src/main.tsx` — `App()` — n'assemble plus que ces hooks et cette
+  vue. Il garde seulement l'état réellement partagé entre eux : le message
+  d'une ligne (`notice`), transmis à chaque hook via `onNotice`, et le lien
+  qui recharge l'historique après une dictée réussie
+  (`onTranscribed`), exactement comme le Lab enchaîne un enregistrement
+  sauvegardé et une relecture du corpus.
+
+Un hook reçoit son `DictexApi` en paramètre ; il ne l'importe jamais, pour la
+même raison que côté Lab : `api.ts` lit `window.dictex` à l'évaluation du
+module, donc un hook qui l'importerait directement ne pourrait être ni rendu
+ni testé hors Electron.
+
 ## DicTeX Lab (tooling app)
 
 `apps/lab` est l'application séparée **DicTeX Lab** (pivot phase 2, voir
