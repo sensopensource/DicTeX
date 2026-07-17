@@ -4,6 +4,8 @@ import { formatAudioDuration, formatLatency, formatTimestamp, getSegmentKey } fr
 import "@dictex/shared/styles.css";
 import "./styles.css";
 
+import type { HomeOverlayState } from "../../main/overlayPresenter.js";
+
 type Status = "idle" | "recording" | "transcribing" | "done" | "error";
 
 type TranscriptionResult = {
@@ -106,8 +108,30 @@ declare global {
       setNormalizerEnabled?: (enabled: boolean) => Promise<boolean>;
       getRecentSegments?: (limit?: number) => Promise<RecentSegment[]>;
       getSegmentAudio?: (audioSegment: AudioSegmentRecord) => Promise<AudioSegmentPlayback>;
+      publishOverlayState?: (state: HomeOverlayState) => void;
     };
   }
+}
+
+/**
+ * How often the microphone level is published while recording (#166). Fast
+ * enough to read as a live VU, slow enough that the HUD costs a handful of tiny
+ * messages a second instead of one per frame.
+ */
+const LEVEL_PUBLISH_INTERVAL_MS = 80;
+
+/**
+ * Map an RMS amplitude onto the 0..1 the VU draws. A linear amplitude looks dead
+ * — speech sits around 0.01..0.3 — so this uses the usual dBFS span: about -60
+ * dB reads as silence, 0 dB as full scale.
+ */
+function toDisplayLevel(rms: number): number {
+  if (!Number.isFinite(rms) || rms <= 0) {
+    return 0;
+  }
+
+  const decibels = 20 * Math.log10(rms);
+  return Math.min(1, Math.max(0, (decibels + 60) / 60));
 }
 
 function App(): React.ReactElement {
@@ -138,6 +162,7 @@ function App(): React.ReactElement {
   const [loadingAudioSegmentKey, setLoadingAudioSegmentKey] = useState("");
   const [playingAudioSegmentKey, setPlayingAudioSegmentKey] = useState("");
   const [isOpeningLab, setIsOpeningLab] = useState(false);
+  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const isStartingRef = useRef(false);
@@ -146,10 +171,99 @@ function App(): React.ReactElement {
   const pendingTranscriptionOptionsRef = useRef<TranscriptionOptions>({ trigger: "manual" });
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const audioObjectUrlRef = useRef("");
+  // The HUD's view of Home, kept in a ref so the level can be published several
+  // times a second without re-rendering Home for a window it does not draw.
+  const overlayStateRef = useRef<HomeOverlayState>({
+    status: "idle",
+    pasteState: "none",
+    recordingStartedAt: null,
+    inputLevel: null,
+    rawTranscript: "",
+    insertedTranscript: "",
+    errorMessage: "",
+  });
+  const levelAudioContextRef = useRef<AudioContext | null>(null);
+  const levelTimerRef = useRef(0);
 
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
+  /**
+   * Publish the overlay states Home owns (#166). Fire-and-forget and fully
+   * guarded: the HUD is never on dictation's critical path, so a missing preload
+   * API or a failed send must be invisible to the person dictating.
+   */
+  function publishOverlay(patch: Partial<HomeOverlayState>): void {
+    const next = { ...overlayStateRef.current, ...patch };
+    overlayStateRef.current = next;
+
+    try {
+      window.dictex.publishOverlayState?.(next);
+    } catch {
+      // An overlay that cannot be told about a dictation simply misses it.
+    }
+  }
+
+  // Home's own states reach the HUD from here; the level is published separately
+  // by the meter below, which must not drive a re-render.
+  useEffect(() => {
+    publishOverlay({
+      status,
+      pasteState: lastPasteState,
+      recordingStartedAt,
+      rawTranscript: lastResult?.transcript ?? "",
+      insertedTranscript: lastResult?.normalizedTranscript ?? "",
+      errorMessage: error,
+    });
+  }, [status, lastPasteState, recordingStartedAt, lastResult, error]);
+
+  /**
+   * Read the microphone level for the HUD's VU. A read-only tap on the stream the
+   * recorder already has: the analyser is never connected to the destination, so
+   * it neither routes the microphone to the speakers nor changes a single byte of
+   * the recorded audio. Entirely optional — if the Web Audio graph cannot be
+   * built, the HUD simply shows a chronometer with no VU and dictation is
+   * unaffected.
+   */
+  function startInputLevelMonitor(stream: MediaStream): void {
+    try {
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 512;
+      audioContext.createMediaStreamSource(stream).connect(analyser);
+      levelAudioContextRef.current = audioContext;
+
+      const samples = new Float32Array(analyser.fftSize);
+      levelTimerRef.current = window.setInterval(() => {
+        analyser.getFloatTimeDomainData(samples);
+        let sumOfSquares = 0;
+        for (const sample of samples) {
+          sumOfSquares += sample * sample;
+        }
+        publishOverlay({ inputLevel: toDisplayLevel(Math.sqrt(sumOfSquares / samples.length)) });
+      }, LEVEL_PUBLISH_INTERVAL_MS);
+    } catch {
+      // No VU; the rest of the HUD is unaffected.
+    }
+  }
+
+  function stopInputLevelMonitor(): void {
+    if (levelTimerRef.current) {
+      window.clearInterval(levelTimerRef.current);
+      levelTimerRef.current = 0;
+    }
+
+    const audioContext = levelAudioContextRef.current;
+    levelAudioContextRef.current = null;
+    if (audioContext) {
+      void audioContext.close().catch(() => {
+        // Closing a context that already went away is not worth reporting.
+      });
+    }
+
+    publishOverlay({ inputLevel: null });
+  }
 
   useEffect(() => {
     const removeToggleListener = window.dictex.onDictationToggle(() => {
@@ -183,6 +297,7 @@ function App(): React.ReactElement {
       removeHotkeyStatusListener();
       removeSttWorkerStatusListener?.();
       stopAudioPlayback();
+      stopInputLevelMonitor();
     };
   }, []);
 
@@ -197,6 +312,7 @@ function App(): React.ReactElement {
     setError("");
     setNotice("");
     setStatus("recording");
+    setRecordingStartedAt(Date.now());
     setTranscript("");
     setLastPasteState("none");
     setLastResult(null);
@@ -220,16 +336,20 @@ function App(): React.ReactElement {
       };
 
       recorder.onstop = () => {
+        stopInputLevelMonitor();
         stream.getTracks().forEach((track) => track.stop());
         void transcribeRecording(recorder.mimeType || "audio/webm");
       };
 
       recorder.start();
+      startInputLevelMonitor(stream);
 
       if (stopRequestedRef.current) {
         stopRecording();
       }
     } catch (recordingError) {
+      stopInputLevelMonitor();
+      setRecordingStartedAt(null);
       setStatus("error");
       setError(recordingError instanceof Error ? recordingError.message : "Microphone access failed");
     } finally {

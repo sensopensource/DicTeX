@@ -1,0 +1,207 @@
+/* DicTeX floating HUD overlay (#166).
+ *
+ * Consumes the shared Cahier Seyès tokens from @dictex/shared/styles.css
+ * (imported first) — no literal colour lives here. The HUD is the same paper as
+ * the rest of DicTeX, laid on whatever the user is actually writing in.
+ *
+ * The window itself is transparent, so this file must undo the shared base's
+ * opaque desk: only the pill or card paints, everything around it stays see
+ * through, and the notebook underneath keeps showing. */
+
+:root,
+.overlay-body {
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+}
+
+/* Anchor to the bottom-right corner of the window: the pill rests in the corner
+   and a card grows upward from it, so the HUD's own growth never walks across
+   the text underneath. */
+.hud {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+  height: 100vh;
+  padding: var(--space-2);
+  overflow: hidden;
+}
+
+/* Paper lifted off the desk. The shadow is separation, not decoration: without
+   it the card's paper would blend into a light document underneath. */
+.hud-pill,
+.hud-card {
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--ink-deep) 18%, transparent);
+}
+
+.hud-pill {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.65rem;
+  background: var(--paper);
+}
+
+.hud-card {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  /* A state accent on the spine, in the Seyès margin's place. It carries the
+     phase's colour, so the HUD is readable at a glance without reading it. */
+  border-left: 3px solid var(--pencil);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--paper);
+}
+
+.hud-card-recording {
+  border-left-color: var(--recording);
+}
+
+.hud-card-inserted {
+  border-left-color: var(--good);
+}
+
+.hud-card-error {
+  border-left-color: var(--danger);
+}
+
+.hud-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.hud-label {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hud-timer {
+  margin-left: auto;
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.hud-dot-ready {
+  background: var(--good);
+}
+
+.hud-dot-warming {
+  background: var(--warn);
+  animation: hud-pulse 1.4s ease-in-out infinite;
+}
+
+.hud-dot-recording {
+  background: var(--recording);
+  animation: hud-pulse 1.2s ease-in-out infinite;
+}
+
+.hud-dot-transcribing {
+  background: var(--info);
+  animation: hud-pulse 1.2s ease-in-out infinite;
+}
+
+.hud-dot-error {
+  background: var(--danger);
+}
+
+/* The pulse says "live" — a still dot and a working dot must not look alike. */
+@keyframes hud-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.hud-vu {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  height: 0.5rem;
+}
+
+.hud-vu-segment {
+  flex: 1;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--border);
+  transition: background var(--transition-fast);
+}
+
+.hud-vu-segment-lit {
+  background: var(--info);
+}
+
+/* The CSS half of the mandatory preview cap: the derived preview is already
+   capped in characters, and this clamps the drawn result to two lines whatever
+   the width. Neither alone is trusted. */
+.hud-preview {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.hud-preview-quiet {
+  color: var(--text-muted);
+}
+
+.hud-error-message {
+  color: var(--danger-text);
+}
+
+.hud-toast {
+  border: 1px solid;
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.5rem;
+  font-size: var(--text-xs);
+}
+
+.hud-toast-pasted {
+  border-color: var(--good-border);
+  color: var(--good);
+}
+
+.hud-toast-clipboard {
+  border-color: var(--warn-border);
+  color: var(--warn);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-dot-warming,
+  .hud-dot-recording,
+  .hud-dot-transcribing {
+    animation: none;
+  }
+
+  .hud-vu-segment {
+    transition: none;
+  }
+}

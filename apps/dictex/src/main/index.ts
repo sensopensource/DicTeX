@@ -18,6 +18,8 @@ import { readAppSettings, writeAppSettings } from "./settings.js";
 import { runDictationTranscription, type JsonValue, type TranscriptionResult } from "./dictationFlow.js";
 import { createSttWorkerClient, type ResolvedWorkerConfig } from "./sttWorkerClient.js";
 import { SttWorkerManager, type SttWorkerStatus } from "./sttWorkerManager.js";
+import { OverlayPresenter, sanitizeHomeOverlayState } from "./overlayPresenter.js";
+import { createOverlayWindow, sendOverlayView, setInteractive } from "./overlayWindow.js";
 
 type TranscriptionOptions = {
   autoPaste?: boolean;
@@ -57,6 +59,9 @@ const globalHotkey = "Super+Alt+Space";
 const defaultSttModels = ["tiny", "base", "small", "large-v3-turbo"];
 
 let mainWindow: BrowserWindow | null = null;
+// The floating HUD (#166). Always optional: every use is guarded, so a HUD that
+// failed to open can never interrupt a dictation.
+let overlayWindow: BrowserWindow | null = null;
 let globalHotkeyRegistered = false;
 let segmentCounter = 0;
 // STT model chosen from the UI and persisted in settings.json. Null means "no UI
@@ -94,6 +99,15 @@ function getWorkerConfig(): ResolvedWorkerConfig {
   };
 }
 
+// Merges the HUD's two state owners and drives what it shows. Home publishes the
+// dictation status it owns; the worker state and the normalizer setting are fed
+// in below from the main process, which already owns them.
+const overlayPresenter = new OverlayPresenter({
+  emit: (view) => sendOverlayView(overlayWindow, view),
+  setTimer: (callback, delayMs) => setTimeout(callback, delayMs),
+  clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+});
+
 // One persistent worker for dictation, kept warm across dictations. Changing the
 // STT model lazily restarts it on the next dictation (stop old, start new) so a
 // single model stays resident.
@@ -106,7 +120,11 @@ const sttWorkerManager = new SttWorkerManager({
     }),
   log: (message) => console.warn(message),
   shutdownTimeoutMs: 4000,
-  onStatusChange: (status) => sendSttWorkerStatus(status),
+  onStatusChange: (status) => {
+    sendSttWorkerStatus(status);
+    // The HUD reads the same lifecycle Home does; it is not a second source.
+    overlayPresenter.setWorkerState(status.state);
+  },
   onGenerationReady: async (generation) => {
     await appendEvent({
       event_type: "stt_engine_ready",
@@ -163,6 +181,12 @@ function createWindow(): BrowserWindow {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
+      // Dictation happens while this window is occluded by the notebook, which
+      // is exactly when Chromium throttles a hidden page's timers to ~1 Hz. That
+      // would stall the HUD's live level (#166) precisely when it is the only
+      // thing the user can see. The window stays a small utility surface, so the
+      // cost of not throttling it is negligible.
+      backgroundThrottling: false,
     },
   });
 
@@ -179,9 +203,39 @@ function createWindow(): BrowserWindow {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+    // The HUD is not an application of its own: with Home gone there is no
+    // dictation left to reflect, and an overlay still open would keep
+    // `window-all-closed` from ever firing, leaving DicTeX running invisibly.
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.close();
+    }
   });
 
   return mainWindow;
+}
+
+/**
+ * Open the floating HUD (#166). Additive and best-effort: it is created after the
+ * main window, it only ever draws states that already exist, and a failure is
+ * logged and swallowed — DicTeX must keep dictating with no overlay at all.
+ */
+function createOverlay(): void {
+  try {
+    overlayWindow = createOverlayWindow({
+      preloadPath: path.join(__dirname, "../preload/overlay.mjs"),
+      rendererUrl: process.env.ELECTRON_RENDERER_URL,
+      rendererFile: path.join(__dirname, "../renderer/overlay.html"),
+      // A freshly loaded window has no history, so send it the current view.
+      onReady: () => overlayPresenter.resend(),
+    });
+
+    overlayWindow.on("closed", () => {
+      overlayWindow = null;
+    });
+  } catch (error) {
+    overlayWindow = null;
+    console.warn(`[overlay] could not open the HUD: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function sendHotkeyStatus(): void {
@@ -237,6 +291,7 @@ async function loadPersistedSettings(): Promise<void> {
   const { settings, diagnostics } = await readAppSettings(getSettingsPath());
   activeSttModelOverride = settings.sttModel;
   activeNormalizerEnabled = settings.normalizerEnabled;
+  overlayPresenter.setNormalizerEnabled(activeNormalizerEnabled);
   for (const diagnostic of diagnostics) {
     console.warn(`[settings] ${diagnostic}`);
   }
@@ -531,6 +586,24 @@ ipcMain.handle("audio:get-segment", async (_event, audioSegment: AudioSegmentRec
   };
 });
 
+// Home publishes the overlay states it owns (#166). `on`, not `handle`: nothing
+// is returned and Home never awaits the HUD. A payload that cannot be trusted is
+// dropped rather than allowed to throw in the main process.
+ipcMain.on("overlay:publish", (_event, state: unknown) => {
+  const sanitized = sanitizeHomeOverlayState(state);
+  if (sanitized) {
+    overlayPresenter.updateFromHome(sanitized);
+  }
+});
+
+// The HUD asks for click-through to be lifted while the pointer is genuinely
+// over its one interactive control, and restored as soon as it leaves.
+ipcMain.on("overlay:set-interactive", (_event, interactive: unknown) => {
+  if (overlayWindow && typeof interactive === "boolean") {
+    setInteractive(overlayWindow, interactive);
+  }
+});
+
 ipcMain.handle("app:open-lab", (): OpenLabResult => openLabApp());
 
 ipcMain.handle("diagnostics:open-data-folder", async (): Promise<boolean> => {
@@ -623,6 +696,7 @@ ipcMain.handle("settings:set-normalizer-enabled", async (_event, enabled: unknow
     throw error;
   }
 
+  overlayPresenter.setNormalizerEnabled(activeNormalizerEnabled);
   return activeNormalizerEnabled;
 });
 
@@ -630,6 +704,7 @@ app.whenReady().then(async () => {
   // Apply persisted settings before the window loads its controls.
   await loadPersistedSettings();
   createWindow();
+  createOverlay();
   registerGlobalHotkey();
   // Open the window normally, then warm the worker asynchronously so the first
   // dictation does not pay the model load. A dictation that finishes before the
@@ -639,6 +714,7 @@ app.whenReady().then(async () => {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
+      createOverlay();
       sendHotkeyStatus();
     }
   });
@@ -654,6 +730,7 @@ app.on("before-quit", (event) => {
   }
   workerDisposeStarted = true;
   event.preventDefault();
+  overlayPresenter.dispose();
   void sttWorkerManager.dispose().finally(() => {
     app.quit();
   });

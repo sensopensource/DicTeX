@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { IpcRendererEvent } from "electron";
 
+import type { HomeOverlayState } from "../main/overlayPresenter.js";
+
 type TranscriptionResponse = {
   transcript: string;
   normalizedTranscript: string;
@@ -118,4 +120,8 @@ contextBridge.exposeInMainWorld("dictex", {
   getRecentSegments: (limit = 20) => ipcRenderer.invoke("history:get-recent-segments", limit) as Promise<RecentSegment[]>,
   getSegmentAudio: (audioSegment: AudioSegmentRecord) =>
     ipcRenderer.invoke("audio:get-segment", audioSegment) as Promise<AudioSegmentPlayback>,
+  // Home publishes the overlay states it owns (#166). `send`, not `invoke`: the
+  // HUD must never make Home await anything, so a stalled or missing overlay
+  // cannot slow a dictation down.
+  publishOverlayState: (state: HomeOverlayState) => ipcRenderer.send("overlay:publish", state),
 });
