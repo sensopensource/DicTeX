@@ -202,9 +202,11 @@ scripts\npm.cmd run dev
     dès que le pointeur la quitte le HUD redevient traversant. Vérifier que la
     barre de titre de Typora ne s'assombrit jamais, c'est-à-dire que le HUD ne
     prend jamais le focus.
-    Dicter un texte long (plus de ~360 caractères) et confirmer que l'aperçu
-    affiche `N characters inserted` au lieu du texte ; dicter un texte moyen et
-    confirmer la coupure sur un mot suivie de `…`. Passer `Normalizer` sur Off,
+    Dicter deux variantes longues de tailles différentes (plus de ~360
+    caractères) et confirmer que l'aperçu affiche `N characters inserted` côté
+    résultat et `N raw characters` côté brut, avec leurs comptes respectifs ;
+    dicter un texte moyen et confirmer la coupure sur un mot suivie de `…`.
+    Passer `Normalizer` sur Off,
     dicter : la bascule disparaît (rien à comparer) et la carte annonce
     `Normalizer off — raw STT inserted`. Après une dictée On dont le normaliseur
     a changé le texte, basculer le réglage sur Off pendant les six secondes

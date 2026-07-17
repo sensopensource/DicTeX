@@ -4,6 +4,7 @@ import "@dictex/shared/styles.css";
 import "./overlay.css";
 
 import type { OverlayPreview, OverlayView } from "../../main/overlayState.js";
+import { formatOverlayPreviewSummary, type OverlayPreviewVariant } from "./overlayPreview.js";
 
 /**
  * The floating HUD's renderer (#166).
@@ -64,14 +65,14 @@ function VuMeter({ level }: { level: number }): React.ReactElement {
   );
 }
 
-function Preview({ preview }: { preview: OverlayPreview }): React.ReactElement {
+function Preview({ preview, variant }: { preview: OverlayPreview; variant: OverlayPreviewVariant }): React.ReactElement {
   if (preview.kind === "empty") {
     return <p className="hud-preview hud-preview-quiet">Nothing to insert</p>;
   }
 
   if (preview.kind === "summary") {
     // Long dictations degrade to a count: the notebook is where the text is read.
-    return <p className="hud-preview hud-preview-quiet">{preview.characters} characters inserted</p>;
+    return <p className="hud-preview hud-preview-quiet">{formatOverlayPreviewSummary(preview.characters, variant)}</p>;
   }
 
   return <p className="hud-preview">{preview.text}</p>;
@@ -112,7 +113,7 @@ function InsertedCard({ view }: { view: InsertedView }): React.ReactElement {
         )}
       </div>
 
-      <Preview preview={showRaw ? view.raw : view.normalized} />
+      <Preview preview={showRaw ? view.raw : view.normalized} variant={showRaw ? "raw" : "inserted"} />
 
       {!view.normalizerEnabled && <p className="hud-preview hud-preview-quiet">Normalizer off — raw STT inserted</p>}
     </div>

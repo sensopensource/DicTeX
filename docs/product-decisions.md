@@ -618,8 +618,10 @@ d'œil, pas un lecteur : le texte se lit dans le cahier. L'aperçu replie les
 espaces — y compris les retours à la ligne produits par la commande
 correspondante — coupe sur une frontière de mot à ~120 caractères avec `…`, puis
 dégrade en « N characters inserted » lorsque couper masquerait l'essentiel de la
-dictée. Ce repli ne concerne que l'aperçu ; le texte inséré et tout ce qui est
-stocké gardent leurs octets exacts.
+dictée. Si la bascule affiche la variante brute, le résumé devient « N raw
+characters » : le compte reste toujours lié au texte effectivement visible. Ce
+repli ne concerne que l'aperçu ; le texte inséré et tout ce qui est stocké
+gardent leurs octets exacts.
 
 Deux limites sont décidées explicitement :
 
