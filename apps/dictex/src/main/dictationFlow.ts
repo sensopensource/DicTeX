@@ -59,6 +59,9 @@ export type TranscriptionResult = {
   normalizedTranscript: string;
   /** True when normalization changed the text (normalized differs from raw). */
   normalizationApplied: boolean;
+  /** The policy frozen for this dictation. Later setting changes apply only to
+   * the next run and must not reinterpret this completed result. */
+  normalizerEnabledForRun: boolean;
   /** Quiet diagnostics from the normalizer (e.g. malformed dictionary). */
   normalizationDiagnostics: string[];
   copiedToClipboard: boolean;
@@ -72,6 +75,12 @@ export type TranscriptionResult = {
   audioDurationSeconds: number | null;
   transcriptionDurationMs: number;
 };
+
+/** The renderer needs a resolved failure so it can distinguish an error before
+ * persistence from an STT failure after the audio and `audio_segment` exist. */
+export type DictationTranscriptionOutcome =
+  | { ok: true; result: TranscriptionResult }
+  | { ok: false; error: string; audioKept: boolean };
 
 export async function runDictationTranscription(
   deps: DictationFlowDeps,
@@ -148,6 +157,7 @@ export async function runDictationTranscription(
     transcript: worker.transcript,
     normalizedTranscript: insertedTranscript,
     normalizationApplied,
+    normalizerEnabledForRun: input.normalizerEnabled,
     normalizationDiagnostics,
     copiedToClipboard: true,
     pastedToActiveApp,
@@ -160,4 +170,38 @@ export async function runDictationTranscription(
     audioDurationSeconds: worker.audioDurationSeconds,
     transcriptionDurationMs,
   };
+}
+
+/**
+ * Resolve the flow into the IPC contract while tracking the exact persistence
+ * boundary. `audioKept` becomes true only after both `storeAudio` and the
+ * append-only `audio_segment` write have completed successfully.
+ */
+export async function runDictationTranscriptionOutcome(
+  deps: DictationFlowDeps,
+  input: DictationFlowInput,
+): Promise<DictationTranscriptionOutcome> {
+  let audioKept = false;
+
+  try {
+    const result = await runDictationTranscription(
+      {
+        ...deps,
+        appendEvent: async (event) => {
+          await deps.appendEvent(event);
+          if (event.event_type === "audio_segment") {
+            audioKept = true;
+          }
+        },
+      },
+      input,
+    );
+    return { ok: true, result };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Transcription failed",
+      audioKept,
+    };
+  }
 }

@@ -1,24 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { IpcRendererEvent } from "electron";
 
+import type { DictationTranscriptionOutcome } from "../main/dictationFlow.js";
 import type { HomeOverlayState } from "../main/overlayPresenter.js";
-
-type TranscriptionResponse = {
-  transcript: string;
-  normalizedTranscript: string;
-  normalizationApplied: boolean;
-  normalizationDiagnostics: string[];
-  copiedToClipboard: boolean;
-  pastedToActiveApp: boolean;
-  sessionId: string;
-  segmentId: string;
-  audioRef: string;
-  sttEngine: string;
-  sttModel: string;
-  sttLanguage: string;
-  audioDurationSeconds: number | null;
-  transcriptionDurationMs: number;
-};
 
 type TranscriptionOptions = {
   autoPaste?: boolean;
@@ -81,7 +65,7 @@ type OpenLabResult = {
 
 contextBridge.exposeInMainWorld("dictex", {
   transcribeAudio: (audioBytes: Uint8Array, mimeType: string, options?: TranscriptionOptions) =>
-    ipcRenderer.invoke("dictation:transcribe", audioBytes, mimeType, options) as Promise<TranscriptionResponse>,
+    ipcRenderer.invoke("dictation:transcribe", audioBytes, mimeType, options) as Promise<DictationTranscriptionOutcome>,
   onDictationToggle: (callback: () => void) => {
     const listener = () => {
       callback();

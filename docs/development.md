@@ -206,12 +206,18 @@ scripts\npm.cmd run dev
     affiche `N characters inserted` au lieu du texte ; dicter un texte moyen et
     confirmer la coupure sur un mot suivie de `…`. Passer `Normalizer` sur Off,
     dicter : la bascule disparaît (rien à comparer) et la carte annonce
-    `Normalizer off — raw STT inserted`. Dicter avec le bouton `Démarrer` de Home
+    `Normalizer off — raw STT inserted`. Après une dictée On dont le normaliseur
+    a changé le texte, basculer le réglage sur Off pendant les six secondes
+    d'affichage : la carte terminée et sa bascule doivent rester strictement
+    inchangées, le nouveau réglage ne valant que pour la dictée suivante. Dicter
+    avec le bouton `Démarrer` de Home
     plutôt que le raccourci : le toast doit être l'ambre
     `copied — press Ctrl+V to insert`, jamais `pasted`. Débrancher le micro ou
-    refuser son accès, puis dicter : le HUD montre `Error` avec le message et
-    `Audio kept`. Fermer la fenêtre Home et confirmer que le HUD disparaît avec
-    elle et que le processus se termine.
+    refuser son accès, puis dicter : le HUD montre `Error` avec le message, sans
+    `Audio kept`. Provoquer ensuite un échec STT après l'écriture du segment : la
+    même carte n'affiche `Audio kept` qu'une fois le fichier audio et
+    l'événement `audio_segment` confirmés. Fermer la fenêtre Home et confirmer
+    que le HUD disparaît avec elle et que le processus se termine.
 
 Benchmark, typed corrections, benchmark-set splits, candidate selection, Vosk, and the test_frozen dataset export are **no longer in DicTeX** (Pivot Phase 3) — they now live in DicTeX Lab and are verified there (see "DicTeX Lab" below).
 
@@ -773,6 +779,14 @@ une dictée). Le processus principal possède déjà l'état du worker et le ré
 du normaliseur, et les injecte directement. `OverlayView` est importée **en type
 seul** par le preload et le renderer depuis le module qui la dérive : l'import
 est effacé à la compilation et empêche les deux extrémités de diverger.
+
+Le résultat de transcription transporte `normalizerEnabledForRun` et
+`normalizationApplied`. La carte « inséré » est dérivée de ces faits figés, pas
+du réglage courant : passer le normaliseur On ou Off après la dictée ne réécrit
+donc jamais cette carte. L'appel IPC se résout également en un résultat typé en
+cas d'échec. `audioKept` ne devient vrai qu'après succès de l'écriture audio et
+de l'append `audio_segment` ; un refus du microphone, une erreur antérieure à
+cette frontière ou une charge incomplète restent pessimistes.
 
 Le VU est une prise en lecture seule sur le flux que le recorder possède déjà :
 l'`AnalyserNode` n'est jamais connecté à la destination, donc il ne route pas le

@@ -33,6 +33,9 @@ export type HomeOverlayState = {
   inputLevel: number | null;
   rawTranscript: string;
   insertedTranscript: string;
+  normalizerEnabledForRun: boolean | null;
+  normalizationApplied: boolean;
+  audioKept: boolean;
   errorMessage: string;
 };
 
@@ -45,6 +48,10 @@ function asString(value: unknown): string {
 
 function asFiniteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function asBoolean(value: unknown): boolean {
+  return typeof value === "boolean" ? value : false;
 }
 
 /**
@@ -74,6 +81,10 @@ export function sanitizeHomeOverlayState(value: unknown): HomeOverlayState | nul
     inputLevel: asFiniteNumber(candidate.inputLevel),
     rawTranscript: asString(candidate.rawTranscript),
     insertedTranscript: asString(candidate.insertedTranscript),
+    normalizerEnabledForRun:
+      typeof candidate.normalizerEnabledForRun === "boolean" ? candidate.normalizerEnabledForRun : null,
+    normalizationApplied: asBoolean(candidate.normalizationApplied),
+    audioKept: asBoolean(candidate.audioKept),
     errorMessage: asString(candidate.errorMessage),
   };
 }
@@ -96,6 +107,9 @@ const initialInput: OverlayInput = {
   inputLevel: null,
   rawTranscript: "",
   insertedTranscript: "",
+  normalizerEnabledForRun: null,
+  normalizationApplied: false,
+  audioKept: false,
   errorMessage: "",
 };
 

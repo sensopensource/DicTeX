@@ -588,6 +588,18 @@ sources et projeter une vue ; le HUD la dessine. Il n'existe donc aucune seconde
 source de vérité capable de contredire Home, et une erreur du HUD ne peut changer
 que ce qui est affiché — jamais ce qui est transcrit, inséré ou stocké.
 
+Une carte terminée est le snapshot immuable de la dictée qui l'a produite. Le
+résultat transporte notamment la politique du normaliseur figée pour ce run et
+le fait qu'une transformation a réellement eu lieu ; modifier ensuite le
+réglage de la prochaine dictée ne réinterprète jamais le texte déjà inséré et ne
+fait pas disparaître sa comparaison brut ↔ normalisé.
+
+La garantie `Audio kept` est elle aussi un fait explicite, jamais une déduction
+du seul état `error`. Elle n'apparaît qu'après confirmation de l'écriture du
+fichier audio **et** de son événement `audio_segment`. Un refus du microphone,
+une erreur de préparation ou une charge IPC incomplète restent sans garantie ;
+un échec STT postérieur à cette frontière peut l'afficher.
+
 Le HUD n'est **jamais sur le chemin critique**. Home publie en fire-and-forget,
 l'ouverture de la fenêtre est encapsulée, une charge IPC non fiable est ignorée
 plutôt que de lever dans le processus principal, et la dictée quotidienne

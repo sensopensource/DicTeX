@@ -15,7 +15,11 @@ import {
   type SttConfig,
 } from "@dictex/shared";
 import { readAppSettings, writeAppSettings } from "./settings.js";
-import { runDictationTranscription, type JsonValue, type TranscriptionResult } from "./dictationFlow.js";
+import {
+  runDictationTranscriptionOutcome,
+  type DictationTranscriptionOutcome,
+  type JsonValue,
+} from "./dictationFlow.js";
 import { createSttWorkerClient, type ResolvedWorkerConfig } from "./sttWorkerClient.js";
 import { SttWorkerManager, type SttWorkerStatus } from "./sttWorkerManager.js";
 import { OverlayPresenter, sanitizeHomeOverlayState } from "./overlayPresenter.js";
@@ -505,7 +509,7 @@ ipcMain.handle(
     audioBytes: Uint8Array,
     mimeType: string,
     options: TranscriptionOptions = {},
-  ): Promise<TranscriptionResult> => {
+  ): Promise<DictationTranscriptionOutcome> => {
     const createdAt = new Date().toISOString();
     const segmentId = getNextSegmentId();
     // Freeze the settings for this run. UI changes are disabled while recording
@@ -515,7 +519,7 @@ ipcMain.handle(
     const workerConfig = getWorkerConfig();
     const dataRoot = getDataRoot();
 
-    return runDictationTranscription(
+    return runDictationTranscriptionOutcome(
       {
         now: () => Date.now(),
         isoNow: () => new Date().toISOString(),

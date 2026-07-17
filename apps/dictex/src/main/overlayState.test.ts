@@ -18,6 +18,9 @@ const baseInput: OverlayInput = {
   inputLevel: null,
   rawTranscript: "",
   insertedTranscript: "",
+  normalizerEnabledForRun: null,
+  normalizationApplied: false,
+  audioKept: false,
   errorMessage: "",
 };
 
@@ -162,18 +165,18 @@ test("transcribing is its own phase", () => {
   assert.deepEqual(deriveOverlayView(input({ status: "transcribing" }), live), { phase: "transcribing" });
 });
 
-test("a dictation error keeps the audio-kept reassurance and Home's message", () => {
-  assert.deepEqual(deriveOverlayView(input({ status: "error", errorMessage: "Transcription failed" }), live), {
+test("an STT error after persistence keeps the audio-kept reassurance and Home's message", () => {
+  assert.deepEqual(deriveOverlayView(input({ status: "error", errorMessage: "Transcription failed", audioKept: true }), live), {
     phase: "error",
     message: "Transcription failed",
     audioKept: true,
   });
 });
 
-test("a dictation error without a message still says something", () => {
+test("an error before persistence never promises that audio was kept", () => {
   const view = deriveOverlayView(input({ status: "error", errorMessage: "" }), live);
 
-  assert.deepEqual(view, { phase: "error", message: "Dictation failed", audioKept: true });
+  assert.deepEqual(view, { phase: "error", message: "Dictation failed", audioKept: false });
 });
 
 /* ---- Inserted ------------------------------------------------------------ */
@@ -185,6 +188,8 @@ test("a pasted dictation shows both variants and offers the toggle", () => {
       pasteState: "pasted",
       rawTranscript: "x au carré",
       insertedTranscript: "$x^{2}$",
+      normalizerEnabledForRun: true,
+      normalizationApplied: true,
     }),
     live,
   );
@@ -231,7 +236,8 @@ test("the normalizer being off leaves nothing to toggle", () => {
   const view = deriveOverlayView(
     input({
       status: "done",
-      normalizerEnabled: false,
+      normalizerEnabledForRun: false,
+      normalizationApplied: false,
       pasteState: "pasted",
       rawTranscript: "x au carré",
       insertedTranscript: "x au carré",
@@ -251,7 +257,8 @@ test("a pipeline that changed nothing leaves nothing to toggle", () => {
   const view = deriveOverlayView(
     input({
       status: "done",
-      normalizerEnabled: true,
+      normalizerEnabledForRun: true,
+      normalizationApplied: false,
       rawTranscript: "il reste trois exemples",
       insertedTranscript: "il reste trois exemples",
     }),
@@ -265,9 +272,16 @@ test("a pipeline that changed nothing leaves nothing to toggle", () => {
   assert.equal(view.hasNormalized, false);
 });
 
-test("an unread normalizer setting does not claim the normalizer is off", () => {
+test("a missing run policy is not replaced with the current normalizer setting", () => {
   const view = deriveOverlayView(
-    input({ status: "done", normalizerEnabled: null, rawTranscript: "a", insertedTranscript: "b" }),
+    input({
+      status: "done",
+      normalizerEnabled: false,
+      normalizerEnabledForRun: null,
+      normalizationApplied: false,
+      rawTranscript: "a",
+      insertedTranscript: "b",
+    }),
     live,
   );
 
@@ -275,9 +289,8 @@ test("an unread normalizer setting does not claim the normalizer is off", () => 
   if (view.phase !== "inserted") {
     return;
   }
-  // Settings written before #105 default to enabled; the HUD follows that.
-  assert.equal(view.normalizerEnabled, true);
-  assert.equal(view.hasNormalized, true);
+  assert.equal(view.normalizerEnabled, null);
+  assert.equal(view.hasNormalized, false);
 });
 
 test("a long dictation degrades both variants independently", () => {
@@ -313,7 +326,7 @@ test("the inserted card gives way to the resting phase once dismissed", () => {
 
 test("dismissing the inserted card never suppresses a later error", () => {
   const view = deriveOverlayView(
-    input({ status: "error", errorMessage: "boom" }),
+    input({ status: "error", errorMessage: "boom", audioKept: true }),
     { insertedDismissed: true },
   );
 

@@ -51,6 +51,9 @@ const homeIdle: HomeOverlayState = {
   inputLevel: null,
   rawTranscript: "",
   insertedTranscript: "",
+  normalizerEnabledForRun: null,
+  normalizationApplied: false,
+  audioKept: false,
   errorMessage: "",
 };
 
@@ -61,10 +64,13 @@ const homeDone: HomeOverlayState = {
   inputLevel: null,
   rawTranscript: "x au carré",
   insertedTranscript: "$x^{2}$",
+  normalizerEnabledForRun: true,
+  normalizationApplied: true,
+  audioKept: true,
   errorMessage: "",
 };
 
-test("each owner's state survives the other owner's update", () => {
+test("the completed result keeps its run policy when the current setting differs", () => {
   const { presenter, views } = createHarness();
 
   presenter.setWorkerState("ready");
@@ -76,9 +82,22 @@ test("each owner's state survives the other owner's update", () => {
   if (view?.phase !== "inserted") {
     return;
   }
-  // Home's publish must not clear what the main process owns, and vice versa.
-  assert.equal(view.normalizerEnabled, false);
+  assert.equal(view.normalizerEnabled, true);
+  assert.equal(view.hasNormalized, true);
   assert.equal(view.paste, "pasted");
+});
+
+test("changing the setting for the next run leaves the inserted card strictly unchanged", () => {
+  const { presenter, views } = createHarness();
+  presenter.setNormalizerEnabled(true);
+  presenter.updateFromHome(homeDone);
+
+  const completedView = presenter.getView();
+  const emittedBeforeSettingChange = views.length;
+  presenter.setNormalizerEnabled(false);
+
+  assert.deepEqual(presenter.getView(), completedView);
+  assert.equal(views.length, emittedBeforeSettingChange, "an unchanged completed card stays off the wire");
 });
 
 test("an unchanged view is not re-emitted", () => {
@@ -210,6 +229,9 @@ test("unusable fields degrade to their empty value rather than throwing", () => 
     inputLevel: "loud",
     rawTranscript: 42,
     insertedTranscript: null,
+    normalizerEnabledForRun: "sometimes",
+    normalizationApplied: "yes",
+    audioKept: "probably",
     errorMessage: undefined,
   });
 
@@ -221,6 +243,9 @@ test("unusable fields degrade to their empty value rather than throwing", () => 
     inputLevel: null,
     rawTranscript: "",
     insertedTranscript: "",
+    normalizerEnabledForRun: null,
+    normalizationApplied: false,
+    audioKept: false,
     errorMessage: "",
   });
 });
@@ -232,5 +257,15 @@ test("a sanitized payload is safe to derive a view from", () => {
   assert.notEqual(sanitized, null);
   presenter.updateFromHome(sanitized as HomeOverlayState);
 
-  assert.deepEqual(views.at(-1), { phase: "error", message: "boom", audioKept: true });
+  assert.deepEqual(views.at(-1), { phase: "error", message: "boom", audioKept: false });
+});
+
+test("a confirmed persisted audio fact survives sanitization", () => {
+  const { presenter, views } = createHarness();
+  const sanitized = sanitizeHomeOverlayState({ status: "error", errorMessage: "STT failed", audioKept: true });
+
+  assert.notEqual(sanitized, null);
+  presenter.updateFromHome(sanitized as HomeOverlayState);
+
+  assert.deepEqual(views.at(-1), { phase: "error", message: "STT failed", audioKept: true });
 });

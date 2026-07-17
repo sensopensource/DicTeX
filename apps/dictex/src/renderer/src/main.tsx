@@ -4,26 +4,10 @@ import { formatAudioDuration, formatLatency, formatTimestamp, getSegmentKey } fr
 import "@dictex/shared/styles.css";
 import "./styles.css";
 
+import type { DictationTranscriptionOutcome, TranscriptionResult } from "../../main/dictationFlow.js";
 import type { HomeOverlayState } from "../../main/overlayPresenter.js";
 
 type Status = "idle" | "recording" | "transcribing" | "done" | "error";
-
-type TranscriptionResult = {
-  transcript: string;
-  normalizedTranscript: string;
-  normalizationApplied: boolean;
-  normalizationDiagnostics: string[];
-  copiedToClipboard: boolean;
-  pastedToActiveApp: boolean;
-  sessionId: string;
-  segmentId: string;
-  audioRef: string;
-  sttEngine: string;
-  sttModel: string;
-  sttLanguage: string;
-  audioDurationSeconds: number | null;
-  transcriptionDurationMs: number;
-};
 
 type TranscriptionOptions = {
   autoPaste?: boolean;
@@ -91,7 +75,7 @@ declare global {
         audioBytes: Uint8Array,
         mimeType: string,
         options?: TranscriptionOptions,
-      ) => Promise<TranscriptionResult>;
+      ) => Promise<DictationTranscriptionOutcome>;
       onDictationToggle: (callback: () => void) => () => void;
       onHotkeyStatus: (callback: (status: HotkeyStatus) => void) => () => void;
       openDataFolder: () => Promise<boolean>;
@@ -163,6 +147,7 @@ function App(): React.ReactElement {
   const [playingAudioSegmentKey, setPlayingAudioSegmentKey] = useState("");
   const [isOpeningLab, setIsOpeningLab] = useState(false);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
+  const [audioKept, setAudioKept] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const isStartingRef = useRef(false);
@@ -180,6 +165,9 @@ function App(): React.ReactElement {
     inputLevel: null,
     rawTranscript: "",
     insertedTranscript: "",
+    normalizerEnabledForRun: null,
+    normalizationApplied: false,
+    audioKept: false,
     errorMessage: "",
   });
   const levelAudioContextRef = useRef<AudioContext | null>(null);
@@ -214,9 +202,12 @@ function App(): React.ReactElement {
       recordingStartedAt,
       rawTranscript: lastResult?.transcript ?? "",
       insertedTranscript: lastResult?.normalizedTranscript ?? "",
+      normalizerEnabledForRun: lastResult?.normalizerEnabledForRun ?? null,
+      normalizationApplied: lastResult?.normalizationApplied ?? false,
+      audioKept,
       errorMessage: error,
     });
-  }, [status, lastPasteState, recordingStartedAt, lastResult, error]);
+  }, [status, lastPasteState, recordingStartedAt, lastResult, audioKept, error]);
 
   /**
    * Read the microphone level for the HUD's VU. A read-only tap on the stream the
@@ -316,6 +307,7 @@ function App(): React.ReactElement {
     setTranscript("");
     setLastPasteState("none");
     setLastResult(null);
+    setAudioKept(false);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -350,6 +342,7 @@ function App(): React.ReactElement {
     } catch (recordingError) {
       stopInputLevelMonitor();
       setRecordingStartedAt(null);
+      setAudioKept(false);
       setStatus("error");
       setError(recordingError instanceof Error ? recordingError.message : "Microphone access failed");
     } finally {
@@ -396,14 +389,24 @@ function App(): React.ReactElement {
     try {
       const audioBlob = new Blob(chunksRef.current, { type: mimeType });
       const audioBuffer = await audioBlob.arrayBuffer();
-      const result = await window.dictex.transcribeAudio(
+      const outcome = await window.dictex.transcribeAudio(
         new Uint8Array(audioBuffer),
         mimeType,
         pendingTranscriptionOptionsRef.current,
       );
 
+      if (!outcome.ok) {
+        setAudioKept(outcome.audioKept);
+        setStatus("error");
+        setError(outcome.error);
+        return;
+      }
+
+      const { result } = outcome;
+
       setTranscript(result.transcript);
       setLastResult(result);
+      setAudioKept(true);
       setDiagnostics({ result, paste: result.pastedToActiveApp ? "pasted" : "clipboard-only" });
       setLastPasteState(result.pastedToActiveApp ? "pasted" : "clipboard-only");
       // Surface normalizer diagnostics (e.g. a malformed dictionary) quietly,
@@ -412,6 +415,9 @@ function App(): React.ReactElement {
       setStatus("done");
       void loadRecentSegments();
     } catch (transcriptionError) {
+      // A Blob conversion or IPC transport failure carries no confirmation that
+      // the main process persisted anything, so never promise that it did.
+      setAudioKept(false);
       setStatus("error");
       setError(transcriptionError instanceof Error ? transcriptionError.message : "Transcription failed");
     }

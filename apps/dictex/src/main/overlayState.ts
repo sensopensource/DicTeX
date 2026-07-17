@@ -40,6 +40,12 @@ export type OverlayInput = {
   rawTranscript: string;
   /** Text actually inserted (normalized when the normalizer ran, raw otherwise). */
   insertedTranscript: string;
+  /** Policy and result facts frozen with the completed dictation. They belong
+   * to the result, not to the setting for the next run. */
+  normalizerEnabledForRun: boolean | null;
+  normalizationApplied: boolean;
+  /** True only after the audio file and `audio_segment` were both persisted. */
+  audioKept: boolean;
   /** Home's last error message, if any. */
   errorMessage: string;
 };
@@ -66,7 +72,7 @@ export type OverlayView =
       /** True only when the normalizer ran AND changed the text, i.e. when a raw
        * vs normalized toggle would actually show two different things. */
       hasNormalized: boolean;
-      normalizerEnabled: boolean;
+      normalizerEnabled: boolean | null;
       paste: "pasted" | "clipboard-only";
     }
   | { phase: "error"; message: string; audioKept: boolean };
@@ -192,9 +198,9 @@ export function deriveOverlayView(input: OverlayInput, options: DeriveOverlayOpt
       return {
         phase: "error",
         message: input.errorMessage || "Dictation failed",
-        // `runDictationTranscription` writes the audio and its `audio_segment`
-        // before transcribing, so a failed dictation always leaves them on disk.
-        audioKept: true,
+        // A microphone or persistence failure has no audio guarantee. The
+        // reassurance appears only after the main process confirmed both writes.
+        audioKept: input.audioKept,
       };
 
     case "done": {
@@ -202,7 +208,6 @@ export function deriveOverlayView(input: OverlayInput, options: DeriveOverlayOpt
         return deriveRestingPhase(input.workerState);
       }
 
-      const normalizerEnabled = input.normalizerEnabled ?? true;
       return {
         phase: "inserted",
         raw: buildPreview(input.rawTranscript),
@@ -210,8 +215,8 @@ export function deriveOverlayView(input: OverlayInput, options: DeriveOverlayOpt
         // With the normalizer Off the inserted text is byte-identical to the raw
         // STT, and a pipeline that ran without changing anything is equally
         // identical: in both cases a toggle would show the same text twice.
-        hasNormalized: normalizerEnabled && input.insertedTranscript !== input.rawTranscript,
-        normalizerEnabled,
+        hasNormalized: input.normalizationApplied && input.insertedTranscript !== input.rawTranscript,
+        normalizerEnabled: input.normalizerEnabledForRun,
         paste: input.pasteState === "pasted" ? "pasted" : "clipboard-only",
       };
     }
