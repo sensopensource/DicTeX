@@ -228,8 +228,13 @@ scripts\npm.cmd run dev
     refuser son accès, puis dicter : le HUD montre `Error` avec le message, sans
     `Audio kept`. Provoquer ensuite un échec STT après l'écriture du segment : la
     même carte n'affiche `Audio kept` qu'une fois le fichier audio et
-    l'événement `audio_segment` confirmés. Fermer la fenêtre Home et confirmer
-    que le HUD disparaît avec elle et que le processus se termine.
+    l'événement `audio_segment` confirmés.
+19. Barre système et arrière-plan (#169). Fermer Home : la fenêtre doit se
+    masquer, tandis que le HUD et `Win+Alt+Space` restent disponibles. Vérifier
+    dans le Tray les états prêt, enregistrement et erreur, puis le menu : la
+    case `Normalizer` reflète et persiste le réglage, `Open DicTeX Lab` lance le
+    Lab, `Open data folder` ouvre les données locales et `Quit` arrête réellement
+    DicTeX et son worker. Cliquer l'icône du Tray doit réafficher Home.
 
 Benchmark, typed corrections, benchmark-set splits, candidate selection, Vosk, and the test_frozen dataset export are **no longer in DicTeX** (Pivot Phase 3) — they now live in DicTeX Lab and are verified there (see "DicTeX Lab" below).
 
