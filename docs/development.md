@@ -135,6 +135,16 @@ scripts/npm.sh run build
 
 These root scripts delegate to `apps/dictex`.
 
+### Contrat des décisions produit
+
+`scripts\npm.cmd run lint:product-decisions` vérifie les affirmations
+mécaniquement contrôlables de `docs/product-decisions.md`. Le linter charge le
+normaliseur partagé sans fichier utilisateur et compare la version du jeu
+livré, la version sémantique du pipeline et l'empreinte SHA-256 effective aux
+contrats `dictex-contract` des décisions `DEC-NORM-*`. Toute divergence affiche
+la décision, la ligne, la valeur annoncée et la valeur calculée, puis échoue.
+Ce contrôle fait aussi partie de `scripts\npm.cmd test` et donc de la CI.
+
 ## Manual MVP Smoke Test
 
 Run this checklist on Windows when validating MVP behavior manually. CI does not cover microphone input, global hotkeys, auto-paste, Python STT, or local model availability.
