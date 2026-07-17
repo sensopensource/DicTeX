@@ -240,10 +240,13 @@ continuent de viser les mêmes identifiants stables.
 
 ## DEC-NORM-003 — Promotion des motifs structurés validés — 15 juillet 2026
 
-**Statut : active.** Le jeu livré passe à la version 3 et la version sémantique
-du pipeline à `dictex-deterministic-pipeline-v5`. Son empreinte effective est
-`8686d68c18668b5c1e5edd72598f235410aac49ca411710ba7e9dfc77f81170f`. La
-variante expérimentale `combined-structured-feminine-comparisons-v3`,
+**Statut : active.** Le jeu livré est à la version 4 et la version sémantique
+du pipeline est `dictex-deterministic-pipeline-v6`. Son empreinte effective est
+`9827105541440f074202db1eb4b5aaf6650172a349e1096ae2e0ccb59b9b57a1`.
+
+<!-- dictex-contract: normalizer-bundled-rules version=4 semantic-version=dictex-deterministic-pipeline-v6 sha256=9827105541440f074202db1eb4b5aaf6650172a349e1096ae2e0ccb59b9b57a1 -->
+
+La variante expérimentale `combined-structured-feminine-comparisons-v3`,
 d'empreinte SHA-256
 `86204019a1bca8a0585400365b61cd49aa6a64f5bbf0e61ca88a88461a3959e9`, a été
 rejouée sur les 21 exemples figés de `validation` du run
