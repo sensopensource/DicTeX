@@ -26,6 +26,7 @@ import { OverlayPresenter, sanitizeHomeOverlayState } from "./overlayPresenter.j
 import { createOverlayWindow, sendOverlayView, setInteractive } from "./overlayWindow.js";
 import { deriveTrayState, type TrayState } from "./trayState.js";
 import type { DictationStatus } from "./overlayState.js";
+import { persistTrayNormalizerSetting } from "./trayNormalizerSetting.js";
 
 type TranscriptionOptions = {
   autoPaste?: boolean;
@@ -369,20 +370,20 @@ async function loadPersistedSettings(): Promise<void> {
 
 async function setNormalizerEnabled(enabled: boolean): Promise<boolean> {
   const previousValue = activeNormalizerEnabled;
-  activeNormalizerEnabled = enabled;
-  try {
-    await writeAppSettings(getSettingsPath(), {
-      sttModel: activeSttModelOverride,
-      normalizerEnabled: activeNormalizerEnabled,
-    });
-  } catch (error) {
-    activeNormalizerEnabled = previousValue;
-    throw error;
-  }
-
-  overlayPresenter.setNormalizerEnabled(activeNormalizerEnabled);
-  updateTray();
-  return activeNormalizerEnabled;
+  return persistTrayNormalizerSetting({
+    currentEnabled: previousValue,
+    nextEnabled: enabled,
+    persist: (nextEnabled) =>
+      writeAppSettings(getSettingsPath(), {
+        sttModel: activeSttModelOverride,
+        normalizerEnabled: nextEnabled,
+      }),
+    synchronize: (nextEnabled) => {
+      activeNormalizerEnabled = nextEnabled;
+      overlayPresenter.setNormalizerEnabled(activeNormalizerEnabled);
+      updateTray();
+    },
+  });
 }
 
 function getDictionaryPath(): string {
