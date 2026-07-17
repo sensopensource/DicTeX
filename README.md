@@ -78,6 +78,9 @@ Déjà disponible :
   livrées versionnées, composées avec une surcouche personnelle ;
 - interrupteur persistant du normaliseur, avec sortie STT brute lorsqu'il est
   désactivé ;
+- HUD flottant et traversant qui reflète la dictée en cours — préchauffage,
+  enregistrement avec VU et chrono, transcription, texte inséré et erreur — sans
+  quitter le cahier ;
 - convention LaTeX canonique et canonicalisation avant mesure ou export ;
 - historique de dictées avec copie et réécoute ;
 - Lab séparé pour les corrections, les comparaisons et les exports ;

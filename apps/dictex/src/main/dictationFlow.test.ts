@@ -5,6 +5,7 @@ import type { NormalizationResult } from "@dictex/shared";
 
 import {
   runDictationTranscription,
+  runDictationTranscriptionOutcome,
   type DictationFlowDeps,
   type DictationFlowInput,
   type JsonValue,
@@ -43,6 +44,8 @@ type Harness = {
 function makeHarness(overrides: {
   transcribe?: DictationFlowDeps["transcribe"];
   normalize?: (raw: string) => Promise<NormalizationResult>;
+  storeAudio?: DictationFlowDeps["storeAudio"];
+  appendEvent?: DictationFlowDeps["appendEvent"];
 }): Harness {
   const events: Record<string, JsonValue>[] = [];
   const clipboard: string[] = [];
@@ -56,16 +59,20 @@ function makeHarness(overrides: {
       return value;
     },
     isoNow: () => "2026-07-11T00:00:00.000Z",
-    storeAudio: async (segmentId) => {
-      state.storeAudioCalls += 1;
-      return {
-        audioPath: `C:/data/audio/session_x/${segmentId}.webm`,
-        audioRef: `audio/session_x/${segmentId}.webm`,
-      };
-    },
-    appendEvent: async (event) => {
-      events.push(event);
-    },
+    storeAudio:
+      overrides.storeAudio ??
+      (async (segmentId) => {
+        state.storeAudioCalls += 1;
+        return {
+          audioPath: `C:/data/audio/session_x/${segmentId}.webm`,
+          audioRef: `audio/session_x/${segmentId}.webm`,
+        };
+      }),
+    appendEvent:
+      overrides.appendEvent ??
+      (async (event) => {
+        events.push(event);
+      }),
     transcribe: overrides.transcribe ?? (async () => workerResult()),
     normalize:
       overrides.normalize ??
@@ -139,6 +146,7 @@ test("Normalizer On: one stt_result with raw output, normalized text inserted", 
   assert.equal(result.transcript, rawTranscript);
   assert.equal(result.normalizedTranscript, "$x^{2}$");
   assert.equal(result.normalizationApplied, true);
+  assert.equal(result.normalizerEnabledForRun, true);
   assert.equal(harness.normalizeCalls, 1);
 });
 
@@ -159,6 +167,7 @@ test("Normalizer Off: inserted text is byte-identical to raw and event says disa
   assert.deepEqual(harness.clipboard, [rawTranscript]);
   assert.equal(result.normalizedTranscript, rawTranscript);
   assert.equal(result.normalizationApplied, false);
+  assert.equal(result.normalizerEnabledForRun, false);
   assert.equal(harness.normalizeCalls, 0, "the normalizer is never invoked when disabled");
 });
 
@@ -181,4 +190,40 @@ test("a failed transcription keeps the audio and audio_segment and writes no STT
     "no stt_result or normalization_result is written on failure",
   );
   assert.deepEqual(harness.clipboard, [], "nothing is inserted on failure");
+});
+
+test("an outcome before the audio file exists carries no persistence guarantee", async () => {
+  const harness = makeHarness({
+    storeAudio: async () => {
+      throw new Error("disk full");
+    },
+  });
+
+  const outcome = await runDictationTranscriptionOutcome(harness.deps, baseInput);
+
+  assert.deepEqual(outcome, { ok: false, error: "disk full", audioKept: false });
+});
+
+test("an outcome before audio_segment is appended carries no persistence guarantee", async () => {
+  const harness = makeHarness({
+    appendEvent: async () => {
+      throw new Error("event log unavailable");
+    },
+  });
+
+  const outcome = await runDictationTranscriptionOutcome(harness.deps, baseInput);
+
+  assert.deepEqual(outcome, { ok: false, error: "event log unavailable", audioKept: false });
+});
+
+test("an STT failure after audio_segment confirms that audio was kept", async () => {
+  const harness = makeHarness({
+    transcribe: async () => {
+      throw new WorkerDiedError("worker died twice", "worker_exited");
+    },
+  });
+
+  const outcome = await runDictationTranscriptionOutcome(harness.deps, baseInput);
+
+  assert.deepEqual(outcome, { ok: false, error: "worker died twice", audioKept: true });
 });

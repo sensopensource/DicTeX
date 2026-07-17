@@ -1,22 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { IpcRendererEvent } from "electron";
 
-type TranscriptionResponse = {
-  transcript: string;
-  normalizedTranscript: string;
-  normalizationApplied: boolean;
-  normalizationDiagnostics: string[];
-  copiedToClipboard: boolean;
-  pastedToActiveApp: boolean;
-  sessionId: string;
-  segmentId: string;
-  audioRef: string;
-  sttEngine: string;
-  sttModel: string;
-  sttLanguage: string;
-  audioDurationSeconds: number | null;
-  transcriptionDurationMs: number;
-};
+import type { DictationTranscriptionOutcome } from "../main/dictationFlow.js";
+import type { HomeOverlayState } from "../main/overlayPresenter.js";
 
 type TranscriptionOptions = {
   autoPaste?: boolean;
@@ -79,7 +65,7 @@ type OpenLabResult = {
 
 contextBridge.exposeInMainWorld("dictex", {
   transcribeAudio: (audioBytes: Uint8Array, mimeType: string, options?: TranscriptionOptions) =>
-    ipcRenderer.invoke("dictation:transcribe", audioBytes, mimeType, options) as Promise<TranscriptionResponse>,
+    ipcRenderer.invoke("dictation:transcribe", audioBytes, mimeType, options) as Promise<DictationTranscriptionOutcome>,
   onDictationToggle: (callback: () => void) => {
     const listener = () => {
       callback();
@@ -118,4 +104,8 @@ contextBridge.exposeInMainWorld("dictex", {
   getRecentSegments: (limit = 20) => ipcRenderer.invoke("history:get-recent-segments", limit) as Promise<RecentSegment[]>,
   getSegmentAudio: (audioSegment: AudioSegmentRecord) =>
     ipcRenderer.invoke("audio:get-segment", audioSegment) as Promise<AudioSegmentPlayback>,
+  // Home publishes the overlay states it owns (#166). `send`, not `invoke`: the
+  // HUD must never make Home await anything, so a stalled or missing overlay
+  // cannot slow a dictation down.
+  publishOverlayState: (state: HomeOverlayState) => ipcRenderer.send("overlay:publish", state),
 });

@@ -185,6 +185,41 @@ scripts\npm.cmd run dev
     dictée et confirmer `Restarting`, puis `Ready` avec une autre génération
     (ou `Error` après l'échec terminal). Basculer `Normalizer` On puis Off
     entre deux dictées et confirmer que le worker ne redémarre pas.
+18. HUD overlay flottant (#166). Au lancement, vérifier qu'une petite pastille
+    apparaît dans le coin bas-droite de la zone de travail, au-dessus des autres
+    fenêtres : `Preparing` pendant le préchauffage, puis `Ready`. Ouvrir Typora
+    par-dessus DicTeX et le maximiser : la pastille reste visible et le cahier
+    garde le focus. Cliquer **au travers** du HUD dans le texte de Typora et
+    confirmer que le curseur se place bien dans le cahier — le HUD n'intercepte
+    rien. Dicter avec `Win+Alt+Space` sans revenir à DicTeX : le HUD passe à
+    `Recording` avec un chrono qui avance et un VU qui suit réellement la voix
+    (fenêtre principale occultée comprise), puis `Transcribing`, puis la carte
+    « inséré » avec le toast vert `pasted` et l'aperçu du texte. Confirmer que le
+    texte est bien arrivé dans Typora, donc que le HUD n'a pas volé le Ctrl+V.
+    Après quelques secondes, la carte se replie sur la pastille.
+    Survoler la bascule `normalized` / `raw` pendant que la carte est affichée :
+    elle devient cliquable, montre la sortie STT brute puis le texte inséré, et
+    dès que le pointeur la quitte le HUD redevient traversant. Vérifier que la
+    barre de titre de Typora ne s'assombrit jamais, c'est-à-dire que le HUD ne
+    prend jamais le focus.
+    Dicter deux variantes longues de tailles différentes (plus de ~360
+    caractères) et confirmer que l'aperçu affiche `N characters inserted` côté
+    résultat et `N raw characters` côté brut, avec leurs comptes respectifs ;
+    dicter un texte moyen et confirmer la coupure sur un mot suivie de `…`.
+    Passer `Normalizer` sur Off,
+    dicter : la bascule disparaît (rien à comparer) et la carte annonce
+    `Normalizer off — raw STT inserted`. Après une dictée On dont le normaliseur
+    a changé le texte, basculer le réglage sur Off pendant les six secondes
+    d'affichage : la carte terminée et sa bascule doivent rester strictement
+    inchangées, le nouveau réglage ne valant que pour la dictée suivante. Dicter
+    avec le bouton `Démarrer` de Home
+    plutôt que le raccourci : le toast doit être l'ambre
+    `copied — press Ctrl+V to insert`, jamais `pasted`. Débrancher le micro ou
+    refuser son accès, puis dicter : le HUD montre `Error` avec le message, sans
+    `Audio kept`. Provoquer ensuite un échec STT après l'écriture du segment : la
+    même carte n'affiche `Audio kept` qu'une fois le fichier audio et
+    l'événement `audio_segment` confirmés. Fermer la fenêtre Home et confirmer
+    que le HUD disparaît avec elle et que le processus se termine.
 
 Benchmark, typed corrections, benchmark-set splits, candidate selection, Vosk, and the test_frozen dataset export are **no longer in DicTeX** (Pivot Phase 3) — they now live in DicTeX Lab and are verified there (see "DicTeX Lab" below).
 
@@ -714,6 +749,74 @@ A missing or malformed `settings.json` never crashes the app or blocks
 dictation: it degrades to the env var / default with a quiet console
 diagnostic. `stt_result` events keep recording the model actually used per
 segment.
+
+### HUD overlay flottant (issue #166)
+
+DicTeX ouvre une seconde fenêtre, le HUD : sans cadre, transparente, toujours
+au-dessus, traversante, épinglée au coin bas-droite de la zone de travail. Elle
+reflète l'état vivant de la dictée pendant que l'utilisateur reste dans son
+cahier. La décision produit et ses invariants vivent dans
+`docs/product-decisions.md` (`DEC-HUD-001`) ; cette section décrit le code.
+
+Quatre modules, en trois couches :
+
+- `main/overlayState.ts` — **pur, sans Electron**. Les types, la machine à phases
+  (`ready`, `warming`, `recording`, `transcribing`, `inserted`, `error`) et le cap
+  de l'aperçu. C'est la partie qui mérite des tests, et elle doit être exécutable
+  sans ouvrir de fenêtre ;
+- `main/overlayPresenter.ts` — fusionne les deux propriétaires d'état et
+  programme la disparition de la carte « inséré ». Ses timers sont injectés, donc
+  testables sans attendre six secondes. Il valide aussi la charge IPC publiée par
+  Home : une charge non fiable est ignorée, jamais levée dans le processus
+  principal ;
+- `main/overlayWindow.ts` — la `BrowserWindow` et le click-through. Volontairement
+  mince : tout ce qui se décide vit déjà dans les deux modules ci-dessus ;
+- `renderer/src/overlay.tsx` — une vue passive qui reçoit une `OverlayView` déjà
+  dérivée et la dessine.
+
+**Le HUD n'invente aucun état.** Home possède le statut de dictée, le résultat du
+collage et les transcriptions ; il les publie sur `overlay:publish` en
+fire-and-forget (`send`, jamais `invoke` : le HUD ne doit jamais faire attendre
+une dictée). Le processus principal possède déjà l'état du worker et le réglage
+du normaliseur, et les injecte directement. `OverlayView` est importée **en type
+seul** par le preload et le renderer depuis le module qui la dérive : l'import
+est effacé à la compilation et empêche les deux extrémités de diverger.
+
+Le résultat de transcription transporte `normalizerEnabledForRun` et
+`normalizationApplied`. La carte « inséré » est dérivée de ces faits figés, pas
+du réglage courant : passer le normaliseur On ou Off après la dictée ne réécrit
+donc jamais cette carte. L'appel IPC se résout également en un résultat typé en
+cas d'échec. `audioKept` ne devient vrai qu'après succès de l'écriture audio et
+de l'append `audio_segment` ; un refus du microphone, une erreur antérieure à
+cette frontière ou une charge incomplète restent pessimistes.
+
+Le VU est une prise en lecture seule sur le flux que le recorder possède déjà :
+l'`AnalyserNode` n'est jamais connecté à la destination, donc il ne route pas le
+micro vers les haut-parleurs et ne change aucun octet de l'audio enregistré. Le
+niveau est publié toutes les 80 ms depuis une `ref`, pour ne pas re-rendre Home
+plusieurs fois par seconde pour une fenêtre qu'il ne dessine pas. La fenêtre Home
+utilise `backgroundThrottling: false` : la dictée a lieu pendant que le cahier
+l'occulte, exactement quand Chromium limiterait ses timers à 1 Hz et figerait le
+niveau. Le chrono, lui, n'est pas poussé : le HUD reçoit un horodatage de départ
+et compte localement.
+
+Deux propriétés protègent le collage et ne doivent pas être relâchées :
+`focusable: false` en permanence, et le click-through par défaut
+(`setIgnoreMouseEvents(true, { forward: true })`). `forward: true` continue de
+livrer les `mousemove`, ce qui permet de tester le pointeur à chaque déplacement
+et de ne lever le click-through que tant qu'il survole réellement l'unique
+contrôle marqué `data-hud-interactive`. Le traversant est le défaut sûr dans les
+deux sens : échouer à devenir cliquable ne coûte que la bascule, alors qu'échouer
+à le rendre coûterait au cahier ses clics.
+
+Fermer Home ferme le HUD : sans Home il n'y a plus rien à refléter, et un overlay
+resté ouvert empêcherait `window-all-closed` de se déclencher, laissant DicTeX
+tourner invisible.
+
+Le HUD a ses propres entrées de build : `electron.vite.config.ts` nomme deux
+entrées de preload (`index`, `overlay`) et deux entrées de renderer
+(`index.html`, `overlay.html`), qui produisent `out/preload/overlay.mjs` et
+`out/renderer/overlay.html`.
 
 ### Interrupteur du normaliseur
 
