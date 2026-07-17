@@ -4,7 +4,11 @@ import "@dictex/shared/styles.css";
 import "./overlay.css";
 
 import type { OverlayPreview, OverlayView } from "../../main/overlayState.js";
-import { formatOverlayPreviewSummary, type OverlayPreviewVariant } from "./overlayPreview.js";
+import {
+  formatOverlayPreviewSummary,
+  shouldShowNormalizerOff,
+  type OverlayPreviewVariant,
+} from "./overlayPreview.js";
 
 /**
  * The floating HUD's renderer (#166).
@@ -115,7 +119,9 @@ function InsertedCard({ view }: { view: InsertedView }): React.ReactElement {
 
       <Preview preview={showRaw ? view.raw : view.normalized} variant={showRaw ? "raw" : "inserted"} />
 
-      {!view.normalizerEnabled && <p className="hud-preview hud-preview-quiet">Normalizer off — raw STT inserted</p>}
+      {shouldShowNormalizerOff(view.normalizerEnabled) && (
+        <p className="hud-preview hud-preview-quiet">Normalizer off — raw STT inserted</p>
+      )}
     </div>
   );
 }

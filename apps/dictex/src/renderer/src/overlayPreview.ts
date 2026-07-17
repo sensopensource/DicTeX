@@ -5,3 +5,8 @@ export type OverlayPreviewVariant = "inserted" | "raw";
 export function formatOverlayPreviewSummary(characters: number, variant: OverlayPreviewVariant): string {
   return variant === "raw" ? `${characters} raw characters` : `${characters} characters inserted`;
 }
+
+/** An unknown run policy must never be presented as an explicit Off result. */
+export function shouldShowNormalizerOff(normalizerEnabledForRun: boolean | null): boolean {
+  return normalizerEnabledForRun === false;
+}
