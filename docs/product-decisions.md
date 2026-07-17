@@ -573,6 +573,55 @@ d'éléments mathématiques : l'étendre à un conteneur de transcription mettra
 italique la prose mêlée au LaTeX. `packages/shared/src/styles.test.ts` verrouille
 cette limite.
 
+### DEC-HUD-001 — Le HUD overlay est un miroir, jamais une source — 17 juillet 2026
+
+**Statut : active.** `apps/dictex` possède une seconde fenêtre flottante, le
+HUD : sans cadre, transparente, toujours au-dessus, épinglée au coin de la zone
+de travail. Elle rend la dictée utilisable sans revenir à la fenêtre principale,
+puisque DicTeX colle dans le cahier et non dans lui-même.
+
+Le HUD est **en lecture seule sur des états qui existent déjà**. Chaque état
+garde son propriétaire : Home possède le statut de dictée, le résultat du collage
+et les transcriptions ; le processus principal possède l'état du worker STT et le
+réglage du normaliseur. Le processus principal ne fait que fusionner ces deux
+sources et projeter une vue ; le HUD la dessine. Il n'existe donc aucune seconde
+source de vérité capable de contredire Home, et une erreur du HUD ne peut changer
+que ce qui est affiché — jamais ce qui est transcrit, inséré ou stocké.
+
+Le HUD n'est **jamais sur le chemin critique**. Home publie en fire-and-forget,
+l'ouverture de la fenêtre est encapsulée, une charge IPC non fiable est ignorée
+plutôt que de lever dans le processus principal, et la dictée quotidienne
+fonctionne à l'identique sans aucun overlay.
+
+Deux propriétés protègent le collage et ne doivent pas être relâchées. La fenêtre
+est `focusable: false` : DicTeX colle en envoyant Ctrl+V à la fenêtre active, donc
+un overlay capable de prendre le focus avalerait le collage à la place du cahier.
+Elle est traversante par défaut : elle recouvre le cahier et ne doit pas
+intercepter un clic destiné au texte en dessous. Le click-through n'est levé que
+tant que le pointeur survole réellement l'unique contrôle du HUD, la bascule
+normalisé ↔ brut, et il est rendu dès qu'il la quitte.
+
+**La troncature de l'aperçu est obligatoire.** Le HUD est une surface de coup
+d'œil, pas un lecteur : le texte se lit dans le cahier. L'aperçu replie les
+espaces — y compris les retours à la ligne produits par la commande
+correspondante — coupe sur une frontière de mot à ~120 caractères avec `…`, puis
+dégrade en « N characters inserted » lorsque couper masquerait l'essentiel de la
+dictée. Ce repli ne concerne que l'aperçu ; le texte inséré et tout ce qui est
+stocké gardent leurs octets exacts.
+
+Deux limites sont décidées explicitement :
+
+- **Le toast de collage ne nomme pas l'application cible.** DicTeX ne capture
+  jamais la fenêtre au premier plan : `pasteClipboardIntoActiveApp` envoie Ctrl+V
+  et renvoie un booléen. Nommer l'application supposerait de lire la fenêtre
+  active sur le chemin de collage, ce qu'un overlay purement additif n'a pas à
+  faire. Le toast lit donc « pasted » ou « copied — press Ctrl+V to insert ».
+- **Le HUD ne rend pas les mathématiques.** Conformément à la direction « Cahier
+  Seyès » ci-dessus, aucune surface ne rend d'élément mathématique et l'adoption
+  d'un moteur de rendu reste une décision produit distincte, hors du périmètre de
+  ce ticket. L'aperçu affiche donc le LaTeX en texte littéral, comme toutes les
+  autres surfaces.
+
 Preferred direction:
 
 - sober;
@@ -610,7 +659,9 @@ La navigation actuelle est séparée par application :
 - **DicTeX** conserve une seule vue Home : dictée, normaliseur, modèle STT,
   diagnostic minimal, historique repliable avec copie/réécoute et bouton
   **Open Lab**. Pas de correction, de banc d'essai ou d'ensemble de données
-  dans cette application.
+  dans cette application. Le HUD flottant (`DEC-HUD-001`) n'ajoute pas une
+  seconde vue : c'est une fenêtre séparée, sans navigation ni réglage, qui
+  reflète en lecture seule l'état déjà porté par Home.
 - **DicTeX Lab** possède les vues Corpus, Experiments et Results (#136),
   chacune limitée à sa tâche : le corpus et sa qualification, le formulaire
   de lancement d'une expérience, la lecture d'un run figé (#138). Un
