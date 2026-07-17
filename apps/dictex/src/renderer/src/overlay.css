@@ -184,6 +184,38 @@
   font-size: var(--text-xs);
 }
 
+/* The HUD's only interactive control. It is clickable exclusively while the
+   pointer is over it, so it never takes a click meant for the notebook. */
+.hud-toggle {
+  display: inline-flex;
+  flex: none;
+  margin-left: auto;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.hud-toggle button {
+  border: 0;
+  padding: 0.12rem 0.45rem;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--text-xs);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.hud-toggle button:hover {
+  background: var(--surface-hover);
+}
+
+.hud-toggle button[aria-pressed="true"] {
+  color: var(--text-strong);
+  background: var(--surface-raised);
+}
+
 .hud-toast-pasted {
   border-color: var(--good-border);
   color: var(--good);
