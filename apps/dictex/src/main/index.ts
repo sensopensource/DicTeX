@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -24,6 +24,9 @@ import { createSttWorkerClient, type ResolvedWorkerConfig } from "./sttWorkerCli
 import { SttWorkerManager, type SttWorkerStatus } from "./sttWorkerManager.js";
 import { OverlayPresenter, sanitizeHomeOverlayState } from "./overlayPresenter.js";
 import { createOverlayWindow, sendOverlayView, setInteractive } from "./overlayWindow.js";
+import { deriveTrayState, type TrayState } from "./trayState.js";
+import type { DictationStatus } from "./overlayState.js";
+import { persistTrayNormalizerSetting } from "./trayNormalizerSetting.js";
 
 type TranscriptionOptions = {
   autoPaste?: boolean;
@@ -66,6 +69,10 @@ let mainWindow: BrowserWindow | null = null;
 // The floating HUD (#166). Always optional: every use is guarded, so a HUD that
 // failed to open can never interrupt a dictation.
 let overlayWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let appQuitting = false;
+let trayState: TrayState = "ready";
+let trayDictationStatus: DictationStatus = "idle";
 let globalHotkeyRegistered = false;
 let segmentCounter = 0;
 // STT model chosen from the UI and persisted in settings.json. Null means "no UI
@@ -74,6 +81,56 @@ let activeSttModelOverride: string | null = null;
 // The normalizer is enabled by default for settings written before #105. The UI
 // persists an explicit boolean and changes apply to subsequent dictations.
 let activeNormalizerEnabled = true;
+
+function trayIcon(state: TrayState) {
+  const color = state === "recording" ? "#c66a22" : state === "error" ? "#b42318" : "#236a4b";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#f5efe1" stroke="${color}" stroke-width="3"/><circle cx="16" cy="16" r="${state === "recording" ? "8" : "5"}" fill="${color}"/></svg>`;
+  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function updateTray(): void {
+  if (!tray) {
+    return;
+  }
+
+  tray.setImage(trayIcon(trayState));
+  tray.setToolTip(`DicTeX — ${trayState}`);
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Show DicTeX", click: showMainWindow },
+      {
+        label: "Normalizer",
+        type: "checkbox",
+        checked: activeNormalizerEnabled,
+        click: () => {
+          void setNormalizerEnabled(!activeNormalizerEnabled).catch((error) => {
+            console.warn(`[tray] could not update normalizer: ${error instanceof Error ? error.message : String(error)}`);
+          });
+        },
+      },
+      { label: "Open DicTeX Lab", click: () => openLabApp() },
+      { label: "Open data folder", click: () => void openDataFolder() },
+      { type: "separator" },
+      { label: "Quit", click: () => app.quit() },
+    ]),
+  );
+}
+
+function createTray(): void {
+  tray = new Tray(trayIcon(trayState));
+  tray.on("click", showMainWindow);
+  updateTray();
+}
 
 function getSttModel(): string {
   // Precedence: saved UI choice > DICTEX_STT_MODEL env var > built-in default.
@@ -205,14 +262,15 @@ function createWindow(): BrowserWindow {
     sendSttWorkerStatus(sttWorkerManager.getStatus());
   });
 
+  mainWindow.on("close", (event) => {
+    if (!appQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
-    // The HUD is not an application of its own: with Home gone there is no
-    // dictation left to reflect, and an overlay still open would keep
-    // `window-all-closed` from ever firing, leaving DicTeX running invisibly.
-    if (overlayWindow && !overlayWindow.isDestroyed()) {
-      overlayWindow.close();
-    }
   });
 
   return mainWindow;
@@ -254,6 +312,8 @@ function sendHotkeyStatus(): void {
 }
 
 function sendSttWorkerStatus(status: SttWorkerStatus): void {
+  trayState = deriveTrayState({ dictationStatus: trayDictationStatus, workerState: status.state });
+  updateTray();
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
@@ -286,6 +346,13 @@ function getSettingsPath(): string {
   return path.join(getDataRoot(), "settings.json");
 }
 
+async function openDataFolder(): Promise<boolean> {
+  const dataRoot = getDataRoot();
+  await mkdir(dataRoot, { recursive: true });
+  const error = await shell.openPath(dataRoot);
+  return error.length === 0;
+}
+
 /**
  * Load persisted settings at startup and apply the saved STT model and
  * normalizer state. Malformed settings degrade to defaults with a quiet console
@@ -299,6 +366,24 @@ async function loadPersistedSettings(): Promise<void> {
   for (const diagnostic of diagnostics) {
     console.warn(`[settings] ${diagnostic}`);
   }
+}
+
+async function setNormalizerEnabled(enabled: boolean): Promise<boolean> {
+  const previousValue = activeNormalizerEnabled;
+  return persistTrayNormalizerSetting({
+    currentEnabled: previousValue,
+    nextEnabled: enabled,
+    persist: (nextEnabled) =>
+      writeAppSettings(getSettingsPath(), {
+        sttModel: activeSttModelOverride,
+        normalizerEnabled: nextEnabled,
+      }),
+    synchronize: (nextEnabled) => {
+      activeNormalizerEnabled = nextEnabled;
+      overlayPresenter.setNormalizerEnabled(activeNormalizerEnabled);
+      updateTray();
+    },
+  });
 }
 
 function getDictionaryPath(): string {
@@ -597,6 +682,9 @@ ipcMain.on("overlay:publish", (_event, state: unknown) => {
   const sanitized = sanitizeHomeOverlayState(state);
   if (sanitized) {
     overlayPresenter.updateFromHome(sanitized);
+    trayDictationStatus = sanitized.status;
+    trayState = deriveTrayState({ dictationStatus: trayDictationStatus, workerState: sttWorkerManager.getStatus().state });
+    updateTray();
   }
 });
 
@@ -611,10 +699,7 @@ ipcMain.on("overlay:set-interactive", (_event, interactive: unknown) => {
 ipcMain.handle("app:open-lab", (): OpenLabResult => openLabApp());
 
 ipcMain.handle("diagnostics:open-data-folder", async (): Promise<boolean> => {
-  const dataRoot = getDataRoot();
-  await mkdir(dataRoot, { recursive: true });
-  const error = await shell.openPath(dataRoot);
-  return error.length === 0;
+  return openDataFolder();
 });
 
 ipcMain.handle("diagnostics:open-events-log", async (): Promise<boolean> => {
@@ -687,21 +772,7 @@ ipcMain.handle("settings:set-normalizer-enabled", async (_event, enabled: unknow
   if (typeof enabled !== "boolean") {
     throw new Error("Normalizer enabled state must be a boolean");
   }
-
-  const previousValue = activeNormalizerEnabled;
-  activeNormalizerEnabled = enabled;
-  try {
-    await writeAppSettings(getSettingsPath(), {
-      sttModel: activeSttModelOverride,
-      normalizerEnabled: activeNormalizerEnabled,
-    });
-  } catch (error) {
-    activeNormalizerEnabled = previousValue;
-    throw error;
-  }
-
-  overlayPresenter.setNormalizerEnabled(activeNormalizerEnabled);
-  return activeNormalizerEnabled;
+  return setNormalizerEnabled(enabled);
 });
 
 app.whenReady().then(async () => {
@@ -709,6 +780,7 @@ app.whenReady().then(async () => {
   await loadPersistedSettings();
   createWindow();
   createOverlay();
+  createTray();
   registerGlobalHotkey();
   // Open the window normally, then warm the worker asynchronously so the first
   // dictation does not pay the model load. A dictation that finishes before the
@@ -716,11 +788,11 @@ app.whenReady().then(async () => {
   sttWorkerManager.prewarm(getWorkerConfig());
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+    showMainWindow();
+    if (!overlayWindow || overlayWindow.isDestroyed()) {
       createOverlay();
-      sendHotkeyStatus();
     }
+    sendHotkeyStatus();
   });
 });
 
@@ -729,6 +801,7 @@ app.whenReady().then(async () => {
 // bounded async shutdown finish; the guard makes the re-quit a no-op.
 let workerDisposeStarted = false;
 app.on("before-quit", (event) => {
+  appQuitting = true;
   if (workerDisposeStarted) {
     return;
   }
@@ -745,7 +818,6 @@ app.on("will-quit", () => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  // DicTeX deliberately remains available through its Tray. The explicit Quit
+  // command above is the only normal exit path.
 });
