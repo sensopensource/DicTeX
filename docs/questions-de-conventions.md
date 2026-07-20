@@ -93,13 +93,15 @@ de `docs/product-decisions.md`, avec des exemples et une date.
 ### CONV-009 — Relations chaînées
 
 - Statut : décidée le 20 juillet 2026.
-- Décision : voir `DEC-CONV-003` dans `docs/product-decisions.md`.
-- Principe : « le tout » est le marqueur oral explicite qui borne l'expression
-  immédiatement précédente déjà formée ; aucune parenthèse n'est déduite
-  silencieusement.
-- Exemples : `a plus b le tout au carré` → `$(a+b)^{2}$` ; `a plus b le tout
-  sur c plus d` → `$\frac{a+b}{c+d}$` ; `racine carrée de a plus b le tout` →
-  `$\sqrt{a+b}$`.
+- Décision : voir `DEC-CONV-002` dans `docs/product-decisions.md`.
+- Principe : une chaîne de comparaisons se lit par application répétée de la
+  relation d'ordre simple, chaque comparaison gardant son propre symbole, sans
+  réordonnancement ni regroupement déduit.
+- Exemples : `a inférieur à b inférieur à c` → `$a < b < c$` ; `a inférieur ou
+  égal à b inférieur à c` → `$a \le b < c$`.
+- Note : le marqueur de regroupement « le tout » (`DEC-CONV-003`) ne concerne
+  pas les chaînes ; il répond au périmètre de CONV-010 et sert de brique à
+  CONV-011.
 
 ### CONV-011 — Formulation des limites
 

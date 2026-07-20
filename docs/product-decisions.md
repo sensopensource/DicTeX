@@ -90,11 +90,15 @@ tranchée : la couche 1 des lettres grecques minuscules utilise l'ASCII
 minuscule sans accent, identique au nom de la macro LaTeX correspondante :
 
 `alpha, beta, gamma, delta, epsilon, zeta, eta, theta, iota, kappa, lambda, mu,
-nu, xi, omicron, pi, rho, sigma, tau, upsilon, phi, chi, psi, omega`
+nu, xi, pi, rho, sigma, tau, upsilon, phi, chi, psi, omega`
 
-Cohérent avec `theta`, déjà fixé par `DEC-COUCHE1-001`. Le dictionnaire ramène
-les variantes STT accentuées ou phonétiques observées vers cette forme
-canonique ; le `stt_result` brut n'est jamais réécrit. La casse majuscule
+`omicron` est volontairement exclu : LaTeX de base n'a pas de macro `\omicron`
+(la lettre s'écrit avec un `o` latin ordinaire), donc l'inclure violerait la
+règle « identique au nom de la macro LaTeX » ; il reste par ailleurs indistinct
+d'un `o` en pratique. Cohérent avec `theta`, déjà fixé par
+`DEC-COUCHE1-001`. Le dictionnaire ramène les variantes STT accentuées ou
+phonétiques observées vers cette forme canonique ; le `stt_result` brut n'est
+jamais réécrit. La casse majuscule
 (`\Lambda`) reste un renvoi vers `CONV-021`, qui fixe déjà la casse latine mais
 pas encore la casse grecque.
 
@@ -404,36 +408,48 @@ chaque transformation. Une convention décidée reste signalée comme non
 implémentée tant que le dictionnaire, la table de commandes ou les regex ne la
 prennent pas effectivement en charge et ne possèdent pas leurs tests.
 
-## DEC-CONV-002 — Relations d'ordre — 20 juillet 2026
+## DEC-CONV-002 — Relations d'ordre et chaînes — 20 juillet 2026
 
-**Statut : décidée, non encore implémentée dans le normaliseur.** CONV-008 est
-tranchée : `inférieur à` et `strictement inférieur à` désignent tous deux `<` ;
-`inférieur ou égal à` produit `\le`. Par symétrie, `supérieur à` et
-`strictement supérieur à` désignent `>` ; `supérieur ou égal à` produit `\ge`.
-Les synonymes `plus petit que` et `plus grand que` restent alignés
-respectivement sur `inférieur à` et `supérieur à`.
+**Statut : décidée, non encore implémentée dans le normaliseur.** CONV-008 et
+CONV-009 sont tranchées. Pour une comparaison simple, `inférieur à` et
+`strictement inférieur à` désignent tous deux `<` ; `inférieur ou égal à`
+produit `\le`. Par symétrie, `supérieur à` et `strictement supérieur à`
+désignent `>` ; `supérieur ou égal à` produit `\ge`. Les synonymes `plus petit
+que` et `plus grand que` restent alignés respectivement sur `inférieur à` et
+`supérieur à`.
 
 Plusieurs formulations orales peuvent donc viser le même symbole : seul « ou
 égal à » change effectivement le symbole produit ; « strictement » ne fait que
 répéter explicitement le sens déjà strict de la comparaison simple.
 
+Une relation chaînée (CONV-009) se lit par application répétée de la même règle,
+chaque comparaison conservant son propre symbole, sans réordonnancement ni
+regroupement déduit : `a inférieur à b inférieur à c` → `$a < b < c$`, et
+`a inférieur ou égal à b inférieur à c` → `$a \le b < c$`. La chaîne n'introduit
+aucune sémantique nouvelle par rapport aux comparaisons simples qui la composent.
+
 ## DEC-CONV-003 — Marqueur de regroupement oral « le tout » — 20 juillet 2026
 
-**Statut : décidée, non encore implémentée dans le normaliseur.** CONV-009 est
-tranchée, en réponse commune au périmètre de CONV-010 et CONV-011 : « le tout »
-est le marqueur oral explicite qui borne l'expression immédiatement précédente
-déjà formée. Aucune parenthèse n'est jamais déduite silencieusement en son
-absence.
+**Statut : décidée, non encore implémentée dans le normaliseur.** Ce marqueur
+répond au périmètre de CONV-010 (« quand les parenthèses orales deviennent-elles
+obligatoires ») et sert de brique à CONV-011 : « le tout » est le marqueur oral
+explicite qui borne l'expression immédiatement précédente déjà formée. Aucune
+parenthèse n'est jamais déduite silencieusement en son absence.
 
 | Couche 1 | Couche 2 |
 | --- | --- |
 | `a plus b le tout au carré` | `$(a+b)^{2}$` |
-| `a plus b le tout sur c plus d` | `$\frac{a+b}{c+d}$` |
+| `a plus b le tout sur c plus d le tout` | `$\frac{a+b}{c+d}$` |
 | `racine carrée de a plus b le tout` | `$\sqrt{a+b}$` |
 
-Le dernier exemple lève explicitement le résidu volontairement conservé par
-`DEC-NORM-003` (`racine carrée de a plus b`, sans marqueur, reste `\sqrt{a} +
-b`). Sans « le tout », la portée d'une expression composée reste atomique.
+« le tout » ne borne que l'expression qui le précède immédiatement : dans une
+fraction, chaque opérande composé exige donc son propre marqueur. `a plus b le
+tout sur c plus d` seul produirait `$\frac{a+b}{c} + d$` (la fraction `A sur B`
+ne consomme qu'un atome, `DEC-NORM-001`) ; grouper le dénominateur `c + d`
+suppose de le prononcer `c plus d le tout`, faute de quoi la portée reste
+atomique et aucune parenthèse n'est déduite. Le dernier exemple lève de même
+explicitement le résidu volontairement conservé par `DEC-NORM-003` (`racine
+carrée de a plus b`, sans marqueur, reste `\sqrt{a} + b`).
 
 ## DEC-CONV-004 — Formulation canonique des limites — 20 juillet 2026
 
