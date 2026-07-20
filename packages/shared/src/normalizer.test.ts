@@ -168,6 +168,60 @@ test("the acceptance examples compose without changing surrounding prose", async
   }
 });
 
+// ── Issue #176: the "le tout" spoken grouping marker (DEC-CONV-003, CONV-010) ─
+//
+// "le tout" is the ONLY marker that bounds a composed sub-expression; without it
+// the atomic scope of the bare rules is unchanged (DEC-NORM-003). The rules run
+// last, on the "$…$" fragment the flat operators already produced. A power wraps
+// its group in PARENS (depth 0, spaced) and a fraction/root in BRACES (depth ≥ 1,
+// tight); the assertion is on the CANONICALIZED output, per the issue's
+// acceptance criterion ("la couche 2 attendue après canonicalizeLatex"), and
+// each expected value is verified to be its own canonicalizeLatex fixed point.
+test("'le tout' bounds the preceding formed expression (DEC-CONV-003)", async () => {
+  const cases = [
+    ["a plus b le tout au carré", "$(a + b)^{2}$"],
+    ["a plus b le tout au cube", "$(a + b)^{3}$"],
+    ["a plus b le tout puissance 3", "$(a + b)^{3}$"],
+    ["a plus b le tout puissance n", "$(a + b)^{n}$"],
+    ["a plus b le tout sur c plus d le tout", "$\\frac{a+b}{c+d}$"],
+    ["racine carrée de a plus b le tout", "$\\sqrt{a+b}$"],
+    ["racine carrée de a moins b le tout", "$\\sqrt{a-b}$"],
+  ] as const;
+  for (const [input, expected] of cases) {
+    const output = canonicalizeLatex(await regexLayerOutput(input));
+    assert.equal(output, expected, input);
+    assert.equal(canonicalizeLatex(expected), expected, expected);
+  }
+});
+
+// A fraction operand stays atomic unless it carries its OWN marker
+// (DEC-NORM-001): with only the numerator grouped, "sur" consumes the single
+// atom "c" and "+ d" stays outside — never the un-dictated "$\frac{a+b}{c+d}$".
+test("'le tout' bounds only the immediately preceding operand (DEC-CONV-003)", async () => {
+  assert.equal(
+    canonicalizeLatex(await regexLayerOutput("a plus b le tout sur c plus d")),
+    "$\\frac{a+b}{c} + d$",
+  );
+  assert.equal(
+    canonicalizeLatex(await regexLayerOutput("a plus b le tout sur c")),
+    "$\\frac{a+b}{c}$",
+  );
+});
+
+// Without the marker, the DEC-NORM-003 residue is preserved verbatim, and "le
+// tout" in ordinary prose (no maths fragment) is never touched.
+test("without 'le tout' the atomic residue and prose are unchanged (DEC-NORM-003)", async () => {
+  assert.equal(await regexLayerOutput("racine carrée de a plus b"), "$\\sqrt{a} + b$");
+  assert.equal(
+    await regexLayerOutput("je prends le tout et je pars"),
+    "je prends le tout et je pars",
+  );
+  assert.equal(
+    await regexLayerOutput("il faut regarder le tout autrement"),
+    "il faut regarder le tout autrement",
+  );
+});
+
 test("validation snapshot run_20260715131235469_r1xsgn7a reproduces 20 of 21 references", async () => {
   const cases = [
     ["seg_0025", "racine carrée de a plus b", "$\\sqrt{a+b}$"],
