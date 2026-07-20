@@ -206,8 +206,8 @@ export type NormalizerPipelineSnapshot = {
 };
 
 export const NORMALIZER_PIPELINE_CONTRACT_VERSION = 3;
-export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v6";
-export const DEFAULT_RULES_CONFIG_VERSION = 4;
+export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v7";
+export const DEFAULT_RULES_CONFIG_VERSION = 5;
 export const PERSONAL_RULES_OVERLAY_VERSION = 1;
 export const PERSONAL_RULES_OVERLAY_FILENAME = "rules-overlay.json";
 
@@ -1388,12 +1388,104 @@ const V3_DEFAULT_RULE_IDS = [
   ...V2_RULE_IDS.slice(V3_FUNCTION_APPLICATION_END),
 ];
 
+/**
+ * Version 5 adds the spoken grouping marker "le tout" (DEC-CONV-003, CONV-009).
+ * "le tout" is the ONLY way to bound a composed sub-expression: it never infers a
+ * silent parenthesis, so the atomic scope of the bare rules (DEC-NORM-003) is
+ * untouched and "racine carrée de a plus b" without the marker still yields
+ * "$\sqrt{a} + b$".
+ *
+ * These rules run LAST, after the flat operator rules have already folded the
+ * preceding expression into a single "$…$" fragment ("a plus b" is already
+ * "$a + b$", §7). The marker sits BETWEEN an operand and its operator
+ * ("… le tout au carré", "… le tout sur …"), so the earlier BARE bracing rules
+ * (power-square, fraction-over, …) never fire on it — their operand token is one
+ * digit/letter, never the word "tout". The one prefix operator "racine … de"
+ * reads before its operand and has therefore already consumed the atom into
+ * "$\sqrt{a}$" by the time these run; `group-marker-root` re-groups that residue
+ * once "le tout" closes it.
+ *
+ * Brace-depth spacing stays canonical either way (asserted as a fixed point in
+ * the tests): a power wraps its group in PARENS (depth 0 → "$(a + b)^{2}$",
+ * spaced), while a fraction or root wraps in BRACES (depth ≥ 1 →
+ * "$\frac{a+b}{c+d}$", "$\sqrt{a+b}$", tight). A fraction operand stays atomic
+ * unless it carries its OWN marker (DEC-NORM-001): "a plus b le tout sur c plus d"
+ * is "$\frac{a+b}{c} + d$", never the un-dictated "$\frac{a+b}{c+d}$".
+ */
+const GROUP_MARKER = `le\\s+tout`;
+
+/** Match a whole "$…$" fragment an earlier rule already produced, capturing its
+ * inner body (delimiters excluded) so it can be re-spliced into a new group. */
+function markedFragment(tag: string): string {
+  return `\\$(?<${tag}>[^$]+)\\$`;
+}
+
+const LE_TOUT_RULES: IdentifiedRule[] = [
+  {
+    // "$X$ le tout au carré" -> "$(X)^{2}$".
+    id: "group-marker-square",
+    pattern: `${markedFragment("gsq")}\\s+${GROUP_MARKER}\\s+au\\s+carr(?:é|ée)${NOT_WORD_AFTER}`,
+    replacement: `$$($<gsq>)^{2}$$`,
+    flags: "i",
+  },
+  {
+    // "$X$ le tout au cube" -> "$(X)^{3}$".
+    id: "group-marker-cube",
+    pattern: `${markedFragment("gcu")}\\s+${GROUP_MARKER}\\s+au\\s+cube${NOT_WORD_AFTER}`,
+    replacement: `$$($<gcu>)^{3}$$`,
+    flags: "i",
+  },
+  {
+    // "$X$ le tout puissance n" -> "$(X)^{n}$" (bare exponent operand).
+    id: "group-marker-power",
+    pattern: `${markedFragment("gpw")}\\s+${GROUP_MARKER}\\s+puissance\\s+(?<gpn>${OPERAND_BARE})${NOT_WORD_AFTER}`,
+    replacement: `$$($<gpw>)^{$<gpn>}$$`,
+    flags: "i",
+  },
+  {
+    // Both operands grouped: "$X$ le tout sur $Y$ le tout" -> "$\frac{X}{Y}$".
+    // Runs before the atomic/split variants so a marked denominator wins.
+    id: "group-marker-over-grouped",
+    pattern: `${markedFragment("gox")}\\s+${GROUP_MARKER}\\s+sur\\s+${markedFragment("goy")}\\s+${GROUP_MARKER}${NOT_WORD_AFTER}`,
+    replacement: `$$\\frac{$<gox>}{$<goy>}$$`,
+    flags: "i",
+  },
+  {
+    // Bare atomic denominator: "$X$ le tout sur c" -> "$\frac{X}{c}$".
+    id: "group-marker-over-atom",
+    pattern: `${markedFragment("gax")}\\s+${GROUP_MARKER}\\s+sur\\s+(?<gac>${OPERAND_BARE})${NOT_WORD_AFTER}`,
+    replacement: `$$\\frac{$<gax>}{$<gac>}$$`,
+    flags: "i",
+  },
+  {
+    // Composed but UNMARKED denominator: "sur" consumes only its first atom
+    // (DEC-NORM-001), leaving the tail outside the fraction. "$X$ le tout sur
+    // $c + d$" -> "$\frac{X}{c} + d$"; grouping "c + d" requires its own marker.
+    id: "group-marker-over-atom-tail",
+    pattern:
+      `${markedFragment("gtx")}\\s+${GROUP_MARKER}\\s+sur\\s+` +
+      `\\$(?<gtd>${OPERAND_BARE})\\s+(?<gtt>[-+]\\s*[^$]+)\\$${NOT_WORD_AFTER}`,
+    replacement: `$$\\frac{$<gtx>}{$<gtd>}$<gtt>$$`,
+    flags: "i",
+  },
+  {
+    // The prefix root already braced its atom ("$\sqrt{a} + b$"); "le tout"
+    // closes the group, re-braced tight -> "$\sqrt{a+b}$". Only fires when the
+    // marker is present, so the DEC-NORM-003 residue "$\sqrt{a} + b$" is kept.
+    id: "group-marker-root",
+    pattern: `\\$\\\\sqrt\\{(?<grh>[^{}]+)\\}\\s+(?<grop>[-+])\\s+(?<grt>[^$]+?)\\$\\s+${GROUP_MARKER}${NOT_WORD_AFTER}`,
+    replacement: `$$\\sqrt{$<grh>$<grop>$<grt>}$$`,
+    flags: "i",
+  },
+];
+
 export const DEFAULT_RULES: RuleEntry[] = [
   ...PREPARATION_RULES,
   ...V4_STRUCTURED_RULES,
   ...V4_EARLY_ATOMIC_RULES,
   ...EQUALITY_RIGHT_RULES,
   ...V4_LATE_ATOMIC_RULES,
+  ...LE_TOUT_RULES,
 ];
 
 const DEFAULT_RULE_IDS = [
@@ -1402,6 +1494,7 @@ const DEFAULT_RULE_IDS = [
   ...V4_EARLY_ATOMIC_RULES.map((rule) => rule.id),
   ...EQUALITY_RIGHT_RULES.map((rule) => rule.id),
   ...V4_LATE_ATOMIC_RULES.map((rule) => rule.id),
+  ...LE_TOUT_RULES.map((rule) => rule.id),
 ];
 
 if (DEFAULT_RULE_IDS.length !== DEFAULT_RULES.length) {

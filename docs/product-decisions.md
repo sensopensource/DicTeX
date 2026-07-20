@@ -279,11 +279,11 @@ continuent de viser les mêmes identifiants stables.
 
 ## DEC-NORM-003 — Promotion des motifs structurés validés — 15 juillet 2026
 
-**Statut : active.** Le jeu livré est à la version 4 et la version sémantique
-du pipeline est `dictex-deterministic-pipeline-v6`. Son empreinte effective est
-`9827105541440f074202db1eb4b5aaf6650172a349e1096ae2e0ccb59b9b57a1`.
+**Statut : active.** Le jeu livré est à la version 5 et la version sémantique
+du pipeline est `dictex-deterministic-pipeline-v7`. Son empreinte effective est
+`13e55a284060940b426ea02fb9da005c6a2dbd850e34e7533b264494478cf3ca`.
 
-<!-- dictex-contract: normalizer-bundled-rules version=4 semantic-version=dictex-deterministic-pipeline-v6 sha256=9827105541440f074202db1eb4b5aaf6650172a349e1096ae2e0ccb59b9b57a1 -->
+<!-- dictex-contract: normalizer-bundled-rules version=5 semantic-version=dictex-deterministic-pipeline-v7 sha256=13e55a284060940b426ea02fb9da005c6a2dbd850e34e7533b264494478cf3ca -->
 
 La variante expérimentale `combined-structured-feminine-comparisons-v3`,
 d'empreinte SHA-256
@@ -301,12 +301,19 @@ par un contexte mathématique. Les nombres de zéro à vingt sont générés dan
 seuls contextes. Ce jeu n'est ni une grammaire générale ni un parseur : il ne
 déduit aucune parenthèse silencieuse et ne choisit aucune portée non dictée.
 
-Le résidu « racine carrée de a plus b » est volontairement conservé : la règle
-atomique produit `\sqrt{a} + b`, car décider `\sqrt{a+b}` sans marque de groupe
-serait une convention de portée, pas une substitution sûre. Les identifiants des
-66 règles v2 restent inchangés ; les 160 nouvelles définitions reçoivent leurs
-propres identifiants stables. Une surcouche ancienne continue donc à désactiver
-ou remplacer la même règle, tout en consommant automatiquement les nouvelles
+Le résidu « racine carrée de a plus b » reste volontairement conservé en
+l'absence de marqueur : la règle atomique produit `\sqrt{a} + b`, car décider
+`\sqrt{a+b}` sans marque de groupe serait une convention de portée, pas une
+substitution sûre. La version 5 ajoute le marqueur oral « le tout »
+(`DEC-CONV-003`, CONV-009), seule façon explicite de lever ce résidu :
+`racine carrée de a plus b le tout` produit alors `\sqrt{a+b}`, et « le tout »
+borne de même le carré, le cube, la puissance et la fraction de l'expression
+`$…$` déjà formée qui le précède, toujours sans parenthèse déduite.
+
+Les identifiants des 66 règles v2 et des 160 définitions v4 restent inchangés ;
+les sept nouvelles règles « le tout » reçoivent leurs propres identifiants
+stables (`group-marker-*`). Une surcouche ancienne continue donc à désactiver ou
+remplacer la même règle, tout en consommant automatiquement les nouvelles
 définitions livrées.
 
 ## DEC-COUCHE2-001 — Transformation locale sans inférence sémantique — 13 juillet 2026
@@ -430,7 +437,8 @@ aucune sémantique nouvelle par rapport aux comparaisons simples qui la composen
 
 ## DEC-CONV-003 — Marqueur de regroupement oral « le tout » — 20 juillet 2026
 
-**Statut : décidée, non encore implémentée dans le normaliseur.** Ce marqueur
+**Statut : implémentée dans le normaliseur** (jeu livré v5,
+`dictex-deterministic-pipeline-v7`, règles `group-marker-*`). Ce marqueur
 répond au périmètre de CONV-010 (« quand les parenthèses orales deviennent-elles
 obligatoires ») et sert de brique à CONV-011 : « le tout » est le marqueur oral
 explicite qui borne l'expression immédiatement précédente déjà formée. Aucune

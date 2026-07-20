@@ -179,7 +179,7 @@ scripts\npm.cmd run dev
     versions locale/livrée, les SHA-256 et les nombres de règles. Lancer une fois
     `Run legacy baseline`, puis `Review migration`. Vérifier la prévisualisation,
     confirmer, contrôler le chemin de sauvegarde et la nouvelle empreinte, puis
-    relancer : l'état doit être `Current overlay` et les 226 règles v3 actives.
+    relancer : l'état doit être `Current overlay` et les 239 règles v5 actives.
 14. Placer l'interrupteur `Normalizer` sur **Off**, dicter « retour à la ligne x au carré », puis vérifier que le texte copié ou inséré est identique octet par octet à `Last transcript` : les mots de commande restent littéraux et aucun LaTeX n'est produit. Vérifier que le nouvel événement `normalization_result` contient `disabled: true`, aucun champ `passthrough` et des `layers` vides. Redémarrer DicTeX, confirmer que l'état Off persiste, puis repasser sur On et vérifier que règles et commandes s'appliquent à nouveau.
 15. Dans le sélecteur `STT model`, choisir un autre modèle. Vérifier le diagnostic `Model`, dicter une phrase et confirmer que l'événement `stt_result` contient le modèle choisi. Redémarrer l'application et vérifier la persistance dans `data/settings.json`. Corrompre ce fichier et confirmer que DicTeX redémarre avec la variable d'environnement ou `base`, et avec le normaliseur activé.
 16. Cliquer sur **Open Lab**. Avec un Lab construit (`scripts\npm.cmd run build`), vérifier son ouverture ; sans construction, vérifier que DicTeX affiche une erreur explicite sans planter.
