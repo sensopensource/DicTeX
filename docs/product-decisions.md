@@ -63,6 +63,41 @@ deux », et un nombre compact perd souvent sa formulation orale exacte.
 L'orthographe des nombres composés, la ponctuation et les disfluences restent
 ouvertes dans `docs/questions-de-conventions.md`.
 
+## DEC-COUCHE1-002 — Orthographe canonique des nombres composés — 20 juillet 2026
+
+**Statut : décidée, non encore implémentée dans le normaliseur.** CONV-006 est
+tranchée pour la couche 1 (référence CER) : l'orthographe traditionnelle
+française du nombre composé fait foi, jamais sa conversion en chiffres.
+
+- Trait d'union entre les éléments inférieurs à cent : `dix-sept`,
+  `quatre-vingt-dix`.
+- `et` sans trait d'union devant `un` : `vingt et un`.
+- `vingt` et `cent` prennent un `-s` lorsqu'ils sont multipliés et non suivis
+  d'un autre nombre : `quatre-vingts`, `deux cents` ; mais `quatre-vingt-dix`
+  et `deux cent un` restent invariables, puisqu'ils sont suivis.
+- `mille` reste invariable dans tous les cas.
+- Aucun trait d'union autour de `cent` ou `mille` : `cent quatre-vingts`.
+
+Cette décision reste une convention de couche 1 : `DEC-COUCHE1-001` continue de
+garder les mots effectivement prononcés ; cette entrée fixe seulement laquelle
+de leurs orthographes fait foi. Elle ne convertit aucun nombre composé en
+chiffres.
+
+## DEC-COUCHE1-003 — Lexique canonique des lettres grecques — 20 juillet 2026
+
+**Statut : décidée, non encore implémentée dans le normaliseur.** CONV-012 est
+tranchée : la couche 1 des lettres grecques minuscules utilise l'ASCII
+minuscule sans accent, identique au nom de la macro LaTeX correspondante :
+
+`alpha, beta, gamma, delta, epsilon, zeta, eta, theta, iota, kappa, lambda, mu,
+nu, xi, omicron, pi, rho, sigma, tau, upsilon, phi, chi, psi, omega`
+
+Cohérent avec `theta`, déjà fixé par `DEC-COUCHE1-001`. Le dictionnaire ramène
+les variantes STT accentuées ou phonétiques observées vers cette forme
+canonique ; le `stt_result` brut n'est jamais réécrit. La casse majuscule
+(`\Lambda`) reste un renvoi vers `CONV-021`, qui fixe déjà la casse latine mais
+pas encore la casse grecque.
+
 ## DEC-RUN-001 — Une mesure STT appartient toujours à un run — 13 juillet 2026
 
 **Statut : active.** Toute mesure STT du Lab naît d'un run tracé : un
@@ -368,6 +403,50 @@ Cette décision fixe le contrat de données, pas la couche technique qui réalis
 chaque transformation. Une convention décidée reste signalée comme non
 implémentée tant que le dictionnaire, la table de commandes ou les regex ne la
 prennent pas effectivement en charge et ne possèdent pas leurs tests.
+
+## DEC-CONV-002 — Relations d'ordre — 20 juillet 2026
+
+**Statut : décidée, non encore implémentée dans le normaliseur.** CONV-008 est
+tranchée : `inférieur à` et `strictement inférieur à` désignent tous deux `<` ;
+`inférieur ou égal à` produit `\le`. Par symétrie, `supérieur à` et
+`strictement supérieur à` désignent `>` ; `supérieur ou égal à` produit `\ge`.
+Les synonymes `plus petit que` et `plus grand que` restent alignés
+respectivement sur `inférieur à` et `supérieur à`.
+
+Plusieurs formulations orales peuvent donc viser le même symbole : seul « ou
+égal à » change effectivement le symbole produit ; « strictement » ne fait que
+répéter explicitement le sens déjà strict de la comparaison simple.
+
+## DEC-CONV-003 — Marqueur de regroupement oral « le tout » — 20 juillet 2026
+
+**Statut : décidée, non encore implémentée dans le normaliseur.** CONV-009 est
+tranchée, en réponse commune au périmètre de CONV-010 et CONV-011 : « le tout »
+est le marqueur oral explicite qui borne l'expression immédiatement précédente
+déjà formée. Aucune parenthèse n'est jamais déduite silencieusement en son
+absence.
+
+| Couche 1 | Couche 2 |
+| --- | --- |
+| `a plus b le tout au carré` | `$(a+b)^{2}$` |
+| `a plus b le tout sur c plus d` | `$\frac{a+b}{c+d}$` |
+| `racine carrée de a plus b le tout` | `$\sqrt{a+b}$` |
+
+Le dernier exemple lève explicitement le résidu volontairement conservé par
+`DEC-NORM-003` (`racine carrée de a plus b`, sans marqueur, reste `\sqrt{a} +
+b`). Sans « le tout », la portée d'une expression composée reste atomique.
+
+## DEC-CONV-004 — Formulation canonique des limites — 20 juillet 2026
+
+**Statut : décidée, non encore implémentée dans le normaliseur.** CONV-011 est
+tranchée : deux placements de la clause « quand/lorsque … tend vers … » sont
+canoniques et produisent la même couche 2.
+
+- Postfixe : `la limite de <expr> quand x tend vers a`.
+- Infixe soutenu : `la limite, quand x tend vers a, de <expr>`.
+
+`quand` et `lorsque` sont des synonymes interchangeables. Une `<expr>`
+composée doit être bornée par « le tout » (`DEC-CONV-003`) pour rester
+déductible ; une `<expr>` atomique n'a pas besoin de ce marqueur.
 
 ## DicTeX / Lab split (monorepo)
 

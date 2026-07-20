@@ -46,6 +46,8 @@ dans la cible, cette information doit être prononcée.
 | `parenthèse ouvrante x séparateur y séparateur z parenthèse fermante` | `$(x,y,z)$` | l'arité et les délimiteurs sont explicites |
 | `zéro virgule zéro` | `$0{,}0$` | `virgule` appartient au nombre décimal |
 | `parenthèse ouvrante zéro séparateur zéro parenthèse fermante` | `$(0,0)$` | `séparateur` ne peut pas être confondu avec la virgule décimale |
+| `racine carrée de a plus b le tout` | `$\sqrt{a+b}$` | le regroupement est prononcé |
+| `racine carrée de a plus b` | `$\sqrt{a} + b$` | sans marque, la portée reste atomique |
 
 « Vecteur nul » ne peut jamais produire automatiquement `(0,0)` ou `(0,0,0)` :
 la dimension et les coordonnées ne sont pas prononcées. La formulation reste en

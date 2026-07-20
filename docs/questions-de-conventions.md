@@ -71,30 +71,65 @@ de `docs/product-decisions.md`, avec des exemples et une date.
   `$(x,y)$` ; « parenthèse ouvrante zéro séparateur zéro parenthèse fermante »
   produit `$(0,0)$`, distinct de « zéro virgule zéro » → `$0{,}0$`.
 
+### CONV-006 — Orthographe des nombres composés
+
+- Statut : décidée le 20 juillet 2026.
+- Décision : voir `DEC-COUCHE1-002` dans `docs/product-decisions.md`.
+- Principe : orthographe traditionnelle française pour la couche 1, jamais de
+  conversion en chiffres.
+- Exemples : `dix-sept`, `quatre-vingt-dix`, `vingt et un`, `quatre-vingts`,
+  `deux cents`, `deux cent un`, `cent quatre-vingts`.
+
+### CONV-008 — Relations d'ordre
+
+- Statut : décidée le 20 juillet 2026.
+- Décision : voir `DEC-CONV-002` dans `docs/product-decisions.md`.
+- Principe : « inférieur à » et « strictement inférieur à » désignent le même
+  symbole ; seul « ou égal à » change le symbole produit.
+- Exemples : `inférieur à` et `strictement inférieur à` → `<` ; `inférieur ou
+  égal à` → `\le` ; `supérieur à` et `strictement supérieur à` → `>` ;
+  `supérieur ou égal à` → `\ge`.
+
+### CONV-009 — Relations chaînées
+
+- Statut : décidée le 20 juillet 2026.
+- Décision : voir `DEC-CONV-003` dans `docs/product-decisions.md`.
+- Principe : « le tout » est le marqueur oral explicite qui borne l'expression
+  immédiatement précédente déjà formée ; aucune parenthèse n'est déduite
+  silencieusement.
+- Exemples : `a plus b le tout au carré` → `$(a+b)^{2}$` ; `a plus b le tout
+  sur c plus d` → `$\frac{a+b}{c+d}$` ; `racine carrée de a plus b le tout` →
+  `$\sqrt{a+b}$`.
+
+### CONV-011 — Formulation des limites
+
+- Statut : décidée le 20 juillet 2026.
+- Décision : voir `DEC-CONV-004` dans `docs/product-decisions.md`.
+- Principe : deux placements de la clause « quand/lorsque … tend vers … » sont
+  canoniques et produisent la même couche 2 ; `quand` et `lorsque` sont des
+  synonymes.
+- Exemples : `la limite de <expr> quand x tend vers a` et `la limite, quand x
+  tend vers a, de <expr>` produisent la même cible. Une `<expr>` composée est
+  bornée par « le tout » (`DEC-CONV-003`).
+
+### CONV-012 — Noms des lettres grecques
+
+- Statut : décidée le 20 juillet 2026.
+- Décision : voir `DEC-COUCHE1-003` dans `docs/product-decisions.md`.
+- Principe : la couche 1 des lettres grecques minuscules utilise l'ASCII
+  minuscule sans accent, identique au nom de la macro LaTeX.
+- Exemples : `alpha`, `beta`, `gamma`, …, `omega`. `theta` reste cohérent avec
+  `DEC-COUCHE1-001`.
+- Limite : la casse majuscule (`\Lambda`) reste un renvoi vers `CONV-021`.
+
 ## Notation et vocabulaire mathématique
 
-- [ ] **CONV-006 — Orthographe des nombres composés.** Quelle orthographe
-  canonique conserver dans la couche 1, par exemple « quatre-vingts »,
-  « quatre-vingt-dix » et « cent quatre-vingts » ?
-- [ ] **CONV-008 — Relations d'ordre.** Quelle différence orale retenir entre
-  « inférieur à », « strictement inférieur à » et « inférieur ou égal à » ?
-- [ ] **CONV-009 — Relations chaînées.** Comment désambiguïser les chaînes comme
-  « a inférieur à b inférieur à c » ?
 - [ ] **CONV-010 — Portée des opérateurs.** Quelle portée donner à « moins »,
   « sur », « racine de », « puissance de » et « indice » ? Quand les
   parenthèses orales deviennent-elles obligatoires ?
-- [ ] **CONV-011 — Formulation des limites.** Faut-il standardiser
-  `\lim_{x \to a} f(x)` comme « la limite de f de x quand x tend vers a » ?
-  - Exemple : « la limite de un sur x quand x tend vers plus l'infini est
-    égale à zéro ».
-  - Alternative plus soutenue : « la limite, quand x tend vers plus l'infini,
-    de un sur x est égale à zéro ».
-  - À trancher : « quand » ou « lorsque », et la règle qui borne proprement
-    l'expression dont la limite est prise.
-- [ ] **CONV-012 — Noms des lettres grecques.** Quelles formes orales et
-  orthographes françaises canoniques choisir : `theta`, `rho`, `alpha`, etc. ?
-  La sous-décision « mot en couche 1 plutôt que symbole grec » est déjà fixée
-  par `DEC-COUCHE1-001` ; cette question porte sur le lexique exact.
+  - « le tout » (`DEC-CONV-003`) répond déjà à « quand les parenthèses orales
+    deviennent-elles obligatoires » ; la portée par défaut de `moins`, `sur`,
+    `racine`, `puissance` et `indice` reste à trancher.
 
 ## Commandes de dictée
 
