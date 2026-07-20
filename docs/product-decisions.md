@@ -305,7 +305,7 @@ Le résidu « racine carrée de a plus b » reste volontairement conservé en
 l'absence de marqueur : la règle atomique produit `\sqrt{a} + b`, car décider
 `\sqrt{a+b}` sans marque de groupe serait une convention de portée, pas une
 substitution sûre. La version 5 ajoute le marqueur oral « le tout »
-(`DEC-CONV-003`, CONV-009), seule façon explicite de lever ce résidu :
+(`DEC-CONV-003`, CONV-010), seule façon explicite de lever ce résidu :
 `racine carrée de a plus b le tout` produit alors `\sqrt{a+b}`, et « le tout »
 borne de même le carré, le cube, la puissance et la fraction de l'expression
 `$…$` déjà formée qui le précède, toujours sans parenthèse déduite.
@@ -446,7 +446,7 @@ parenthèse n'est jamais déduite silencieusement en son absence.
 
 | Couche 1 | Couche 2 |
 | --- | --- |
-| `a plus b le tout au carré` | `$(a+b)^{2}$` |
+| `a plus b le tout au carré` | `$(a + b)^{2}$` |
 | `a plus b le tout sur c plus d le tout` | `$\frac{a+b}{c+d}$` |
 | `racine carrée de a plus b le tout` | `$\sqrt{a+b}$` |
 

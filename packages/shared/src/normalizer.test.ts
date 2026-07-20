@@ -168,7 +168,7 @@ test("the acceptance examples compose without changing surrounding prose", async
   }
 });
 
-// ── Issue #176: the "le tout" spoken grouping marker (DEC-CONV-003, CONV-009) ─
+// ── Issue #176: the "le tout" spoken grouping marker (DEC-CONV-003, CONV-010) ─
 //
 // "le tout" is the ONLY marker that bounds a composed sub-expression; without it
 // the atomic scope of the bare rules is unchanged (DEC-NORM-003). The rules run

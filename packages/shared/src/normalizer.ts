@@ -1389,7 +1389,7 @@ const V3_DEFAULT_RULE_IDS = [
 ];
 
 /**
- * Version 5 adds the spoken grouping marker "le tout" (DEC-CONV-003, CONV-009).
+ * Version 5 adds the spoken grouping marker "le tout" (DEC-CONV-003, CONV-010).
  * "le tout" is the ONLY way to bound a composed sub-expression: it never infers a
  * silent parenthesis, so the atomic scope of the bare rules (DEC-NORM-003) is
  * untouched and "racine carrée de a plus b" without the marker still yields
