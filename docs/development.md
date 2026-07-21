@@ -167,21 +167,23 @@ scripts\npm.cmd run dev
 11. Click `Open events log` and confirm `audio_segment`, `stt_result`, and `normalization_result` events were appended. (DicTeX no longer writes corrections or benchmark events — those live in DicTeX Lab.)
 12. Click `Open dictionary`, add an entry like `{"from":"dic tex","to":"DicTeX"}`, save the file, then dictate a phrase containing "dic tex". Confirm the clipboard/pasted text and the `Inserted (normalized)` line show `DicTeX`, the `Last transcript (raw)` textarea still shows the raw STT output, and a `normalization_result` event was appended while `stt_result.stt_output` kept the raw transcript. Break the JSON on purpose and confirm the next dictation still inserts the raw text with a quiet `Normalizer:` diagnostic instead of failing.
 13. Sans créer de surcouche, dicter « un sur x », « v égal d sur t »,
-    « cosinus de theta », « alpha sur beta », « x supérieure à zéro » et
-    « f de g de x ». Vérifier
+    « cosinus de theta », « alpha sur beta », « x strictement supérieure à
+    zéro », « alpha inférieure ou égale à beta » et « f de g de x ». Vérifier
     respectivement `$\frac{1}{x}$`, `$v = \frac{d}{t}$`, `$\cos(\theta)$`,
-    `$\frac{\alpha}{\beta}$`, `$x > 0$` et `$f(g(x))$`, déjà
-    points fixes de `canonicalizeLatex` (DEC-COUCHE1-003, #178). Dicter ensuite
-    « il reste trois exemples », « je suis de plus en plus fatigué », « une pie
-    sur un fil », « il dort nu sur un lit », « mu sur un plateau » et « je suis
-    moins fatigué que toi » : la prose doit rester identique. Cliquer sur `Open rule overlay`,
+    `$\frac{\alpha}{\beta}$`, `$x > 0$`, `$\alpha \le \beta$` et `$f(g(x))$`.
+    Les règles inclusives émettent `\le`/`\ge`, ensuite stabilisés en
+    `\leq`/`\geq` par `canonicalizeLatex` avant mesure ou export ; les autres
+    sorties citées sont déjà des points fixes. Dicter ensuite « il reste trois
+    exemples », « je suis de plus en plus fatigué », « une pie sur un fil »,
+    « il dort nu sur un lit », « mu sur un plateau » et « je suis moins fatigué
+    que toi » : la prose doit rester identique. Cliquer sur `Open rule overlay`,
     casser volontairement le JSON et confirmer que le jeu livré reste actif avec
     un diagnostic `Normalizer:` discret. Avec un ancien `rules.json` v1, ouvrir
     `Experiments -> Normalizer` dans le Lab : vérifier `Migration required`, les
     versions locale/livrée, les SHA-256 et les nombres de règles. Lancer une fois
     `Run legacy baseline`, puis `Review migration`. Vérifier la prévisualisation,
     confirmer, contrôler le chemin de sauvegarde et la nouvelle empreinte, puis
-    relancer : l'état doit être `Current overlay` et les 293 règles v6 actives.
+    relancer : l'état doit être `Current overlay` et les 295 règles v7 actives.
 14. Placer l'interrupteur `Normalizer` sur **Off**, dicter « retour à la ligne x au carré », puis vérifier que le texte copié ou inséré est identique octet par octet à `Last transcript` : les mots de commande restent littéraux et aucun LaTeX n'est produit. Vérifier que le nouvel événement `normalization_result` contient `disabled: true`, aucun champ `passthrough` et des `layers` vides. Redémarrer DicTeX, confirmer que l'état Off persiste, puis repasser sur On et vérifier que règles et commandes s'appliquent à nouveau.
 15. Dans le sélecteur `STT model`, choisir un autre modèle. Vérifier le diagnostic `Model`, dicter une phrase et confirmer que l'événement `stt_result` contient le modèle choisi. Redémarrer l'application et vérifier la persistance dans `data/settings.json`. Corrompre ce fichier et confirmer que DicTeX redémarre avec la variable d'environnement ou `base`, et avec le normaliseur activé.
 16. Cliquer sur **Open Lab**. Avec un Lab construit (`scripts\npm.cmd run build`), vérifier son ouverture ; sans construction, vérifier que DicTeX affiche une erreur explicite sans planter.
@@ -1752,9 +1754,11 @@ structurées explicitement validées : parenthèses dictées pour trois gabarits
 simples, fonctions d'une lettre imbriquées, exponentielles atomiques,
 expressions affines, deux limites canoniques, une dérivée et une intégrale
 bornée. Elle accepte aussi `est égal à` entre deux fragments mathématiques et
-les formes féminines `supérieure/inférieure à`. Chaque sortie est déjà un point
-fixe de `canonicalizeLatex` (`packages/shared/src/latex.ts`) ; mesure et export
-ne la traitent donc jamais comme une réparation.
+les formes féminines `supérieure/inférieure à`. La v7 ajoute « strictement »
+sur les comparaisons `<`/`>` et les relations inclusives `\le`/`\ge`. Ces deux
+alias inclusifs deviennent `\leq`/`\geq` par `canonicalizeLatex`
+(`packages/shared/src/latex.ts`) avant mesure et export ; les autres sorties du
+jeu sont déjà des points fixes.
 
 Une regex ne sait ni grouper ni décider une portée implicite. Les règles « au carré »,
 « au cube », « puissance », « racine (carrée) de », les fractions et les

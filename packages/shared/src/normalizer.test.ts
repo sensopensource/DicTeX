@@ -34,7 +34,7 @@ async function regexLayerOutput(input: string): Promise<string> {
   return layer.output;
 }
 
-// ── Each default rule emits canonical LaTeX, wrapped in "$…$" (#106/#107) ────
+// ── Default rules that emit canonical LaTeX fixed points (#106/#107) ─────────
 // The expected output of every case here is asserted to be its OWN
 // `canonicalizeLatex` fixed point: this is the acceptance criterion from the
 // issue ("every rule output survives canonicalizeLatex as a fixed point") and
@@ -165,6 +165,65 @@ test("the acceptance examples compose without changing surrounding prose", async
     assert.equal(output, expected, input);
     assert.equal(canonicalizeLatex(output), output, input);
     assert.doesNotMatch(output, /[\uE000-\uE00F]/u, input);
+  }
+});
+
+// ── Issue #177: order relations (DEC-CONV-002, CONV-008) ────────────────────
+//
+// Strictly is emphasis only: it keeps the strict symbol. "Ou égal à" is the
+// sole modifier that changes the relation. The product-level rules emit the
+// short LaTeX aliases requested by the convention; canonicalizeLatex then
+// folds them to the corpus spellings \leq / \geq.
+test("order relations distinguish strict emphasis from inclusive comparison", async () => {
+  const cases = [
+    ["x inférieur à zéro", "$x < 0$", "$x < 0$"],
+    ["x strictement inférieur à zéro", "$x < 0$", "$x < 0$"],
+    ["x inférieur ou égal à zéro", "$x \\le 0$", "$x \\leq 0$"],
+    ["x supérieur à zéro", "$x > 0$", "$x > 0$"],
+    ["x strictement supérieur à zéro", "$x > 0$", "$x > 0$"],
+    ["x supérieur ou égal à zéro", "$x \\ge 0$", "$x \\geq 0$"],
+    ["x strictement inférieure à zéro", "$x < 0$", "$x < 0$"],
+    ["x supérieure ou égale à zéro", "$x \\ge 0$", "$x \\geq 0$"],
+    ["alpha inférieur ou égal à beta", "$\\alpha \\le \\beta$", "$\\alpha \\leq \\beta$"],
+    ["a inférieur à b inférieur à c", "$a < b < c$", "$a < b < c$"],
+    ["a inférieur ou égal à b inférieur à c", "$a \\le b < c$", "$a \\leq b < c$"],
+  ] as const;
+
+  for (const [input, rawExpected, canonicalExpected] of cases) {
+    const output = await regexLayerOutput(input);
+    assert.equal(output, rawExpected, input);
+    assert.equal(canonicalizeLatex(output), canonicalExpected, input);
+  }
+});
+
+test("inclusive order relations are flat rules with stable trace ids", async () => {
+  const normalizer = await createTranscriptNormalizer(ABSENT_CONFIG);
+  const result = await normalizer.normalize(
+    "x au carré inférieur ou égal à y plus z",
+    { detailedTrace: true },
+  );
+  assert.equal(result.output, "$x^{2} \\le y + z$");
+  assert.equal(canonicalizeLatex(result.output), "$x^{2} \\leq y + z$");
+
+  const regexDefinitionIds = result.operations
+    ?.filter((operation) => operation.operation === "regex")
+    .map((operation) => operation.definition_id) ?? [];
+  assert.ok(regexDefinitionIds.includes("comparison-less-or-equal"));
+  assert.ok(normalizer.pipelineSnapshot.regex_rules.effective_rules.some(
+    (rule) => rule.id === "comparison-greater-or-equal",
+  ));
+});
+
+test("order-relation words outside a complete bounded pattern stay prose", async () => {
+  const prose = [
+    "inférieur",
+    "strictement inférieur",
+    "inférieur ou égal à",
+    "ce résultat est inférieur",
+    "une borne inférieure ou égale",
+  ];
+  for (const input of prose) {
+    assert.equal(await regexLayerOutput(input), input);
   }
 });
 

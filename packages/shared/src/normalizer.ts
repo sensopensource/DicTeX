@@ -206,8 +206,8 @@ export type NormalizerPipelineSnapshot = {
 };
 
 export const NORMALIZER_PIPELINE_CONTRACT_VERSION = 3;
-export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v8";
-export const DEFAULT_RULES_CONFIG_VERSION = 6;
+export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v9";
+export const DEFAULT_RULES_CONFIG_VERSION = 7;
 export const PERSONAL_RULES_OVERLAY_VERSION = 1;
 export const PERSONAL_RULES_OVERLAY_FILENAME = "rules-overlay.json";
 
@@ -676,10 +676,12 @@ type CompiledRule = {
  * ── Delimiter convention (§8, settled by #106) ──────────────────────────────
  * Inline maths is wrapped in `$…$`; prose stays bare. Every rule below matches
  * bare French prose and emits a `$…$`-wrapped LaTeX fragment. `canonicalizeLatex`
- * (`./latex.ts`) is the single source of truth for what "canonical" means; every
- * rule here emits text that is already a fixed point of it (asserted directly in
- * `normalizer.test.ts`), so scoring/export never see the rules' output as an
- * "error" needing repair.
+ * (`./latex.ts`) is the single source of truth for what "canonical" means. Most
+ * rules emit a fixed point directly. The spoken `inférieur ou égal à` and
+ * `supérieur ou égal à` rules intentionally emit the product-level aliases
+ * `\le` and `\ge`; `canonicalizeLatex` folds them to the canonical `\leq` and
+ * `\geq` spellings before scoring/export. Both the raw rule output and its
+ * canonical target are asserted directly in `normalizer.test.ts`.
  *
  * ── Two operand grammars, chosen per rule (the hard part, §7/#107) ──────────
  * A regex cannot group or scope, so an operand is still a single unambiguous
@@ -830,6 +832,10 @@ const BINARY_SPOKEN_OPERATOR = [
   "multipli[ée]e?\\s+par",
   "plus\\s+grand\\s+que",
   "plus\\s+petit\\s+que",
+  "supérieure?\\s+ou\\s+[ée]gale?\\s+à",
+  "inférieure?\\s+ou\\s+[ée]gale?\\s+à",
+  "strictement\\s+supérieure?\\s+à",
+  "strictement\\s+inférieure?\\s+à",
   "supérieure?\\s+à",
   "inférieure?\\s+à",
   "(?:est\\s+)?[ée]gale?(?:\\s+à)?",
@@ -1323,6 +1329,24 @@ function v4AtomicRule(rule: RuleEntry, id: string): RuleEntry {
       flags: "i",
     };
   }
+  if (id === "comparison-greater") {
+    return {
+      pattern:
+        `${NOT_WORD_BEFORE}${operandAny("1")}\\s+` +
+        `(?:plus\\s+grand\\s+que|(?:strictement\\s+)?supérieure?\\s+à)\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
+      replacement: `$$${refAny("1")} > ${refAny("2")}$$`,
+      flags: "i",
+    };
+  }
+  if (id === "comparison-less") {
+    return {
+      pattern:
+        `${NOT_WORD_BEFORE}${operandAny("1")}\\s+` +
+        `(?:plus\\s+petit\\s+que|(?:strictement\\s+)?inférieure?\\s+à)\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
+      replacement: `$$${refAny("1")} < ${refAny("2")}$$`,
+      flags: "i",
+    };
+  }
   return rule;
 }
 
@@ -1347,6 +1371,22 @@ const V4_ATOMIC_INSERTIONS = new Map<string, IdentifiedRule[]>([
     id: "function-unspecified-log",
     pattern: `${NOT_WORD_BEFORE}logarithme\\s+de\\s+${operandBare("1")}${NOT_WORD_AFTER}`,
     replacement: `$$\\log(${refBare("1")})$$`,
+    flags: "i",
+  }]],
+  ["comparison-greater", [{
+    id: "comparison-greater-or-equal",
+    pattern:
+      `${NOT_WORD_BEFORE}${operandAny("1")}\\s+` +
+      `supérieure?\\s+ou\\s+[ée]gale?\\s+à\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
+    replacement: `$$${refAny("1")} \\ge ${refAny("2")}$$`,
+    flags: "i",
+  }]],
+  ["comparison-less", [{
+    id: "comparison-less-or-equal",
+    pattern:
+      `${NOT_WORD_BEFORE}${operandAny("1")}\\s+` +
+      `inférieure?\\s+ou\\s+[ée]gale?\\s+à\\s+${operandAny("2")}${NOT_WORD_AFTER}`,
+    replacement: `$$${refAny("1")} \\le ${refAny("2")}$$`,
     flags: "i",
   }]],
 ]);
