@@ -85,7 +85,7 @@ chiffres.
 
 ## DEC-COUCHE1-003 — Lexique canonique des lettres grecques — 20 juillet 2026
 
-**Statut : décidée, non encore implémentée dans le normaliseur.** CONV-012 est
+**Statut : implémentée dans le normaliseur** (jeu livré v6, #178). CONV-012 est
 tranchée : la couche 1 des lettres grecques minuscules utilise l'ASCII
 minuscule sans accent, identique au nom de la macro LaTeX correspondante :
 
@@ -97,8 +97,12 @@ nu, xi, pi, rho, sigma, tau, upsilon, phi, chi, psi, omega`
 règle « identique au nom de la macro LaTeX » ; il reste par ailleurs indistinct
 d'un `o` en pratique. Cohérent avec `theta`, déjà fixé par
 `DEC-COUCHE1-001`. Le dictionnaire ramène les variantes STT accentuées ou
-phonétiques observées vers cette forme canonique ; le `stt_result` brut n'est
-jamais réécrit. La casse majuscule
+phonétiques observées vers cette forme canonique, mais n'invente pas un
+homophone français risqué : `pie` n'est pas un alias de `pi`. Les atomes `mu`
+et `nu` ne consomment pas le mot `un` comme opérande droit, afin que « mu sur un
+plateau » et « nu sur un lit » restent de la prose ; leurs autres constructions
+non ambiguës restent reconnues. Le `stt_result` brut n'est jamais réécrit. La
+casse majuscule
 (`\Lambda`) reste un renvoi vers `CONV-021`, qui fixe déjà la casse latine mais
 pas encore la casse grecque.
 
@@ -279,11 +283,11 @@ continuent de viser les mêmes identifiants stables.
 
 ## DEC-NORM-003 — Promotion des motifs structurés validés — 15 juillet 2026
 
-**Statut : active.** Le jeu livré est à la version 6 et la version sémantique
-du pipeline est `dictex-deterministic-pipeline-v8`. Son empreinte effective est
-`287513e2408dc7b17fe94bb6c659a7bb9cbd792eb59d95fc892a2a7f7e07e7d0`.
+**Statut : active.** Le jeu livré est à la version 7 et la version sémantique
+du pipeline est `dictex-deterministic-pipeline-v9`. Son empreinte effective est
+`036c48c38cc099c626e2f695e9ce3cb86f8c247e98e833b52eb79bf0fe4af2fe`.
 
-<!-- dictex-contract: normalizer-bundled-rules version=6 semantic-version=dictex-deterministic-pipeline-v8 sha256=287513e2408dc7b17fe94bb6c659a7bb9cbd792eb59d95fc892a2a7f7e07e7d0 -->
+<!-- dictex-contract: normalizer-bundled-rules version=7 semantic-version=dictex-deterministic-pipeline-v9 sha256=036c48c38cc099c626e2f695e9ce3cb86f8c247e98e833b52eb79bf0fe4af2fe -->
 
 La variante expérimentale `combined-structured-feminine-comparisons-v3`,
 d'empreinte SHA-256
@@ -312,11 +316,34 @@ borne de même le carré, le cube, la puissance et la fraction de l'expression
 
 Les identifiants des 66 règles v2 et des 160 définitions v4 restent inchangés ;
 les sept règles « le tout » gardent leurs identifiants `group-marker-*`. La
-version 6 étend de même les comparaisons strictes existantes sans changer
-`comparison-less` ni `comparison-greater`, et ajoute les identifiants stables
+version 7 étend de même les motifs des comparaisons strictes existantes sans
+changer leurs identifiants `comparison-less` et `comparison-greater`, et ajoute
+les identifiants stables
 `comparison-less-or-equal` et `comparison-greater-or-equal`. Une surcouche
 ancienne continue donc à désactiver ou remplacer la même règle, tout en
 consommant automatiquement les nouvelles définitions livrées.
+
+La version 6 implémente le lexique grec complet de `DEC-COUCHE1-003` (CONV-012,
+#178) : les vingt-trois lettres grecques minuscules — `omicron` exclu, faute de
+macro `\omicron` en LaTeX de base — deviennent des atomes reconnus dans les
+constructions existantes et produisent leur macro `\<lettre>`. Le dictionnaire
+des variantes STT accentuées ou phonétiques (`thêta`, `rhô`, `khi`, …)
+est livré comme alias d'atomes, DicTeX livrant un dictionnaire personnel vide ;
+comme tout atome, une variante n'est canonicalisée qu'à l'intérieur d'une
+construction. Une homophonie française spéculative n'est toutefois pas livrée :
+`pie` reste toujours de la prose et seule la forme canonique `pi` est reconnue.
+Pour `mu` et `nu`, la construction reste volontairement inchangée lorsque
+l'opérande suivant est le mot `un`, afin de préserver « mu sur un plateau »,
+« nu sur un lit » et « nu plus un » ; un opérande non ambigu (`mu sur x`,
+`nu plus deux`) reste reconnu. Ces règles sont ajoutées au seul jeu courant : les
+66 règles v2, les 160 définitions v4 et les sept règles « le tout » gardent
+leurs identifiants et leurs effectifs. Leurs motifs reconstruits utilisent
+explicitement le seul lexique historique `theta|rho`, et des fixtures issues des
+fichiers v2/v3 livrés figent désormais leurs signatures de migration. Les
+nouvelles règles portent des identifiants stables
+`spoken-atom-left-<lettre>` / `spoken-atom-right-<lettre>` (et un slug dédié par
+variante), et `GREEK_LATEX_NAMES` accueille les vingt-trois macros pour que
+`\<lettre>` soit un opérande atomique partout.
 
 ## DEC-COUCHE2-001 — Transformation locale sans inférence sémantique — 13 juillet 2026
 
@@ -419,8 +446,8 @@ prennent pas effectivement en charge et ne possèdent pas leurs tests.
 
 ## DEC-CONV-002 — Relations d'ordre et chaînes — 20 juillet 2026
 
-**Statut : implémentée dans le normaliseur** (jeu livré v6,
-`dictex-deterministic-pipeline-v8`, règles `comparison-*`). CONV-008 et
+**Statut : implémentée dans le normaliseur** (jeu livré v7,
+`dictex-deterministic-pipeline-v9`, règles `comparison-*`). CONV-008 et
 CONV-009 sont tranchées. Pour une comparaison simple, `inférieur à` et
 `strictement inférieur à` désignent tous deux `<` ; `inférieur ou égal à`
 produit `\le`. Par symétrie, `supérieur à` et `strictement supérieur à`
@@ -446,8 +473,8 @@ selon le contrat canonique de couche 2.
 
 ## DEC-CONV-003 — Marqueur de regroupement oral « le tout » — 20 juillet 2026
 
-**Statut : implémentée dans le normaliseur** (jeu livré v5,
-`dictex-deterministic-pipeline-v7`, règles `group-marker-*`). Ce marqueur
+**Statut : implémentée dans le normaliseur** (jeu livré v7,
+`dictex-deterministic-pipeline-v9`, règles `group-marker-*`). Ce marqueur
 répond au périmètre de CONV-010 (« quand les parenthèses orales deviennent-elles
 obligatoires ») et sert de brique à CONV-011 : « le tout » est le marqueur oral
 explicite qui borne l'expression immédiatement précédente déjà formée. Aucune

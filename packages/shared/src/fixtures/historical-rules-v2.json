@@ -1,0 +1,335 @@
+{
+  "version": 2,
+  "rules": [
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)zéro\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "0 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)un\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "1 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)deux\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "2 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)trois\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "3 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)quatre\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "4 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)cinq\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "5 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)six\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "6 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)sept\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "7 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)huit\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "8 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)neuf\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "9 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "10 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)onze\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "11 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)douze\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "12 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)treize\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "13 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)quatorze\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "14 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)quinze\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "15 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)seize\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "16 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix-sept\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "17 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix-huit\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "18 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix-neuf\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "19 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)vingt\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "20 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)theta\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "\\theta $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)rho\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "\\rho $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?zéro(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>0",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?un(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>1",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?deux(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>2",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?trois(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>3",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?quatre(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>4",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?cinq(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>5",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?six(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>6",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?sept(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>7",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?huit(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>8",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?neuf(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>9",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?dix(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>10",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?onze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>11",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?douze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>12",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?treize(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>13",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?quatorze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>14",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?quinze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>15",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?seize(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>16",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?dix-sept(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>17",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?dix-huit(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>18",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?dix-neuf(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>19",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?vingt(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>20",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?theta(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>\\theta",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?rho(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>\\rho",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])moins\\s+(?<negativeAtom>\\d+)\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})))(?![\\p{L}\\p{N}])",
+      "replacement": "-$<negativeAtom> $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<precedingAtom>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})))\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieur\\s+à|inférieur\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+moins\\s+(?<negativeAtom>\\d+)(?![\\p{L}\\p{N}])",
+      "replacement": "$<precedingAtom> $<spokenOperator> -$<negativeAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de))\\s+moins\\s+(?<negativeAtom>\\d+)(?![\\p{L}\\p{N}])",
+      "replacement": "$<functionPrefix> -$<negativeAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})\\s+au\\s+carr(?:é|ée)(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<p1>^{2}$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})\\s+au\\s+cube(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<p1>^{3}$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})\\s+puissance\\s+(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<p1>^{$<p2>}$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])racine\\s+(?:carr(?:é|ée)\\s+)?de\\s+(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\sqrt{$<p1>}$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])sinus\\s+de\\s+(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\sin($<p1>)$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])cosinus\\s+de\\s+(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\cos($<p1>)$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])logarithme\\s+naturel\\s+de\\s+(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\ln($<p1>)$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<functionName>\\p{L})\\s+de\\s+(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<functionName>($<p1>)$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})\\s+sur\\s+(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\frac{$<p1>}{$<p2>}$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})\\s+divis[ée]e?\\s+par\\s+(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\frac{$<p1>}{$<p2>}$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+multipli[ée]e?\\s+par\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> \\times $<i2>$<p2>$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+fois\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> \\times $<i2>$<p2>$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+plus\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> + $<i2>$<p2>$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+moins\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> - $<i2>$<p2>$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+[ée]gale?\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> = $<i2>$<p2>$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:plus\\s+grand\\s+que|supérieur\\s+à)\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> > $<i2>$<p2>$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:plus\\s+petit\\s+que|inférieur\\s+à)\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> < $<i2>$<p2>$$",
+      "flags": "i"
+    }
+  ]
+}
