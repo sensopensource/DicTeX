@@ -1,0 +1,1295 @@
+{
+  "version": 3,
+  "rules": [
+    {
+      "id": "structured-parenthesis-number-zero",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)zéro(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>0",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-zero",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)zéro\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "0$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-zero",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)zéro(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>0",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-zero",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)zéro(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$0$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-zero",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+zéro(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-0}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-zero",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+zéro(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{0}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-un",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)un(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>1",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-un",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)un\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "1$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-un",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)un(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>1",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-un",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)un(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$1$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-un",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+un(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-1}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-un",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+un(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{1}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-deux",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)deux(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>2",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-deux",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)deux\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "2$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-deux",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)deux(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>2",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-deux",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)deux(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$2$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-deux",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+deux(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-2}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-deux",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+deux(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{2}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-trois",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)trois(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>3",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-trois",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)trois\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "3$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-trois",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)trois(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>3",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-trois",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)trois(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$3$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-trois",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+trois(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-3}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-trois",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+trois(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{3}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-quatre",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)quatre(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>4",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-quatre",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)quatre\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "4$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-quatre",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)quatre(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>4",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-quatre",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)quatre(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$4$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-quatre",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+quatre(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-4}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-quatre",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+quatre(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{4}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-cinq",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)cinq(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>5",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-cinq",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)cinq\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "5$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-cinq",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)cinq(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>5",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-cinq",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)cinq(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$5$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-cinq",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+cinq(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-5}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-cinq",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+cinq(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{5}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-six",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)six(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>6",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-six",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)six\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "6$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-six",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)six(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>6",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-six",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)six(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$6$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-six",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+six(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-6}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-six",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+six(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{6}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-sept",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)sept(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>7",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-sept",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)sept\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "7$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-sept",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)sept(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>7",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-sept",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)sept(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$7$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-sept",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+sept(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-7}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-sept",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+sept(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{7}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-huit",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)huit(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>8",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-huit",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)huit\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "8$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-huit",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)huit(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>8",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-huit",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)huit(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$8$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-huit",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+huit(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-8}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-huit",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+huit(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{8}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-neuf",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)neuf(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>9",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-neuf",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)neuf\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "9$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-neuf",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)neuf(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>9",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-neuf",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)neuf(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$9$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-neuf",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+neuf(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-9}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-neuf",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+neuf(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{9}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-dix",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)dix(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>10",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-dix",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "10$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-dix",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)dix(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>10",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-dix",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$10$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-dix",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+dix(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-10}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-dix",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+dix(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{10}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-onze",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)onze(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>11",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-onze",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)onze\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "11$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-onze",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)onze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>11",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-onze",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)onze(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$11$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-onze",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+onze(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-11}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-onze",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+onze(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{11}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-douze",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)douze(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>12",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-douze",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)douze\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "12$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-douze",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)douze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>12",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-douze",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)douze(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$12$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-douze",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+douze(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-12}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-douze",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+douze(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{12}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-treize",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)treize(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>13",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-treize",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)treize\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "13$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-treize",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)treize(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>13",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-treize",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)treize(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$13$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-treize",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+treize(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-13}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-treize",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+treize(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{13}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-quatorze",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)quatorze(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>14",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-quatorze",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)quatorze\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "14$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-quatorze",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)quatorze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>14",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-quatorze",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)quatorze(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$14$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-quatorze",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+quatorze(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-14}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-quatorze",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+quatorze(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{14}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-quinze",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)quinze(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>15",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-quinze",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)quinze\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "15$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-quinze",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)quinze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>15",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-quinze",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)quinze(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$15$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-quinze",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+quinze(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-15}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-quinze",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+quinze(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{15}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-seize",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)seize(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>16",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-seize",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)seize\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "16$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-seize",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)seize(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>16",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-seize",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)seize(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$16$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-seize",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+seize(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-16}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-seize",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+seize(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{16}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-dix-sept",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)dix-sept(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>17",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-dix-sept",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix-sept\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "17$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-dix-sept",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)dix-sept(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>17",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-dix-sept",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix-sept(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$17$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-dix-sept",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+dix-sept(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-17}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-dix-sept",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+dix-sept(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{17}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-dix-huit",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)dix-huit(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>18",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-dix-huit",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix-huit\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "18$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-dix-huit",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)dix-huit(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>18",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-dix-huit",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix-huit(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$18$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-dix-huit",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+dix-huit(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-18}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-dix-huit",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+dix-huit(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{18}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-dix-neuf",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)dix-neuf(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>19",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-dix-neuf",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix-neuf\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "19$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-dix-neuf",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)dix-neuf(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>19",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-dix-neuf",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix-neuf(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$19$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-dix-neuf",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+dix-neuf(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-19}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-dix-neuf",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+dix-neuf(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{19}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesis-number-vingt",
+      "pattern": "(?<prefix>parenthèse\\s+ouvrante\\s+\\p{L}\\s+(?:plus|moins)\\s+)vingt(?=\\s+parenthèse\\s+fermante)",
+      "replacement": "$<prefix>20",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-coefficient-vingt",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)vingt\\s+(?<variable>\\p{L})(?=\\s+(?:plus|moins)\\s+)",
+      "replacement": "20$<variable>",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-constant-vingt",
+      "pattern": "(?<prefix>\\d+\\p{L}\\s+(?:plus|moins)\\s+)vingt(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>20",
+      "flags": "i"
+    },
+    {
+      "id": "structured-image-number-vingt",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)vingt(?=\\s+est\\s+l['’]image)",
+      "replacement": "$$20$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-negative-vingt",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+moins\\s+vingt(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{-20}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-vingt",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+vingt(?![-\\p{L}\\p{N}])",
+      "replacement": "$$e^{20}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesized-sum-times",
+      "pattern": "(?<![\\p{L}\\p{N}])parenthèse\\s+ouvrante\\s+(?<left>\\p{L})\\s+plus\\s+(?<number>-?\\d+)\\s+parenthèse\\s+fermante\\s+multipli[ée]e?\\s+par\\s+(?<right>\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$($<left> + $<number>) \\times $<right>$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-times-parenthesized-difference",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<left>\\p{L})\\s+multipli[ée]e?\\s+par\\s+parenthèse\\s+ouvrante\\s+(?<inside>\\p{L})\\s+moins\\s+(?<number>-?\\d+)\\s+parenthèse\\s+fermante(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<left> \\times ($<inside> - $<number>)$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-parenthesized-sum-square",
+      "pattern": "(?<![\\p{L}\\p{N}])parenthèse\\s+ouvrante\\s+(?<left>\\p{L})\\s+plus\\s+(?<number>-?\\d+)\\s+parenthèse\\s+fermante\\s+au\\s+carr(?:é|ée)(?![\\p{L}\\p{N}])",
+      "replacement": "$$($<left> + $<number>)^{2}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-nested-functions",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<outer>\\p{L})\\s+de\\s+(?<inner>\\p{L})\\s+de\\s+(?<argument>\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<outer>($<inner>($<argument>))$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-limit-sine-over-variable-at-zero",
+      "pattern": "(?<![\\p{L}\\p{N}])limite\\s+quand\\s+(?<variable>\\p{L})\\s+tend\\s+vers\\s+zéro\\s+de\\s+sinus\\s+de\\s+(?<argument>\\p{L})\\s+sur\\s+(?<denominator>\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\lim_{$<variable>\\to0}\\frac{\\sin($<argument>)}{$<denominator>}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-derivative",
+      "pattern": "(?<![\\p{L}\\p{N}])dérivée\\s+de\\s+(?<functionName>\\p{L})\\s+par\\s+rapport\\s+à\\s+(?<variable>\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\frac{\\mathrm{d}$<functionName>}{\\mathrm{d}$<variable>}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-integral-zero-to-one-square",
+      "pattern": "(?<![\\p{L}\\p{N}])intégrale\\s+de\\s+zéro\\s+à\\s+un\\s+de\\s+(?<integrand>\\p{L})\\s+au\\s+carr(?:é|ée)\\s+d\\s+(?<variable>\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\int_{0}^{1}$<integrand>^{2} \\, d$<variable>$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-limit-reciprocal-at-positive-infinity",
+      "pattern": "(?<![\\p{L}\\p{N}])limite\\s+de\\s+un\\s+sur\\s+(?<denominator>\\p{L})\\s+quand\\s+(?<variable>\\p{L})\\s+tend\\s+vers\\s+plus\\s+l['’]infini(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\lim_{$<variable>\\to+\\infty}\\frac{1}{$<denominator>}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-addition",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<coefficient>\\d+)(?<variable>\\p{L})\\s+plus\\s+(?<constant>-?\\d+)(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<coefficient>$<variable> + $<constant>$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-linear-subtraction",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<coefficient>\\d+)(?<variable>\\p{L})\\s+moins\\s+(?<constant>-?\\d+)(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<coefficient>$<variable> - $<constant>$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-exponential-variable",
+      "pattern": "(?<![\\p{L}\\p{N}])exponentielle\\s+de\\s+(?<argument>\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$e^{$<argument>}$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-function-identifier",
+      "pattern": "(?<prefix>la\\s+fonction\\s+)(?<functionName>\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$<prefix>$$$<functionName>$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-value-identifier",
+      "pattern": "(?<prefix>valeur\\s+de\\s+)(?<variable>\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$<prefix>$$$<variable>$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)zéro\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "0 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)un\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "1 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)deux\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "2 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)trois\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "3 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)quatre\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "4 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)cinq\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "5 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)six\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "6 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)sept\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "7 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)huit\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "8 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)neuf\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "9 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "10 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)onze\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "11 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)douze\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "12 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)treize\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "13 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)quatorze\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "14 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)quinze\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "15 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)seize\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "16 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix-sept\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "17 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix-huit\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "18 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)dix-neuf\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "19 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)vingt\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "20 $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)theta\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "\\theta $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<!\\\\)rho\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:moins\\s+)?(?:quatorze|dix-sept|dix-huit|dix-neuf|quatre|treize|quinze|trois|douze|seize|vingt|theta|zéro|deux|cinq|sept|huit|neuf|onze|six|dix|rho|un)|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})|\\$[^$]+\\$)(?![\\p{L}\\p{N}])",
+      "replacement": "\\rho $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?zéro(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>0",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?un(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>1",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?deux(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>2",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?trois(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>3",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?quatre(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>4",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?cinq(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>5",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?six(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>6",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?sept(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>7",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?huit(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>8",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?neuf(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>9",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?dix(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>10",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?onze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>11",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?douze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>12",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?treize(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>13",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?quatorze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>14",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?quinze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>15",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?seize(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>16",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?dix-sept(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>17",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?dix-huit(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>18",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?dix-neuf(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>19",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?vingt(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>20",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?theta(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>\\theta",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:(?<binaryPrefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois))|(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)))\\s+(?<unaryMinus>moins\\s+)?rho(?![-\\p{L}\\p{N}])",
+      "replacement": "$<binaryPrefix>$<functionPrefix> $<unaryMinus>\\rho",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])moins\\s+(?<negativeAtom>\\d+)\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+(?<followingAtom>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})))(?![\\p{L}\\p{N}])",
+      "replacement": "-$<negativeAtom> $<spokenOperator> $<followingAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<precedingAtom>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L})))\\s+(?<spokenOperator>divis[ée]e?\\s+par|multipli[ée]e?\\s+par|plus\\s+grand\\s+que|plus\\s+petit\\s+que|supérieure?\\s+à|inférieure?\\s+à|[ée]gale?|sur|plus|moins|fois)\\s+moins\\s+(?<negativeAtom>\\d+)(?![\\p{L}\\p{N}])",
+      "replacement": "$<precedingAtom> $<spokenOperator> -$<negativeAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<functionPrefix>(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de))\\s+moins\\s+(?<negativeAtom>\\d+)(?![\\p{L}\\p{N}])",
+      "replacement": "$<functionPrefix> -$<negativeAtom>",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})\\s+au\\s+carr(?:é|ée)(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<p1>^{2}$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})\\s+au\\s+cube(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<p1>^{3}$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})\\s+puissance\\s+(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<p1>^{$<p2>}$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])racine\\s+(?:carr(?:é|ée)\\s+)?de\\s+(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\sqrt{$<p1>}$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])sinus\\s+de\\s+(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\sin($<p1>)$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])cosinus\\s+de\\s+(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\cos($<p1>)$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])logarithme\\s+naturel\\s+de\\s+(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\ln($<p1>)$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<functionName>\\p{L})\\s+de\\s+(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<functionName>($<p1>)$$",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-zero",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)zéro(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>0",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-un",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)un(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>1",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-deux",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)deux(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>2",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-trois",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)trois(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>3",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-quatre",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)quatre(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>4",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-cinq",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)cinq(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>5",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-six",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)six(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>6",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-sept",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)sept(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>7",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-huit",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)huit(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>8",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-neuf",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)neuf(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>9",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-dix",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)dix(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>10",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-onze",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)onze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>11",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-douze",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)douze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>12",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-treize",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)treize(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>13",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-quatorze",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)quatorze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>14",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-quinze",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)quinze(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>15",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-seize",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)seize(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>16",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-dix-sept",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)dix-sept(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>17",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-dix-huit",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)dix-huit(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>18",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-dix-neuf",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)dix-neuf(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>19",
+      "flags": "i"
+    },
+    {
+      "id": "structured-equality-right-vingt",
+      "pattern": "(?<![\\p{L}\\p{N}])(?<prefix>(?:\\$[^$]+\\$|(?:-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)vingt(?![-\\p{L}\\p{N}])",
+      "replacement": "$<prefix>20",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})\\s+sur\\s+(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\frac{$<p1>}{$<p2>}$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L})\\s+divis[ée]e?\\s+par\\s+(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L})(?![\\p{L}\\p{N}])",
+      "replacement": "$$\\frac{$<p1>}{$<p2>}$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+multipli[ée]e?\\s+par\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> \\times $<i2>$<p2>$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+fois\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> \\times $<i2>$<p2>$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+plus\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> + $<i2>$<p2>$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+moins\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> - $<i2>$<p2>$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:[ée]gale?|est\\s+[ée]gale?(?:\\s+à)?)\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> = $<i2>$<p2>$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:plus\\s+grand\\s+que|supérieure?\\s+à)\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> > $<i2>$<p2>$$",
+      "flags": "i"
+    },
+    {
+      "pattern": "(?<![\\p{L}\\p{N}])(?:\\$(?<i1>[^$]+)\\$|(?<p1>-?\\d+|\\\\(?:theta|rho)|\\p{L}))\\s+(?:plus\\s+petit\\s+que|inférieure?\\s+à)\\s+(?:\\$(?<i2>[^$]+)\\$|(?<p2>-?\\d+|\\\\(?:theta|rho)|\\p{L}))(?![\\p{L}\\p{N}])",
+      "replacement": "$$$<i1>$<p1> < $<i2>$<p2>$$",
+      "flags": "i"
+    }
+  ]
+}
