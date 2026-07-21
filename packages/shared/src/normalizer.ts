@@ -206,8 +206,8 @@ export type NormalizerPipelineSnapshot = {
 };
 
 export const NORMALIZER_PIPELINE_CONTRACT_VERSION = 3;
-export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v9";
-export const DEFAULT_RULES_CONFIG_VERSION = 7;
+export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v10";
+export const DEFAULT_RULES_CONFIG_VERSION = 8;
 export const PERSONAL_RULES_OVERLAY_VERSION = 1;
 export const PERSONAL_RULES_OVERLAY_FILENAME = "rules-overlay.json";
 
@@ -1536,7 +1536,49 @@ const V4_ATOMIC_RULES: IdentifiedRule[] = [
   }),
 ];
 
+// DEC-CONV-004 (CONV-011): a canonical limit accepts "quand" or "lorsque" as
+// interchangeable connectors, and either placement of the "… tend vers …"
+// clause — postfix ("la limite de <expr> quand …") or the more formal infix
+// ("la limite, quand …, de <expr>") — both folding to the SAME Layer 2. The
+// connector, the two spoken clauses and the two spoken expressions are shared
+// between the postfix and infix rules so the two placements can never drift.
+// A composed <expr> still needs the "le tout" marker (DEC-CONV-003); these
+// templates only cover the two atomic canonical limits DEC-NORM-003 promoted.
+const LIMIT_CONNECTOR = `(?:quand|lorsque)`;
+const LIMIT_CLAUSE_AT_POSITIVE_INFINITY =
+  `${LIMIT_CONNECTOR}\\s+(?<variable>\\p{L})\\s+tend\\s+vers\\s+plus\\s+l['’]infini`;
+const LIMIT_CLAUSE_AT_ZERO =
+  `${LIMIT_CONNECTOR}\\s+(?<variable>\\p{L})\\s+tend\\s+vers\\s+zéro`;
+const LIMIT_RECIPROCAL_EXPR = `de\\s+(?:un|1)\\s+sur\\s+(?<denominator>\\p{L})`;
+const LIMIT_SINE_OVER_VARIABLE_EXPR =
+  `de\\s+sinus\\s+de\\s+(?<argument>\\p{L})\\s+sur\\s+(?<denominator>\\p{L})`;
+const LIMIT_RECIPROCAL_REPLACEMENT = `$$\\lim_{$<variable>\\to+\\infty}\\frac{1}{$<denominator>}$$`;
+const LIMIT_SINE_OVER_VARIABLE_REPLACEMENT =
+  `$$\\lim_{$<variable>\\to0}\\frac{\\sin($<argument>)}{$<denominator>}$$`;
+
 const V4_ADDITIONAL_STRUCTURED_RULES: IdentifiedRule[] = [
+  {
+    // Infix placement of the reciprocal limit (DEC-CONV-004). The postfix form
+    // keeps the historical id below; this adds the "la limite, quand …, de
+    // <expr>" phrasing, commas optional since STT rarely emits them.
+    id: "structured-limit-reciprocal-at-positive-infinity-infix",
+    pattern:
+      `${NOT_WORD_BEFORE}limite,?\\s+${LIMIT_CLAUSE_AT_POSITIVE_INFINITY},?\\s+` +
+      `${LIMIT_RECIPROCAL_EXPR}${NOT_WORD_AFTER}`,
+    replacement: LIMIT_RECIPROCAL_REPLACEMENT,
+    flags: "i",
+  },
+  {
+    // Postfix placement of the sine-over-variable limit (DEC-CONV-004). The
+    // infix form keeps the historical id below; this adds "la limite de <expr>
+    // quand x tend vers zéro".
+    id: "structured-limit-sine-over-variable-at-zero-postfix",
+    pattern:
+      `${NOT_WORD_BEFORE}limite\\s+${LIMIT_SINE_OVER_VARIABLE_EXPR}\\s+` +
+      `${LIMIT_CLAUSE_AT_ZERO}${NOT_WORD_AFTER}`,
+    replacement: LIMIT_SINE_OVER_VARIABLE_REPLACEMENT,
+    flags: "i",
+  },
   {
     id: "structured-exponential-negative-digits",
     pattern: `${NOT_WORD_BEFORE}exponentielle\\s+de\\s+moins\\s+(?<argument>\\d+)${NOT_WORD_AFTER}`,
@@ -1572,12 +1614,24 @@ const V4_ADDITIONAL_STRUCTURED_RULES: IdentifiedRule[] = [
 ];
 
 function v4StructuredRule(rule: IdentifiedRule): IdentifiedRule {
+  // Both historical limit templates keep their stable ids; DEC-CONV-004 only
+  // widens their patterns to accept "quand"/"lorsque". The reciprocal stays
+  // postfix and the sine stays infix (comma-optional); the opposite placements
+  // are the two new ids added to V4_ADDITIONAL_STRUCTURED_RULES.
   if (rule.id === "structured-limit-reciprocal-at-positive-infinity") {
     return {
       ...rule,
       pattern:
-        `${NOT_WORD_BEFORE}limite\\s+de\\s+(?:un|1)\\s+sur\\s+(?<denominator>\\p{L})\\s+` +
-        `quand\\s+(?<variable>\\p{L})\\s+tend\\s+vers\\s+plus\\s+l['’]infini${NOT_WORD_AFTER}`,
+        `${NOT_WORD_BEFORE}limite\\s+${LIMIT_RECIPROCAL_EXPR}\\s+` +
+        `${LIMIT_CLAUSE_AT_POSITIVE_INFINITY}${NOT_WORD_AFTER}`,
+    };
+  }
+  if (rule.id === "structured-limit-sine-over-variable-at-zero") {
+    return {
+      ...rule,
+      pattern:
+        `${NOT_WORD_BEFORE}limite,?\\s+${LIMIT_CLAUSE_AT_ZERO},?\\s+` +
+        `${LIMIT_SINE_OVER_VARIABLE_EXPR}${NOT_WORD_AFTER}`,
     };
   }
   return rule;

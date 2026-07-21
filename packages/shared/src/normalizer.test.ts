@@ -481,6 +481,62 @@ test("bounded daily-use rules cover digit STT output without inventing missing c
   assert.equal(await regexLayerOutput("la situation est égale à celle d'hier"), "la situation est égale à celle d'hier");
 });
 
+test("DEC-CONV-004: a limit accepts quand/lorsque and postfix/infix placement, one Layer 2 (CONV-011)", async () => {
+  // The four canonical phrasings of the example limit — postfix/infix × quand/
+  // lorsque — must all fold to the SAME Layer 2, and that output is its own
+  // canonicalizeLatex fixed point (so scoring/export never sees it as an error).
+  const reciprocalPhrasings = [
+    "limite de un sur x quand x tend vers plus l'infini",
+    "limite de un sur x lorsque x tend vers plus l'infini",
+    "limite, quand x tend vers plus l'infini, de un sur x",
+    "limite, lorsque x tend vers plus l'infini, de un sur x",
+  ];
+  const reciprocalLayer2 = "$\\lim_{x\\to+\\infty}\\frac{1}{x}$";
+  for (const input of reciprocalPhrasings) {
+    const output = await regexLayerOutput(input);
+    assert.equal(output, reciprocalLayer2, input);
+    assert.equal(canonicalizeLatex(output), output, input);
+  }
+
+  // The digit spelling ("1") and the trailing "= 0" of the full sentence stay
+  // supported for every placement, still one Layer 2.
+  for (const connector of ["quand", "lorsque"]) {
+    assert.equal(
+      await regexLayerOutput(`limite de 1 sur x ${connector} x tend vers plus l'infini est égal à 0`),
+      "$\\lim_{x\\to+\\infty}\\frac{1}{x} = 0$",
+    );
+    assert.equal(
+      await regexLayerOutput(`limite, ${connector} x tend vers plus l'infini, de 1 sur x est égal à 0`),
+      "$\\lim_{x\\to+\\infty}\\frac{1}{x} = 0$",
+    );
+  }
+
+  // The sine-over-variable limit gains the opposite placement (postfix) and the
+  // "lorsque" connector, again folding to a single Layer 2.
+  const sineLayer2 = "$\\lim_{x\\to0}\\frac{\\sin(x)}{x}$";
+  const sinePhrasings = [
+    "limite quand x tend vers zéro de sinus de x sur x",
+    "limite lorsque x tend vers zéro de sinus de x sur x",
+    "limite, quand x tend vers zéro, de sinus de x sur x",
+    "limite de sinus de x sur x quand x tend vers zéro",
+    "limite de sinus de x sur x lorsque x tend vers zéro",
+  ];
+  for (const input of sinePhrasings) {
+    const output = await regexLayerOutput(input);
+    assert.equal(output, sineLayer2, input);
+    assert.equal(canonicalizeLatex(output), output, input);
+  }
+
+  // Prose that merely contains "limite" or "lorsqu'on" is not a limit and stays
+  // byte-identical: no clause + expression means no match.
+  for (const prose of [
+    "une limite décrit vers quoi tend une fonction lorsqu'on s'approche d'une valeur sans forcément l'atteindre",
+    "la limite de patience est atteinte",
+  ]) {
+    assert.equal(await regexLayerOutput(prose), prose);
+  }
+});
+
 test("Greek names stay literal outside recognized atomic math constructs", async () => {
   assert.equal(await regexLayerOutput("theta et rho sont des noms"), "theta et rho sont des noms");
   assert.equal(await regexLayerOutput("theta plus rho"), "$\\theta + \\rho$");

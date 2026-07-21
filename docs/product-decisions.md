@@ -283,11 +283,11 @@ continuent de viser les mêmes identifiants stables.
 
 ## DEC-NORM-003 — Promotion des motifs structurés validés — 15 juillet 2026
 
-**Statut : active.** Le jeu livré est à la version 7 et la version sémantique
-du pipeline est `dictex-deterministic-pipeline-v9`. Son empreinte effective est
-`036c48c38cc099c626e2f695e9ce3cb86f8c247e98e833b52eb79bf0fe4af2fe`.
+**Statut : active.** Le jeu livré est à la version 8 et la version sémantique
+du pipeline est `dictex-deterministic-pipeline-v10`. Son empreinte effective est
+`9f791f836143b4154606ff321dc62b8bd9305434a155914807dd2fdca1923f38`.
 
-<!-- dictex-contract: normalizer-bundled-rules version=7 semantic-version=dictex-deterministic-pipeline-v9 sha256=036c48c38cc099c626e2f695e9ce3cb86f8c247e98e833b52eb79bf0fe4af2fe -->
+<!-- dictex-contract: normalizer-bundled-rules version=8 semantic-version=dictex-deterministic-pipeline-v10 sha256=9f791f836143b4154606ff321dc62b8bd9305434a155914807dd2fdca1923f38 -->
 
 La variante expérimentale `combined-structured-feminine-comparisons-v3`,
 d'empreinte SHA-256
@@ -322,6 +322,19 @@ les identifiants stables
 `comparison-less-or-equal` et `comparison-greater-or-equal`. Une surcouche
 ancienne continue donc à désactiver ou remplacer la même règle, tout en
 consommant automatiquement les nouvelles définitions livrées.
+
+La version 8 implémente `DEC-CONV-004` (CONV-011, #179) : les deux limites
+canoniques acceptent désormais « quand » et « lorsque » comme connecteurs
+interchangeables et les deux placements de la clause « … tend vers … »,
+postfixe (`la limite de <expr> quand …`) et infixe soutenu
+(`la limite, quand …, de <expr>`), qui produisent la même couche 2. Les motifs
+des deux limites existantes sont étendus sans changer leurs identifiants
+`structured-limit-reciprocal-at-positive-infinity` et
+`structured-limit-sine-over-variable-at-zero` ; le placement opposé de chacune
+reçoit un identifiant stable dédié
+(`structured-limit-reciprocal-at-positive-infinity-infix` et
+`structured-limit-sine-over-variable-at-zero-postfix`). Une `<expr>` composée
+reste bornée par « le tout » (`DEC-CONV-003`) ; aucune parenthèse n'est déduite.
 
 La version 6 implémente le lexique grec complet de `DEC-COUCHE1-003` (CONV-012,
 #178) : les vingt-trois lettres grecques minuscules — `omicron` exclu, faute de
@@ -446,8 +459,8 @@ prennent pas effectivement en charge et ne possèdent pas leurs tests.
 
 ## DEC-CONV-002 — Relations d'ordre et chaînes — 20 juillet 2026
 
-**Statut : implémentée dans le normaliseur** (jeu livré v7,
-`dictex-deterministic-pipeline-v9`, règles `comparison-*`). CONV-008 et
+**Statut : implémentée dans le normaliseur** (jeu livré v8,
+`dictex-deterministic-pipeline-v10`, règles `comparison-*`). CONV-008 et
 CONV-009 sont tranchées. Pour une comparaison simple, `inférieur à` et
 `strictement inférieur à` désignent tous deux `<` ; `inférieur ou égal à`
 produit `\le`. Par symétrie, `supérieur à` et `strictement supérieur à`
@@ -473,8 +486,8 @@ selon le contrat canonique de couche 2.
 
 ## DEC-CONV-003 — Marqueur de regroupement oral « le tout » — 20 juillet 2026
 
-**Statut : implémentée dans le normaliseur** (jeu livré v7,
-`dictex-deterministic-pipeline-v9`, règles `group-marker-*`). Ce marqueur
+**Statut : implémentée dans le normaliseur** (jeu livré v8,
+`dictex-deterministic-pipeline-v10`, règles `group-marker-*`). Ce marqueur
 répond au périmètre de CONV-010 (« quand les parenthèses orales deviennent-elles
 obligatoires ») et sert de brique à CONV-011 : « le tout » est le marqueur oral
 explicite qui borne l'expression immédiatement précédente déjà formée. Aucune
@@ -497,7 +510,8 @@ carrée de a plus b`, sans marqueur, reste `\sqrt{a} + b`).
 
 ## DEC-CONV-004 — Formulation canonique des limites — 20 juillet 2026
 
-**Statut : décidée, non encore implémentée dans le normaliseur.** CONV-011 est
+**Statut : implémentée dans le normaliseur** (jeu livré v8,
+`dictex-deterministic-pipeline-v10`, règles `structured-limit-*`). CONV-011 est
 tranchée : deux placements de la clause « quand/lorsque … tend vers … » sont
 canoniques et produisent la même couche 2.
 
@@ -507,6 +521,15 @@ canoniques et produisent la même couche 2.
 `quand` et `lorsque` sont des synonymes interchangeables. Une `<expr>`
 composée doit être bornée par « le tout » (`DEC-CONV-003`) pour rester
 déductible ; une `<expr>` atomique n'a pas besoin de ce marqueur.
+
+Les deux limites promues par `DEC-NORM-003` couvrent désormais les deux
+placements avec les deux connecteurs : `structured-limit-reciprocal-at-positive-infinity`
+et `structured-limit-sine-over-variable-at-zero` gardent leurs identifiants et
+reçoivent chacune le placement opposé sous un identifiant stable dédié
+(`…-infix`, `…-postfix`). Les quatre phrasés de
+`$\lim_{x \to +\infty} \frac{1}{x}$` produisent ainsi une seule couche 2. Une
+grammaire générale des limites au-delà de ces gabarits et du marqueur « le tout »
+reste hors périmètre.
 
 ## DicTeX / Lab split (monorepo)
 
