@@ -206,8 +206,8 @@ export type NormalizerPipelineSnapshot = {
 };
 
 export const NORMALIZER_PIPELINE_CONTRACT_VERSION = 3;
-export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v7";
-export const DEFAULT_RULES_CONFIG_VERSION = 5;
+export const NORMALIZER_PIPELINE_SEMANTIC_VERSION = "dictex-deterministic-pipeline-v8";
+export const DEFAULT_RULES_CONFIG_VERSION = 6;
 export const PERSONAL_RULES_OVERLAY_VERSION = 1;
 export const PERSONAL_RULES_OVERLAY_FILENAME = "rules-overlay.json";
 
@@ -708,15 +708,23 @@ type CompiledRule = {
  *     "plus" rule matches operand1 = the whole wrapped fragment "$x^{2}$" and
  *     operand2 = bare "y", emitting one merged span "$x^{2} + y$".
  *
- * The bare atom now also admits signed digit runs and the two explicitly mapped
- * Greek names (`\theta`, `\rho`). Their spoken aliases, and French number words
+ * The bare atom now also admits signed digit runs and the explicitly mapped
+ * Greek macro names (`\theta`, `\rho`, and the rest of the lowercase alphabet —
+ * DEC-COUCHE1-003, #178). Their spoken aliases, and French number words
  * zero through twenty, are converted only while another operand and a known
  * construction are present; the generated contextual rules below never rewrite
  * a standalone word. Every structural rule still requires
  * NOT_WORD_BEFORE/NOT_WORD_AFTER around the operand: this keeps ordinary prose
  * like "de plus en plus" untouched.
  */
-const GREEK_LATEX_NAMES = "theta|rho";
+// The full lowercase Greek alphabet as bare operands, each spelled exactly like
+// its LaTeX macro (DEC-COUCHE1-003). `omicron` is excluded on purpose: base
+// LaTeX has no `\omicron` macro (the letter is written with a Latin `o`), so
+// admitting it would break the "identical to the macro name" rule. None of
+// these names is a prefix of another, so the alternation order is irrelevant.
+const GREEK_LATEX_NAMES =
+  "alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa|lambda|" +
+  "mu|nu|xi|pi|rho|sigma|tau|upsilon|phi|chi|psi|omega";
 const OPERAND_BARE = `-?\\d+|\\\\(?:${GREEK_LATEX_NAMES})|\\p{L}`;
 const NOT_WORD_BEFORE = "(?<![\\p{L}\\p{N}])";
 const NOT_WORD_AFTER = "(?![\\p{L}\\p{N}])";
@@ -1300,7 +1308,119 @@ const V4_ATOMIC_INSERTIONS = new Map<string, IdentifiedRule[]>([
   }]],
 ]);
 
+/**
+ * Lowercase Greek lexicon beyond the two names (`theta`, `rho`) frozen into the
+ * historical v2/v3 sets. DEC-COUCHE1-003 (#178) fixes the full lowercase Greek
+ * alphabet in layer 1 as the lowercase ASCII name identical to the LaTeX macro;
+ * `omicron` is excluded because base LaTeX has no `\omicron` macro. Each letter
+ * behaves exactly like `theta`/`rho`: it is only turned into its macro inside a
+ * recognized construction (a spoken binary operator or a function prefix), so a
+ * standalone Greek word in prose is left byte-identical (DEC-COUCHE1-001).
+ *
+ * These rules are appended to the CURRENT bundled set only. They are NOT added
+ * to `SPOKEN_ATOM_ALIASES`, which feeds the frozen historical v2/v3 sets whose
+ * migration signatures must keep their exact rule counts (66 / 226).
+ */
+const CURRENT_GREEK_ATOMS = [
+  ["alpha", "\\alpha"],
+  ["beta", "\\beta"],
+  ["gamma", "\\gamma"],
+  ["delta", "\\delta"],
+  ["epsilon", "\\epsilon"],
+  ["zeta", "\\zeta"],
+  ["eta", "\\eta"],
+  ["iota", "\\iota"],
+  ["kappa", "\\kappa"],
+  ["lambda", "\\lambda"],
+  ["mu", "\\mu"],
+  ["nu", "\\nu"],
+  ["xi", "\\xi"],
+  ["pi", "\\pi"],
+  ["sigma", "\\sigma"],
+  ["tau", "\\tau"],
+  ["upsilon", "\\upsilon"],
+  ["phi", "\\phi"],
+  ["chi", "\\chi"],
+  ["psi", "\\psi"],
+  ["omega", "\\omega"],
+] as const;
+
+/**
+ * Accented/phonetic STT spellings mapped back to a canonical Greek atom — the
+ * "dictionary brings observed variants to the canonical form" of
+ * DEC-COUCHE1-003, realized as atom aliases rather than personal-dictionary
+ * entries: DicTeX ships an EMPTY personal dictionary, and the versioned,
+ * fingerprinted shipped set is this bundled rule set. The list is seeded from
+ * #178's examples plus the obvious French diacritic spellings and grows only
+ * from observed errors (roadmap stage 7). Each carries a stable ASCII id slug
+ * so a personal overlay can target it, and — like every atom — a variant is
+ * canonicalized only inside a construction, so a bare "pie" (the bird) or a
+ * bare "bêta" stays prose.
+ */
+const GREEK_ATOM_VARIANTS = [
+  { spoken: "thêta", latex: "\\theta", slug: "theta-circumflex" },
+  { spoken: "rhô", latex: "\\rho", slug: "rho-circumflex" },
+  { spoken: "khi", latex: "\\chi", slug: "chi-kh" },
+  { spoken: "pie", latex: "\\pi", slug: "pi-homophone" },
+  { spoken: "bêta", latex: "\\beta", slug: "beta-circumflex" },
+  { spoken: "êta", latex: "\\eta", slug: "eta-circumflex" },
+  { spoken: "oméga", latex: "\\omega", slug: "omega-acute" },
+] as const;
+
+// A pending atom for the current Greek rules: the same shape as PENDING_ATOM
+// but with the new Greek words added, so two spoken Greek letters (or a Greek
+// letter and a number word / digit / letter) compose ("alpha sur beta"). The
+// shared PENDING_ATOM is deliberately left untouched to keep the historical
+// sets frozen.
+const CURRENT_GREEK_ATOM_ALIASES: ReadonlyArray<{ spoken: string; latex: string; slug: string }> = [
+  ...CURRENT_GREEK_ATOMS.map(([spoken, latex]) => ({ spoken, latex, slug: spoken })),
+  ...GREEK_ATOM_VARIANTS.map((variant) => ({ ...variant })),
+];
+const CURRENT_GREEK_PENDING_WORDS = [
+  ...FRENCH_NUMBER_ATOMS.map(([spoken]) => spoken),
+  ...GREEK_ATOMS.map(([spoken]) => spoken),
+  ...CURRENT_GREEK_ATOM_ALIASES.map(({ spoken }) => spoken),
+];
+const CURRENT_GREEK_PENDING_PATTERN = CURRENT_GREEK_PENDING_WORDS
+  .map((spoken) => escapeRegex(spoken))
+  .sort((left, right) => right.length - left.length)
+  .join("|");
+const CURRENT_GREEK_PENDING_ATOM =
+  `(?:moins\\s+)?(?:${CURRENT_GREEK_PENDING_PATTERN})|(?:${OPERAND_BARE})|\\$[^$]+\\$`;
+
+/**
+ * Left/right contextual rules for the current Greek lexicon, mirroring
+ * `buildSpokenAtomRules` but carrying their own stable ids and using
+ * `CURRENT_GREEK_PENDING_ATOM`. No standalone-word rule and no negative-number
+ * helpers: those already exist in the shared spoken-atom block that runs first.
+ */
+function buildCurrentGreekAtomRules(): IdentifiedRule[] {
+  const leftRules = CURRENT_GREEK_ATOM_ALIASES.map(({ spoken, latex, slug }) => ({
+    id: `spoken-atom-left-${slug}`,
+    pattern:
+      `${NOT_SPOKEN_ALIAS_BEFORE}${escapeRegex(spoken)}\\s+` +
+      `(?<spokenOperator>${BINARY_SPOKEN_OPERATOR})\\s+` +
+      `(?<followingAtom>${CURRENT_GREEK_PENDING_ATOM})${NOT_WORD_AFTER}`,
+    replacement: `${latex} $<spokenOperator> $<followingAtom>`,
+    flags: "i",
+  }));
+  const rightRules = CURRENT_GREEK_ATOM_ALIASES.map(({ spoken, latex, slug }) => ({
+    id: `spoken-atom-right-${slug}`,
+    pattern:
+      `${NOT_WORD_BEFORE}(?:(?<binaryPrefix>${PRESERVED_OPERAND}\\s+(?:${BINARY_SPOKEN_OPERATOR}))|` +
+      `(?<functionPrefix>${FUNCTION_SPOKEN_PREFIX}))\\s+` +
+      `(?<unaryMinus>moins\\s+)?${escapeRegex(spoken)}${NOT_SPOKEN_ALIAS_AFTER}`,
+    replacement: `$<binaryPrefix>$<functionPrefix> $<unaryMinus>${latex}`,
+    flags: "i",
+  }));
+  return [...leftRules, ...rightRules];
+}
+
 const V4_ATOMIC_RULES: IdentifiedRule[] = [
+  // The Greek family runs before the shared spoken-atom rules so a spoken number
+  // word on the far side of a Greek letter ("thêta sur deux") is still pending
+  // when the shared number rules run and can be resolved into "2".
+  ...buildCurrentGreekAtomRules(),
   ...buildSpokenAtomRules().map((rule, index) => ({ ...rule, id: V2_RULE_IDS[index]! })),
   ...HISTORICAL_V2_RULES.slice(SPOKEN_ATOM_RULE_COUNT).flatMap((rule, index) => {
     const id = V2_RULE_IDS[SPOKEN_ATOM_RULE_COUNT + index]!;

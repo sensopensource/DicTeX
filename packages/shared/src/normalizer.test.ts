@@ -425,6 +425,68 @@ test("bounded daily-use rules cover digit STT output without inventing missing c
 test("Greek names stay literal outside recognized atomic math constructs", async () => {
   assert.equal(await regexLayerOutput("theta et rho sont des noms"), "theta et rho sont des noms");
   assert.equal(await regexLayerOutput("theta plus rho"), "$\\theta + \\rho$");
+  // DEC-COUCHE1-003 (#178): the rest of the lowercase Greek alphabet behaves
+  // exactly like theta/rho — an isolated Greek word, including one that is also
+  // an ordinary French word, is left byte-identical outside a construction.
+  assert.equal(await regexLayerOutput("la lettre pi"), "la lettre pi");
+  assert.equal(await regexLayerOutput("un individu lambda"), "un individu lambda");
+  assert.equal(await regexLayerOutput("une pie vole dans le ciel"), "une pie vole dans le ciel");
+  assert.equal(await regexLayerOutput("il est un peu bêta"), "il est un peu bêta");
+});
+
+test("DEC-COUCHE1-003: the full lowercase Greek alphabet is an atom in existing constructs (#178)", async () => {
+  // Every letter of DEC-COUCHE1-003's canonical lexicon, recognized as an atom
+  // and emitting its macro. omicron is intentionally absent: base LaTeX has no
+  // \omicron, so it is neither a bare operand nor a spoken atom here.
+  const letters: [string, string][] = [
+    ["alpha", "\\alpha"], ["beta", "\\beta"], ["gamma", "\\gamma"], ["delta", "\\delta"],
+    ["epsilon", "\\epsilon"], ["zeta", "\\zeta"], ["eta", "\\eta"], ["theta", "\\theta"],
+    ["iota", "\\iota"], ["kappa", "\\kappa"], ["lambda", "\\lambda"], ["mu", "\\mu"],
+    ["nu", "\\nu"], ["xi", "\\xi"], ["pi", "\\pi"], ["rho", "\\rho"], ["sigma", "\\sigma"],
+    ["tau", "\\tau"], ["upsilon", "\\upsilon"], ["phi", "\\phi"], ["chi", "\\chi"],
+    ["psi", "\\psi"], ["omega", "\\omega"],
+  ];
+  assert.equal(letters.length, 23);
+  assert.equal(letters.some(([spoken]) => spoken === "omicron"), false);
+  for (const [spoken, macro] of letters) {
+    const over = await regexLayerOutput(`${spoken} sur x`);
+    assert.equal(over, `$\\frac{${macro}}{x}$`, `${spoken} sur x`);
+    assert.equal(canonicalizeLatex(over), over, spoken);
+    // The same letter, isolated, is not turned into a macro.
+    assert.equal(await regexLayerOutput(`la lettre ${spoken}`), `la lettre ${spoken}`, spoken);
+  }
+
+  // Two Greek letters compose into a single fraction, and a Greek letter is a
+  // valid function argument and flat-operator operand.
+  const frac = await regexLayerOutput("alpha sur beta");
+  assert.equal(frac, "$\\frac{\\alpha}{\\beta}$");
+  assert.equal(canonicalizeLatex(frac), frac);
+  assert.equal(await regexLayerOutput("cosinus de alpha"), "$\\cos(\\alpha)$");
+  assert.equal(await regexLayerOutput("lambda plus mu"), "$\\lambda + \\mu$");
+  assert.equal(await regexLayerOutput("sigma est égal à trois"), "$\\sigma = 3$");
+});
+
+test("DEC-COUCHE1-003: accented/phonetic STT variants fold to the canonical atom (#178)", async () => {
+  // The "dictionary brings observed variants to the canonical form" clause,
+  // realized as prose-safe atom aliases (DicTeX ships an empty personal
+  // dictionary). A variant is only canonicalized inside a construction.
+  const variants: [string, string][] = [
+    ["thêta sur deux", "$\\frac{\\theta}{2}$"],
+    ["rhô sur deux", "$\\frac{\\rho}{2}$"],
+    ["khi plus un", "$\\chi + 1$"],
+    ["pie sur deux", "$\\frac{\\pi}{2}$"],
+    ["bêta égale zéro", "$\\beta = 0$"],
+    ["êta plus un", "$\\eta + 1$"],
+    ["oméga sur deux", "$\\frac{\\omega}{2}$"],
+  ];
+  for (const [input, expected] of variants) {
+    const output = await regexLayerOutput(input);
+    assert.equal(output, expected, input);
+    assert.equal(canonicalizeLatex(output), output, input);
+  }
+  // A variant that is also an ordinary French word stays prose out of context.
+  assert.equal(await regexLayerOutput("une pie chante"), "une pie chante");
+  assert.equal(await regexLayerOutput("un raisonnement un peu bêta"), "un raisonnement un peu bêta");
 });
 
 test("new atomic conversions keep ordered, versioned regex traces", async () => {

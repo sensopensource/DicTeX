@@ -85,7 +85,7 @@ chiffres.
 
 ## DEC-COUCHE1-003 — Lexique canonique des lettres grecques — 20 juillet 2026
 
-**Statut : décidée, non encore implémentée dans le normaliseur.** CONV-012 est
+**Statut : implémentée dans le normaliseur** (jeu livré v6, #178). CONV-012 est
 tranchée : la couche 1 des lettres grecques minuscules utilise l'ASCII
 minuscule sans accent, identique au nom de la macro LaTeX correspondante :
 
@@ -279,11 +279,11 @@ continuent de viser les mêmes identifiants stables.
 
 ## DEC-NORM-003 — Promotion des motifs structurés validés — 15 juillet 2026
 
-**Statut : active.** Le jeu livré est à la version 5 et la version sémantique
-du pipeline est `dictex-deterministic-pipeline-v7`. Son empreinte effective est
-`13e55a284060940b426ea02fb9da005c6a2dbd850e34e7533b264494478cf3ca`.
+**Statut : active.** Le jeu livré est à la version 6 et la version sémantique
+du pipeline est `dictex-deterministic-pipeline-v8`. Son empreinte effective est
+`d9b41f168559371469fb32064e209a0c2411a742059360380f04a467e76ff90f`.
 
-<!-- dictex-contract: normalizer-bundled-rules version=5 semantic-version=dictex-deterministic-pipeline-v7 sha256=13e55a284060940b426ea02fb9da005c6a2dbd850e34e7533b264494478cf3ca -->
+<!-- dictex-contract: normalizer-bundled-rules version=6 semantic-version=dictex-deterministic-pipeline-v8 sha256=d9b41f168559371469fb32064e209a0c2411a742059360380f04a467e76ff90f -->
 
 La variante expérimentale `combined-structured-feminine-comparisons-v3`,
 d'empreinte SHA-256
@@ -315,6 +315,22 @@ les sept nouvelles règles « le tout » reçoivent leurs propres identifiants
 stables (`group-marker-*`). Une surcouche ancienne continue donc à désactiver ou
 remplacer la même règle, tout en consommant automatiquement les nouvelles
 définitions livrées.
+
+La version 6 implémente le lexique grec complet de `DEC-COUCHE1-003` (CONV-012,
+#178) : les vingt-trois lettres grecques minuscules — `omicron` exclu, faute de
+macro `\omicron` en LaTeX de base — deviennent des atomes reconnus dans les
+constructions existantes et produisent leur macro `\<lettre>`. Le dictionnaire
+des variantes STT accentuées ou phonétiques (`thêta`, `rhô`, `khi`, `pie`, …)
+est livré comme alias d'atomes, DicTeX livrant un dictionnaire personnel vide ;
+comme tout atome, une variante n'est canonicalisée qu'à l'intérieur d'une
+construction, donc un mot grec isolé — y compris un homographe français comme
+`pie` — reste de la prose. Ces règles sont ajoutées au seul jeu courant : les
+66 règles v2, les 160 définitions v4 et les sept règles « le tout » gardent
+leurs identifiants et leurs effectifs, si bien que les signatures de migration
+figées restent intactes. Les nouvelles règles portent des identifiants stables
+`spoken-atom-left-<lettre>` / `spoken-atom-right-<lettre>` (et un slug dédié par
+variante), et `GREEK_LATEX_NAMES` accueille les vingt-trois macros pour que
+`\<lettre>` soit un opérande atomique partout.
 
 ## DEC-COUCHE2-001 — Transformation locale sans inférence sémantique — 13 juillet 2026
 
@@ -437,8 +453,8 @@ aucune sémantique nouvelle par rapport aux comparaisons simples qui la composen
 
 ## DEC-CONV-003 — Marqueur de regroupement oral « le tout » — 20 juillet 2026
 
-**Statut : implémentée dans le normaliseur** (jeu livré v5,
-`dictex-deterministic-pipeline-v7`, règles `group-marker-*`). Ce marqueur
+**Statut : implémentée dans le normaliseur** (jeu livré v6,
+`dictex-deterministic-pipeline-v8`, règles `group-marker-*`). Ce marqueur
 répond au périmètre de CONV-010 (« quand les parenthèses orales deviennent-elles
 obligatoires ») et sert de brique à CONV-011 : « le tout » est le marqueur oral
 explicite qui borne l'expression immédiatement précédente déjà formée. Aucune
