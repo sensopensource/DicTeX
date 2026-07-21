@@ -279,11 +279,11 @@ continuent de viser les mêmes identifiants stables.
 
 ## DEC-NORM-003 — Promotion des motifs structurés validés — 15 juillet 2026
 
-**Statut : active.** Le jeu livré est à la version 5 et la version sémantique
-du pipeline est `dictex-deterministic-pipeline-v7`. Son empreinte effective est
-`13e55a284060940b426ea02fb9da005c6a2dbd850e34e7533b264494478cf3ca`.
+**Statut : active.** Le jeu livré est à la version 6 et la version sémantique
+du pipeline est `dictex-deterministic-pipeline-v8`. Son empreinte effective est
+`287513e2408dc7b17fe94bb6c659a7bb9cbd792eb59d95fc892a2a7f7e07e7d0`.
 
-<!-- dictex-contract: normalizer-bundled-rules version=5 semantic-version=dictex-deterministic-pipeline-v7 sha256=13e55a284060940b426ea02fb9da005c6a2dbd850e34e7533b264494478cf3ca -->
+<!-- dictex-contract: normalizer-bundled-rules version=6 semantic-version=dictex-deterministic-pipeline-v8 sha256=287513e2408dc7b17fe94bb6c659a7bb9cbd792eb59d95fc892a2a7f7e07e7d0 -->
 
 La variante expérimentale `combined-structured-feminine-comparisons-v3`,
 d'empreinte SHA-256
@@ -311,10 +311,12 @@ borne de même le carré, le cube, la puissance et la fraction de l'expression
 `$…$` déjà formée qui le précède, toujours sans parenthèse déduite.
 
 Les identifiants des 66 règles v2 et des 160 définitions v4 restent inchangés ;
-les sept nouvelles règles « le tout » reçoivent leurs propres identifiants
-stables (`group-marker-*`). Une surcouche ancienne continue donc à désactiver ou
-remplacer la même règle, tout en consommant automatiquement les nouvelles
-définitions livrées.
+les sept règles « le tout » gardent leurs identifiants `group-marker-*`. La
+version 6 étend de même les comparaisons strictes existantes sans changer
+`comparison-less` ni `comparison-greater`, et ajoute les identifiants stables
+`comparison-less-or-equal` et `comparison-greater-or-equal`. Une surcouche
+ancienne continue donc à désactiver ou remplacer la même règle, tout en
+consommant automatiquement les nouvelles définitions livrées.
 
 ## DEC-COUCHE2-001 — Transformation locale sans inférence sémantique — 13 juillet 2026
 
@@ -417,7 +419,8 @@ prennent pas effectivement en charge et ne possèdent pas leurs tests.
 
 ## DEC-CONV-002 — Relations d'ordre et chaînes — 20 juillet 2026
 
-**Statut : décidée, non encore implémentée dans le normaliseur.** CONV-008 et
+**Statut : implémentée dans le normaliseur** (jeu livré v6,
+`dictex-deterministic-pipeline-v8`, règles `comparison-*`). CONV-008 et
 CONV-009 sont tranchées. Pour une comparaison simple, `inférieur à` et
 `strictement inférieur à` désignent tous deux `<` ; `inférieur ou égal à`
 produit `\le`. Par symétrie, `supérieur à` et `strictement supérieur à`
@@ -434,6 +437,12 @@ chaque comparaison conservant son propre symbole, sans réordonnancement ni
 regroupement déduit : `a inférieur à b inférieur à c` → `$a < b < c$`, et
 `a inférieur ou égal à b inférieur à c` → `$a \le b < c$`. La chaîne n'introduit
 aucune sémantique nouvelle par rapport aux comparaisons simples qui la composent.
+Le repli des règles plates couvre ces chaînes directes ; il n'introduit aucune
+grammaire chaînée générale, aucun AST et aucun regroupement implicite.
+
+Les règles inclusives émettent les alias produit `\le` et `\ge` ; avant mesure
+ou export, `canonicalizeLatex` les stabilise respectivement en `\leq` et `\geq`
+selon le contrat canonique de couche 2.
 
 ## DEC-CONV-003 — Marqueur de regroupement oral « le tout » — 20 juillet 2026
 
