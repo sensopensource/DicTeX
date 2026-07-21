@@ -49,7 +49,7 @@ test("bundled rules have stable unique ids and an old empty overlay automaticall
   const paths = makePaths("dictex-rules-overlay-");
   try {
     assert.equal(new Set(BUNDLED_RULES.map((rule) => rule.id)).size, BUNDLED_RULES.length);
-    assert.equal(BUNDLED_RULES.length, 295);
+    assert.equal(BUNDLED_RULES.length, 297);
     assert.equal(BUNDLED_RULES.every((rule, order) => rule.order === order), true);
 
     const options = {
@@ -59,10 +59,10 @@ test("bundled rules have stable unique ids and an old empty overlay automaticall
     };
     const bundled = await createTranscriptNormalizer(options);
     assert.equal(bundled.rulesConfiguration.state, "bundled");
-    assert.equal(bundled.rulesConfiguration.bundledVersion, 7);
+    assert.equal(bundled.rulesConfiguration.bundledVersion, 8);
     assert.equal(
       bundled.rulesConfiguration.bundledHash,
-      "036c48c38cc099c626e2f695e9ce3cb86f8c247e98e833b52eb79bf0fe4af2fe",
+      "e47937199986ab9164bf4accaf3f67033d0e5578e0205204a8670648ebe219eb",
     );
     assert.equal(bundled.rulesConfiguration.effectiveRuleCount, BUNDLED_RULES.length);
     assert.equal((await bundled.normalize("un sur x")).output, "$\\frac{1}{x}$");
