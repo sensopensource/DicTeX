@@ -1545,6 +1545,10 @@ const V4_ATOMIC_RULES: IdentifiedRule[] = [
 // A composed <expr> still needs the "le tout" marker (DEC-CONV-003); these
 // templates only cover the two atomic canonical limits DEC-NORM-003 promoted.
 const LIMIT_CONNECTOR = `(?:quand|lorsque)`;
+// The canonical phrasings say "la limite". Keep accepting the historical
+// article-less form, but consume "la" when it is present rather than leaving
+// it as prose before the generated Layer 2.
+const LIMIT_PREFIX = `(?:la\\s+)?limite`;
 const LIMIT_CLAUSE_AT_POSITIVE_INFINITY =
   `${LIMIT_CONNECTOR}\\s+(?<variable>\\p{L})\\s+tend\\s+vers\\s+plus\\s+l['’]infini`;
 const LIMIT_CLAUSE_AT_ZERO =
@@ -1563,7 +1567,7 @@ const V4_ADDITIONAL_STRUCTURED_RULES: IdentifiedRule[] = [
     // <expr>" phrasing, commas optional since STT rarely emits them.
     id: "structured-limit-reciprocal-at-positive-infinity-infix",
     pattern:
-      `${NOT_WORD_BEFORE}limite,?\\s+${LIMIT_CLAUSE_AT_POSITIVE_INFINITY},?\\s+` +
+      `${NOT_WORD_BEFORE}${LIMIT_PREFIX},?\\s+${LIMIT_CLAUSE_AT_POSITIVE_INFINITY},?\\s+` +
       `${LIMIT_RECIPROCAL_EXPR}${NOT_WORD_AFTER}`,
     replacement: LIMIT_RECIPROCAL_REPLACEMENT,
     flags: "i",
@@ -1574,7 +1578,7 @@ const V4_ADDITIONAL_STRUCTURED_RULES: IdentifiedRule[] = [
     // quand x tend vers zéro".
     id: "structured-limit-sine-over-variable-at-zero-postfix",
     pattern:
-      `${NOT_WORD_BEFORE}limite\\s+${LIMIT_SINE_OVER_VARIABLE_EXPR}\\s+` +
+      `${NOT_WORD_BEFORE}${LIMIT_PREFIX}\\s+${LIMIT_SINE_OVER_VARIABLE_EXPR}\\s+` +
       `${LIMIT_CLAUSE_AT_ZERO}${NOT_WORD_AFTER}`,
     replacement: LIMIT_SINE_OVER_VARIABLE_REPLACEMENT,
     flags: "i",
@@ -1622,7 +1626,7 @@ function v4StructuredRule(rule: IdentifiedRule): IdentifiedRule {
     return {
       ...rule,
       pattern:
-        `${NOT_WORD_BEFORE}limite\\s+${LIMIT_RECIPROCAL_EXPR}\\s+` +
+        `${NOT_WORD_BEFORE}${LIMIT_PREFIX}\\s+${LIMIT_RECIPROCAL_EXPR}\\s+` +
         `${LIMIT_CLAUSE_AT_POSITIVE_INFINITY}${NOT_WORD_AFTER}`,
     };
   }
@@ -1630,7 +1634,7 @@ function v4StructuredRule(rule: IdentifiedRule): IdentifiedRule {
     return {
       ...rule,
       pattern:
-        `${NOT_WORD_BEFORE}limite,?\\s+${LIMIT_CLAUSE_AT_ZERO},?\\s+` +
+        `${NOT_WORD_BEFORE}${LIMIT_PREFIX},?\\s+${LIMIT_CLAUSE_AT_ZERO},?\\s+` +
         `${LIMIT_SINE_OVER_VARIABLE_EXPR}${NOT_WORD_AFTER}`,
     };
   }

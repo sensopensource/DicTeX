@@ -285,9 +285,9 @@ continuent de viser les mêmes identifiants stables.
 
 **Statut : active.** Le jeu livré est à la version 8 et la version sémantique
 du pipeline est `dictex-deterministic-pipeline-v10`. Son empreinte effective est
-`9f791f836143b4154606ff321dc62b8bd9305434a155914807dd2fdca1923f38`.
+`e47937199986ab9164bf4accaf3f67033d0e5578e0205204a8670648ebe219eb`.
 
-<!-- dictex-contract: normalizer-bundled-rules version=8 semantic-version=dictex-deterministic-pipeline-v10 sha256=9f791f836143b4154606ff321dc62b8bd9305434a155914807dd2fdca1923f38 -->
+<!-- dictex-contract: normalizer-bundled-rules version=8 semantic-version=dictex-deterministic-pipeline-v10 sha256=e47937199986ab9164bf4accaf3f67033d0e5578e0205204a8670648ebe219eb -->
 
 La variante expérimentale `combined-structured-feminine-comparisons-v3`,
 d'empreinte SHA-256

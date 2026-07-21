@@ -62,7 +62,7 @@ test("bundled rules have stable unique ids and an old empty overlay automaticall
     assert.equal(bundled.rulesConfiguration.bundledVersion, 8);
     assert.equal(
       bundled.rulesConfiguration.bundledHash,
-      "9f791f836143b4154606ff321dc62b8bd9305434a155914807dd2fdca1923f38",
+      "e47937199986ab9164bf4accaf3f67033d0e5578e0205204a8670648ebe219eb",
     );
     assert.equal(bundled.rulesConfiguration.effectiveRuleCount, BUNDLED_RULES.length);
     assert.equal((await bundled.normalize("un sur x")).output, "$\\frac{1}{x}$");

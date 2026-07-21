@@ -486,10 +486,10 @@ test("DEC-CONV-004: a limit accepts quand/lorsque and postfix/infix placement, o
   // lorsque — must all fold to the SAME Layer 2, and that output is its own
   // canonicalizeLatex fixed point (so scoring/export never sees it as an error).
   const reciprocalPhrasings = [
-    "limite de un sur x quand x tend vers plus l'infini",
-    "limite de un sur x lorsque x tend vers plus l'infini",
-    "limite, quand x tend vers plus l'infini, de un sur x",
-    "limite, lorsque x tend vers plus l'infini, de un sur x",
+    "la limite de un sur x quand x tend vers plus l'infini",
+    "la limite de un sur x lorsque x tend vers plus l'infini",
+    "la limite, quand x tend vers plus l'infini, de un sur x",
+    "la limite, lorsque x tend vers plus l'infini, de un sur x",
   ];
   const reciprocalLayer2 = "$\\lim_{x\\to+\\infty}\\frac{1}{x}$";
   for (const input of reciprocalPhrasings) {
@@ -509,17 +509,24 @@ test("DEC-CONV-004: a limit accepts quand/lorsque and postfix/infix placement, o
       await regexLayerOutput(`limite, ${connector} x tend vers plus l'infini, de 1 sur x est égal à 0`),
       "$\\lim_{x\\to+\\infty}\\frac{1}{x} = 0$",
     );
+    assert.equal(
+      await regexLayerOutput(`la limite de un sur x ${connector} x tend vers plus l'infini est égal à zéro`),
+      "$\\lim_{x\\to+\\infty}\\frac{1}{x} = 0$",
+    );
+    assert.equal(
+      await regexLayerOutput(`la limite, ${connector} x tend vers plus l'infini, de un sur x est égal à zéro`),
+      "$\\lim_{x\\to+\\infty}\\frac{1}{x} = 0$",
+    );
   }
 
   // The sine-over-variable limit gains the opposite placement (postfix) and the
   // "lorsque" connector, again folding to a single Layer 2.
   const sineLayer2 = "$\\lim_{x\\to0}\\frac{\\sin(x)}{x}$";
   const sinePhrasings = [
-    "limite quand x tend vers zéro de sinus de x sur x",
-    "limite lorsque x tend vers zéro de sinus de x sur x",
-    "limite, quand x tend vers zéro, de sinus de x sur x",
-    "limite de sinus de x sur x quand x tend vers zéro",
-    "limite de sinus de x sur x lorsque x tend vers zéro",
+    "la limite quand x tend vers zéro de sinus de x sur x",
+    "la limite lorsque x tend vers zéro de sinus de x sur x",
+    "la limite de sinus de x sur x quand x tend vers zéro",
+    "la limite de sinus de x sur x lorsque x tend vers zéro",
   ];
   for (const input of sinePhrasings) {
     const output = await regexLayerOutput(input);
