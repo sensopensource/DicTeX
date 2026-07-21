@@ -722,10 +722,15 @@ type CompiledRule = {
 // LaTeX has no `\omicron` macro (the letter is written with a Latin `o`), so
 // admitting it would break the "identical to the macro name" rule. None of
 // these names is a prefix of another, so the alternation order is irrelevant.
+const HISTORICAL_GREEK_LATEX_NAMES = "theta|rho";
 const GREEK_LATEX_NAMES =
   "alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa|lambda|" +
   "mu|nu|xi|pi|rho|sigma|tau|upsilon|phi|chi|psi|omega";
-const OPERAND_BARE = `-?\\d+|\\\\(?:${GREEK_LATEX_NAMES})|\\p{L}`;
+function buildOperandBarePattern(greekLatexNames: string): string {
+  return `-?\\d+|\\\\(?:${greekLatexNames})|\\p{L}`;
+}
+const HISTORICAL_OPERAND_BARE = buildOperandBarePattern(HISTORICAL_GREEK_LATEX_NAMES);
+const OPERAND_BARE = buildOperandBarePattern(GREEK_LATEX_NAMES);
 const NOT_WORD_BEFORE = "(?<![\\p{L}\\p{N}])";
 const NOT_WORD_AFTER = "(?![\\p{L}\\p{N}])";
 const NOT_SPOKEN_ALIAS_BEFORE = `${NOT_WORD_BEFORE}(?<!\\\\)`;
@@ -734,15 +739,15 @@ const NOT_SPOKEN_ALIAS_AFTER = "(?![-\\p{L}\\p{N}])";
 /** A single bracing-rule operand: one signed digit run, one letter, or one
  * explicitly mapped Greek macro. No `$…$`
  * fragment may stand here (see header comment — bracing rules stay bare-only). */
-function operandBare(tag: string): string {
-  return `(?<p${tag}>${OPERAND_BARE})`;
+function operandBare(tag: string, operandPattern = OPERAND_BARE): string {
+  return `(?<p${tag}>${operandPattern})`;
 }
 
 /** A flat-rule operand: either a bare token (as above) or an entire, already
  * `$…$`-wrapped fragment produced by an earlier rule (its inner content, not
  * the delimiters, is captured so it can be re-spliced into a new `$…$` span). */
-function operandAny(tag: string): string {
-  return `(?:\\$(?<i${tag}>[^$]+)\\$|(?<p${tag}>${OPERAND_BARE}))`;
+function operandAny(tag: string, operandPattern = OPERAND_BARE): string {
+  return `(?:\\$(?<i${tag}>[^$]+)\\$|(?<p${tag}>${operandPattern}))`;
 }
 
 /** Reference a bracing-rule operand in a replacement string. */
@@ -791,7 +796,9 @@ const SPOKEN_ATOM_PATTERN = SPOKEN_ATOM_ALIASES
   .map(([spoken]) => escapeRegex(spoken))
   .sort((left, right) => right.length - left.length)
   .join("|");
-const PENDING_ATOM = `(?:moins\\s+)?(?:${SPOKEN_ATOM_PATTERN})|(?:${OPERAND_BARE})|\\$[^$]+\\$`;
+function buildPendingAtomPattern(operandPattern: string): string {
+  return `(?:moins\\s+)?(?:${SPOKEN_ATOM_PATTERN})|(?:${operandPattern})|\\$[^$]+\\$`;
+}
 const V2_BINARY_SPOKEN_OPERATOR = [
   "divis[ée]e?\\s+par",
   "multipli[ée]e?\\s+par",
@@ -833,7 +840,10 @@ const BINARY_SPOKEN_OPERATOR = [
 ].join("|");
 const V3_FUNCTION_SPOKEN_PREFIX = `(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+naturel\\s+de|\\p{L}\\s+de)`;
 const FUNCTION_SPOKEN_PREFIX = `(?:sinus\\s+de|cosinus\\s+de|logarithme\\s+(?:naturel\\s+)?de|\\p{L}\\s+de)`;
-const PRESERVED_OPERAND = `(?:\\$[^$]+\\$|(?:${OPERAND_BARE}))`;
+function buildPreservedOperandPattern(operandPattern: string): string {
+  return `(?:\\$[^$]+\\$|(?:${operandPattern}))`;
+}
+const PRESERVED_OPERAND = buildPreservedOperandPattern(OPERAND_BARE);
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -852,19 +862,22 @@ function escapeRegex(value: string): string {
 function buildSpokenAtomRules(
   binarySpokenOperator = BINARY_SPOKEN_OPERATOR,
   functionSpokenPrefix = FUNCTION_SPOKEN_PREFIX,
+  operandPattern = OPERAND_BARE,
 ): RuleEntry[] {
+  const pendingAtom = buildPendingAtomPattern(operandPattern);
+  const preservedOperand = buildPreservedOperandPattern(operandPattern);
   const leftRules = SPOKEN_ATOM_ALIASES.map(([spoken, latex]) => ({
     pattern:
       `${NOT_SPOKEN_ALIAS_BEFORE}${escapeRegex(spoken)}\\s+` +
       `(?<spokenOperator>${binarySpokenOperator})\\s+` +
-      `(?<followingAtom>${PENDING_ATOM})${NOT_WORD_AFTER}`,
+      `(?<followingAtom>${pendingAtom})${NOT_WORD_AFTER}`,
     replacement: `${latex} $<spokenOperator> $<followingAtom>`,
     flags: "i",
   }));
 
   const rightRules = SPOKEN_ATOM_ALIASES.map(([spoken, latex]) => ({
     pattern:
-      `${NOT_WORD_BEFORE}(?:(?<binaryPrefix>${PRESERVED_OPERAND}\\s+(?:${binarySpokenOperator}))|` +
+      `${NOT_WORD_BEFORE}(?:(?<binaryPrefix>${preservedOperand}\\s+(?:${binarySpokenOperator}))|` +
       `(?<functionPrefix>${functionSpokenPrefix}))\\s+` +
       `(?<unaryMinus>moins\\s+)?${escapeRegex(spoken)}${NOT_SPOKEN_ALIAS_AFTER}`,
     replacement: `$<binaryPrefix>$<functionPrefix> $<unaryMinus>${latex}`,
@@ -879,14 +892,14 @@ function buildSpokenAtomRules(
       pattern:
         `${NOT_WORD_BEFORE}moins\\s+(?<negativeAtom>\\d+)\\s+` +
         `(?<spokenOperator>${binarySpokenOperator})\\s+` +
-        `(?<followingAtom>${PRESERVED_OPERAND})${NOT_WORD_AFTER}`,
+        `(?<followingAtom>${preservedOperand})${NOT_WORD_AFTER}`,
       replacement: `-$<negativeAtom> $<spokenOperator> $<followingAtom>`,
       flags: "i",
     },
     {
       // "x supérieur à moins trois" -> "x supérieur à -3".
       pattern:
-        `${NOT_WORD_BEFORE}(?<precedingAtom>${PRESERVED_OPERAND})\\s+` +
+        `${NOT_WORD_BEFORE}(?<precedingAtom>${preservedOperand})\\s+` +
         `(?<spokenOperator>${binarySpokenOperator})\\s+moins\\s+` +
         `(?<negativeAtom>\\d+)${NOT_WORD_AFTER}`,
       replacement: `$<precedingAtom> $<spokenOperator> -$<negativeAtom>`,
@@ -903,8 +916,15 @@ function buildSpokenAtomRules(
   ];
 }
 
-const HISTORICAL_V2_RULES: RuleEntry[] = [
-  ...buildSpokenAtomRules(V2_BINARY_SPOKEN_OPERATOR),
+function buildV2Rules(
+  operandPattern: string,
+  binarySpokenOperator = BINARY_SPOKEN_OPERATOR,
+): RuleEntry[] {
+  const operandBare = (tag: string) => `(?<p${tag}>${operandPattern})`;
+  const operandAny = (tag: string) =>
+    `(?:\\$(?<i${tag}>[^$]+)\\$|(?<p${tag}>${operandPattern}))`;
+  return [
+  ...buildSpokenAtomRules(binarySpokenOperator, FUNCTION_SPOKEN_PREFIX, operandPattern),
   {
     // "x au carré" -> "$x^{2}$" (bracing: bare operand only).
     pattern: `${NOT_WORD_BEFORE}${operandBare("1")}\\s+au\\s+carr(?:é|ée)${NOT_WORD_AFTER}`,
@@ -1011,7 +1031,13 @@ const HISTORICAL_V2_RULES: RuleEntry[] = [
     replacement: `$$${refAny("1")} < ${refAny("2")}$$`,
     flags: "i",
   },
-];
+  ];
+}
+
+const HISTORICAL_V2_RULES = buildV2Rules(
+  HISTORICAL_OPERAND_BARE,
+  V2_BINARY_SPOKEN_OPERATOR,
+);
 
 /**
  * These ids are intentionally hand-authored, not derived from a pattern,
@@ -1131,11 +1157,14 @@ function buildStructuredPreparationRules(): IdentifiedRule[] {
   });
 }
 
-function buildStructuredEqualityRightRules(): IdentifiedRule[] {
+function buildStructuredEqualityRightRules(
+  operandPattern = OPERAND_BARE,
+): IdentifiedRule[] {
+  const preservedOperand = buildPreservedOperandPattern(operandPattern);
   return FRENCH_NUMBER_ATOMS.map(([spoken, digit]) => ({
     id: `structured-equality-right-${spoken.replaceAll("é", "e")}`,
     pattern:
-      `${NOT_WORD_BEFORE}(?<prefix>${PRESERVED_OPERAND}\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)` +
+      `${NOT_WORD_BEFORE}(?<prefix>${preservedOperand}\\s+est\\s+[ée]gale?(?:\\s+à)?\\s+)` +
       `${escapeRegex(spoken)}${NOT_SPOKEN_ALIAS_AFTER}`,
     replacement: `$<prefix>${digit}`,
     flags: "i",
@@ -1247,7 +1276,13 @@ const V3_STRUCTURED_RULES: IdentifiedRule[] = [
   },
 ];
 
-function v3AtomicRule(rule: RuleEntry, id: string): RuleEntry {
+function v3AtomicRule(
+  rule: RuleEntry,
+  id: string,
+  operandPattern = OPERAND_BARE,
+): RuleEntry {
+  const operandAny = (tag: string) =>
+    `(?:\\$(?<i${tag}>[^$]+)\\$|(?<p${tag}>${operandPattern}))`;
   if (id === "equality") {
     return {
       pattern:
@@ -1293,9 +1328,17 @@ function v4AtomicRule(rule: RuleEntry, id: string): RuleEntry {
 
 const SPOKEN_ATOM_RULE_COUNT = SPOKEN_ATOM_RULE_IDS.length + 3;
 const V3_ATOMIC_RULES = [
-  ...buildSpokenAtomRules(V3_BINARY_SPOKEN_OPERATOR, V3_FUNCTION_SPOKEN_PREFIX),
+  ...buildSpokenAtomRules(
+    V3_BINARY_SPOKEN_OPERATOR,
+    V3_FUNCTION_SPOKEN_PREFIX,
+    HISTORICAL_OPERAND_BARE,
+  ),
   ...HISTORICAL_V2_RULES.slice(SPOKEN_ATOM_RULE_COUNT).map((rule, index) =>
-    v3AtomicRule(rule, V2_RULE_IDS[SPOKEN_ATOM_RULE_COUNT + index]!),
+    v3AtomicRule(
+      rule,
+      V2_RULE_IDS[SPOKEN_ATOM_RULE_COUNT + index]!,
+      HISTORICAL_OPERAND_BARE,
+    ),
   ),
 ];
 
@@ -1307,6 +1350,8 @@ const V4_ATOMIC_INSERTIONS = new Map<string, IdentifiedRule[]>([
     flags: "i",
   }]],
 ]);
+
+const CURRENT_V2_RULES = buildV2Rules(OPERAND_BARE);
 
 /**
  * Lowercase Greek lexicon beyond the two names (`theta`, `rho`) frozen into the
@@ -1354,14 +1399,13 @@ const CURRENT_GREEK_ATOMS = [
  * #178's examples plus the obvious French diacritic spellings and grows only
  * from observed errors (roadmap stage 7). Each carries a stable ASCII id slug
  * so a personal overlay can target it, and — like every atom — a variant is
- * canonicalized only inside a construction, so a bare "pie" (the bird) or a
- * bare "bêta" stays prose.
+ * canonicalized only inside a construction. Collision-prone homophones are not
+ * admitted speculatively: in particular, "pie" stays ordinary French prose.
  */
 const GREEK_ATOM_VARIANTS = [
   { spoken: "thêta", latex: "\\theta", slug: "theta-circumflex" },
   { spoken: "rhô", latex: "\\rho", slug: "rho-circumflex" },
   { spoken: "khi", latex: "\\chi", slug: "chi-kh" },
-  { spoken: "pie", latex: "\\pi", slug: "pi-homophone" },
   { spoken: "bêta", latex: "\\beta", slug: "beta-circumflex" },
   { spoken: "êta", latex: "\\eta", slug: "eta-circumflex" },
   { spoken: "oméga", latex: "\\omega", slug: "omega-acute" },
@@ -1387,6 +1431,18 @@ const CURRENT_GREEK_PENDING_PATTERN = CURRENT_GREEK_PENDING_WORDS
   .join("|");
 const CURRENT_GREEK_PENDING_ATOM =
   `(?:moins\\s+)?(?:${CURRENT_GREEK_PENDING_PATTERN})|(?:${OPERAND_BARE})|\\$[^$]+\\$`;
+const CURRENT_GREEK_PENDING_WORDS_WITHOUT_UN = [
+  ...FRENCH_NUMBER_ATOMS.filter(([spoken]) => spoken !== "un").map(([spoken]) => spoken),
+  ...GREEK_ATOMS.map(([spoken]) => spoken),
+  ...CURRENT_GREEK_ATOM_ALIASES.map(({ spoken }) => spoken),
+];
+const CURRENT_GREEK_PENDING_PATTERN_WITHOUT_UN = CURRENT_GREEK_PENDING_WORDS_WITHOUT_UN
+  .map((spoken) => escapeRegex(spoken))
+  .sort((left, right) => right.length - left.length)
+  .join("|");
+const CURRENT_GREEK_PENDING_ATOM_WITHOUT_UN =
+  `(?:moins\\s+)?(?:${CURRENT_GREEK_PENDING_PATTERN_WITHOUT_UN})|` +
+  `(?:${OPERAND_BARE})|\\$[^$]+\\$`;
 
 /**
  * Left/right contextual rules for the current Greek lexicon, mirroring
@@ -1395,15 +1451,24 @@ const CURRENT_GREEK_PENDING_ATOM =
  * helpers: those already exist in the shared spoken-atom block that runs first.
  */
 function buildCurrentGreekAtomRules(): IdentifiedRule[] {
-  const leftRules = CURRENT_GREEK_ATOM_ALIASES.map(({ spoken, latex, slug }) => ({
-    id: `spoken-atom-left-${slug}`,
-    pattern:
-      `${NOT_SPOKEN_ALIAS_BEFORE}${escapeRegex(spoken)}\\s+` +
-      `(?<spokenOperator>${BINARY_SPOKEN_OPERATOR})\\s+` +
-      `(?<followingAtom>${CURRENT_GREEK_PENDING_ATOM})${NOT_WORD_AFTER}`,
-    replacement: `${latex} $<spokenOperator> $<followingAtom>`,
-    flags: "i",
-  }));
+  const leftRules = CURRENT_GREEK_ATOM_ALIASES.map(({ spoken, latex, slug }) => {
+    // "mu" and "nu" collide with ordinary French. In particular, a following
+    // spoken "un" is more likely to be an article ("nu sur un lit") than an
+    // operand. They remain available with an unambiguous digit, letter, Greek
+    // atom or any other number word (for example "mu sur x" / "nu plus deux").
+    const pendingAtom = spoken === "mu" || spoken === "nu"
+      ? CURRENT_GREEK_PENDING_ATOM_WITHOUT_UN
+      : CURRENT_GREEK_PENDING_ATOM;
+    return {
+      id: `spoken-atom-left-${slug}`,
+      pattern:
+        `${NOT_SPOKEN_ALIAS_BEFORE}${escapeRegex(spoken)}\\s+` +
+        `(?<spokenOperator>${BINARY_SPOKEN_OPERATOR})\\s+` +
+        `(?<followingAtom>${pendingAtom})${NOT_WORD_AFTER}`,
+      replacement: `${latex} $<spokenOperator> $<followingAtom>`,
+      flags: "i",
+    };
+  });
   const rightRules = CURRENT_GREEK_ATOM_ALIASES.map(({ spoken, latex, slug }) => ({
     id: `spoken-atom-right-${slug}`,
     pattern:
@@ -1422,7 +1487,7 @@ const V4_ATOMIC_RULES: IdentifiedRule[] = [
   // when the shared number rules run and can be resolved into "2".
   ...buildCurrentGreekAtomRules(),
   ...buildSpokenAtomRules().map((rule, index) => ({ ...rule, id: V2_RULE_IDS[index]! })),
-  ...HISTORICAL_V2_RULES.slice(SPOKEN_ATOM_RULE_COUNT).flatMap((rule, index) => {
+  ...CURRENT_V2_RULES.slice(SPOKEN_ATOM_RULE_COUNT).flatMap((rule, index) => {
     const id = V2_RULE_IDS[SPOKEN_ATOM_RULE_COUNT + index]!;
     return [
       ...(V4_ATOMIC_INSERTIONS.get(id) ?? []),
@@ -1485,6 +1550,7 @@ const V4_STRUCTURED_RULES = [
 
 const V3_FUNCTION_APPLICATION_END = V2_RULE_IDS.indexOf("function-application") + 1;
 const PREPARATION_RULES = buildStructuredPreparationRules();
+const V3_EQUALITY_RIGHT_RULES = buildStructuredEqualityRightRules(HISTORICAL_OPERAND_BARE);
 const EQUALITY_RIGHT_RULES = buildStructuredEqualityRightRules();
 const V3_EARLY_ATOMIC_RULES = V3_ATOMIC_RULES.slice(0, V3_FUNCTION_APPLICATION_END);
 const V3_LATE_ATOMIC_RULES = V3_ATOMIC_RULES.slice(V3_FUNCTION_APPLICATION_END);
@@ -1496,7 +1562,7 @@ const V3_DEFAULT_RULES: RuleEntry[] = [
   ...PREPARATION_RULES,
   ...V3_STRUCTURED_RULES,
   ...V3_EARLY_ATOMIC_RULES,
-  ...EQUALITY_RIGHT_RULES,
+  ...V3_EQUALITY_RIGHT_RULES,
   ...V3_LATE_ATOMIC_RULES,
 ];
 
@@ -1504,7 +1570,7 @@ const V3_DEFAULT_RULE_IDS = [
   ...PREPARATION_RULES.map((rule) => rule.id),
   ...V3_STRUCTURED_RULES.map((rule) => rule.id),
   ...V2_RULE_IDS.slice(0, V3_FUNCTION_APPLICATION_END),
-  ...EQUALITY_RIGHT_RULES.map((rule) => rule.id),
+  ...V3_EQUALITY_RIGHT_RULES.map((rule) => rule.id),
   ...V2_RULE_IDS.slice(V3_FUNCTION_APPLICATION_END),
 ];
 

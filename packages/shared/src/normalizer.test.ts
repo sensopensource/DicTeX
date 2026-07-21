@@ -432,6 +432,14 @@ test("Greek names stay literal outside recognized atomic math constructs", async
   assert.equal(await regexLayerOutput("un individu lambda"), "un individu lambda");
   assert.equal(await regexLayerOutput("une pie vole dans le ciel"), "une pie vole dans le ciel");
   assert.equal(await regexLayerOutput("il est un peu bêta"), "il est un peu bêta");
+  for (const prose of [
+    "une pie sur un fil",
+    "il dort nu sur un lit",
+    "mu sur un plateau",
+    "le vecteur nu plus un",
+  ]) {
+    assert.equal(await regexLayerOutput(prose), prose);
+  }
 });
 
 test("DEC-COUCHE1-003: the full lowercase Greek alphabet is an atom in existing constructs (#178)", async () => {
@@ -463,6 +471,8 @@ test("DEC-COUCHE1-003: the full lowercase Greek alphabet is an atom in existing 
   assert.equal(canonicalizeLatex(frac), frac);
   assert.equal(await regexLayerOutput("cosinus de alpha"), "$\\cos(\\alpha)$");
   assert.equal(await regexLayerOutput("lambda plus mu"), "$\\lambda + \\mu$");
+  assert.equal(await regexLayerOutput("nu plus deux"), "$\\nu + 2$");
+  assert.equal(await regexLayerOutput("pi sur deux"), "$\\frac{\\pi}{2}$");
   assert.equal(await regexLayerOutput("sigma est égal à trois"), "$\\sigma = 3$");
 });
 
@@ -474,7 +484,6 @@ test("DEC-COUCHE1-003: accented/phonetic STT variants fold to the canonical atom
     ["thêta sur deux", "$\\frac{\\theta}{2}$"],
     ["rhô sur deux", "$\\frac{\\rho}{2}$"],
     ["khi plus un", "$\\chi + 1$"],
-    ["pie sur deux", "$\\frac{\\pi}{2}$"],
     ["bêta égale zéro", "$\\beta = 0$"],
     ["êta plus un", "$\\eta + 1$"],
     ["oméga sur deux", "$\\frac{\\omega}{2}$"],
@@ -484,7 +493,8 @@ test("DEC-COUCHE1-003: accented/phonetic STT variants fold to the canonical atom
     assert.equal(output, expected, input);
     assert.equal(canonicalizeLatex(output), output, input);
   }
-  // A variant that is also an ordinary French word stays prose out of context.
+  // The speculative French homophone is not shipped as an alias at all.
+  assert.equal(await regexLayerOutput("pie sur deux"), "pie sur deux");
   assert.equal(await regexLayerOutput("une pie chante"), "une pie chante");
   assert.equal(await regexLayerOutput("un raisonnement un peu bêta"), "un raisonnement un peu bêta");
 });

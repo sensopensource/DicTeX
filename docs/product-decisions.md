@@ -97,8 +97,12 @@ nu, xi, pi, rho, sigma, tau, upsilon, phi, chi, psi, omega`
 règle « identique au nom de la macro LaTeX » ; il reste par ailleurs indistinct
 d'un `o` en pratique. Cohérent avec `theta`, déjà fixé par
 `DEC-COUCHE1-001`. Le dictionnaire ramène les variantes STT accentuées ou
-phonétiques observées vers cette forme canonique ; le `stt_result` brut n'est
-jamais réécrit. La casse majuscule
+phonétiques observées vers cette forme canonique, mais n'invente pas un
+homophone français risqué : `pie` n'est pas un alias de `pi`. Les atomes `mu`
+et `nu` ne consomment pas le mot `un` comme opérande droit, afin que « mu sur un
+plateau » et « nu sur un lit » restent de la prose ; leurs autres constructions
+non ambiguës restent reconnues. Le `stt_result` brut n'est jamais réécrit. La
+casse majuscule
 (`\Lambda`) reste un renvoi vers `CONV-021`, qui fixe déjà la casse latine mais
 pas encore la casse grecque.
 
@@ -281,9 +285,9 @@ continuent de viser les mêmes identifiants stables.
 
 **Statut : active.** Le jeu livré est à la version 6 et la version sémantique
 du pipeline est `dictex-deterministic-pipeline-v8`. Son empreinte effective est
-`d9b41f168559371469fb32064e209a0c2411a742059360380f04a467e76ff90f`.
+`a76c2c5556ca152854ca66c2894f8115161c0099fccbb5e9e9e2276b1ec95a1d`.
 
-<!-- dictex-contract: normalizer-bundled-rules version=6 semantic-version=dictex-deterministic-pipeline-v8 sha256=d9b41f168559371469fb32064e209a0c2411a742059360380f04a467e76ff90f -->
+<!-- dictex-contract: normalizer-bundled-rules version=6 semantic-version=dictex-deterministic-pipeline-v8 sha256=a76c2c5556ca152854ca66c2894f8115161c0099fccbb5e9e9e2276b1ec95a1d -->
 
 La variante expérimentale `combined-structured-feminine-comparisons-v3`,
 d'empreinte SHA-256
@@ -320,14 +324,20 @@ La version 6 implémente le lexique grec complet de `DEC-COUCHE1-003` (CONV-012,
 #178) : les vingt-trois lettres grecques minuscules — `omicron` exclu, faute de
 macro `\omicron` en LaTeX de base — deviennent des atomes reconnus dans les
 constructions existantes et produisent leur macro `\<lettre>`. Le dictionnaire
-des variantes STT accentuées ou phonétiques (`thêta`, `rhô`, `khi`, `pie`, …)
+des variantes STT accentuées ou phonétiques (`thêta`, `rhô`, `khi`, …)
 est livré comme alias d'atomes, DicTeX livrant un dictionnaire personnel vide ;
 comme tout atome, une variante n'est canonicalisée qu'à l'intérieur d'une
-construction, donc un mot grec isolé — y compris un homographe français comme
-`pie` — reste de la prose. Ces règles sont ajoutées au seul jeu courant : les
+construction. Une homophonie française spéculative n'est toutefois pas livrée :
+`pie` reste toujours de la prose et seule la forme canonique `pi` est reconnue.
+Pour `mu` et `nu`, la construction reste volontairement inchangée lorsque
+l'opérande suivant est le mot `un`, afin de préserver « mu sur un plateau »,
+« nu sur un lit » et « nu plus un » ; un opérande non ambigu (`mu sur x`,
+`nu plus deux`) reste reconnu. Ces règles sont ajoutées au seul jeu courant : les
 66 règles v2, les 160 définitions v4 et les sept règles « le tout » gardent
-leurs identifiants et leurs effectifs, si bien que les signatures de migration
-figées restent intactes. Les nouvelles règles portent des identifiants stables
+leurs identifiants et leurs effectifs. Leurs motifs reconstruits utilisent
+explicitement le seul lexique historique `theta|rho`, et des fixtures issues des
+fichiers v2/v3 livrés figent désormais leurs signatures de migration. Les
+nouvelles règles portent des identifiants stables
 `spoken-atom-left-<lettre>` / `spoken-atom-right-<lettre>` (et un slug dédié par
 variante), et `GREEK_LATEX_NAMES` accueille les vingt-trois macros pour que
 `\<lettre>` soit un opérande atomique partout.

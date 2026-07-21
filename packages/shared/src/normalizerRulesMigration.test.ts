@@ -32,11 +32,24 @@ function writeJson(filePath: string, value: unknown): string {
   return source;
 }
 
+const FROZEN_HISTORICAL_RULE_FIXTURES = [
+  {
+    version: 2,
+    count: 66,
+    sha256: "c7fca9a24a65f7edd4ba3cd7adfc41ea984cd7800978aebe72ae407f59750013",
+  },
+  {
+    version: 3,
+    count: 226,
+    sha256: "c83fba9f7250d5e3dc53ff7889353d4ae2cfe91b8b9c9072fb7b7f84f4a864a2",
+  },
+] as const;
+
 test("bundled rules have stable unique ids and an old empty overlay automatically consumes the current bundle", async () => {
   const paths = makePaths("dictex-rules-overlay-");
   try {
     assert.equal(new Set(BUNDLED_RULES.map((rule) => rule.id)).size, BUNDLED_RULES.length);
-    assert.equal(BUNDLED_RULES.length, 295);
+    assert.equal(BUNDLED_RULES.length, 293);
     assert.equal(BUNDLED_RULES.every((rule, order) => rule.order === order), true);
 
     const options = {
@@ -49,7 +62,7 @@ test("bundled rules have stable unique ids and an old empty overlay automaticall
     assert.equal(bundled.rulesConfiguration.bundledVersion, 6);
     assert.equal(
       bundled.rulesConfiguration.bundledHash,
-      "d9b41f168559371469fb32064e209a0c2411a742059360380f04a467e76ff90f",
+      "a76c2c5556ca152854ca66c2894f8115161c0099fccbb5e9e9e2276b1ec95a1d",
     );
     assert.equal(bundled.rulesConfiguration.effectiveRuleCount, BUNDLED_RULES.length);
     assert.equal((await bundled.normalize("un sur x")).output, "$\\frac{1}{x}$");
@@ -99,6 +112,33 @@ test("the legacy classifier distinguishes shipped, personal, ambiguous and inval
     ],
   }));
   assert.deepEqual(mixed.classifications.map((entry) => entry.kind), ["personal", "ambiguous", "invalid"]);
+});
+
+test("frozen v2/v3 rule files from the shipped releases remain fully bundled", () => {
+  for (const fixture of FROZEN_HISTORICAL_RULE_FIXTURES) {
+    const source = readFileSync(
+      path.join(
+        process.cwd(),
+        "packages",
+        "shared",
+        "src",
+        "fixtures",
+        `historical-rules-v${fixture.version}.json`,
+      ),
+      "utf8",
+    );
+    const portableSource = source.replaceAll("\r\n", "\n");
+    assert.equal(createHash("sha256").update(portableSource).digest("hex"), fixture.sha256);
+    assert.match(source, /theta\|rho/u);
+    assert.doesNotMatch(source, /alpha\|beta/u);
+
+    const analysis = analyzeLegacyRulesSource(source);
+    assert.equal(analysis.classifications.length, fixture.count);
+    const nonBundled = analysis.classifications.flatMap((entry, index) =>
+      entry.kind === "bundled" ? [] : [{ index, kind: entry.kind }],
+    );
+    assert.deepEqual(nonBundled, [], `historical v${fixture.version}`);
+  }
 });
 
 test("an overlay disables and replaces bundled rules by stable id while keeping personal order deterministic", async () => {
